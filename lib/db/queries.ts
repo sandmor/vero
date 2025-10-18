@@ -76,6 +76,42 @@ export async function deleteChatById({ id }: { id: string }): Promise<Chat> {
   }
 }
 
+export async function deleteChatsByIds({
+  userId,
+  ids,
+}: {
+  userId: string;
+  ids: string[];
+}): Promise<{ deletedIds: string[] }> {
+  try {
+    const uniqueIds = Array.from(new Set(ids));
+    if (uniqueIds.length === 0) {
+      return { deletedIds: [] };
+    }
+
+    const chats = await prisma.chat.findMany({
+      where: {
+        userId,
+        id: { in: uniqueIds },
+      },
+      select: { id: true },
+    });
+
+    const targetIds = chats.map((chat) => chat.id);
+    if (targetIds.length === 0) {
+      return { deletedIds: [] };
+    }
+
+    await prisma.message.deleteMany({ where: { chatId: { in: targetIds } } });
+    await prisma.stream.deleteMany({ where: { chatId: { in: targetIds } } });
+    await prisma.chat.deleteMany({ where: { id: { in: targetIds }, userId } });
+
+    return { deletedIds: targetIds };
+  } catch (_error) {
+    throw new ChatSDKError('bad_request:database', 'Failed to delete chats');
+  }
+}
+
 export async function getChatsByUserId({
   id,
   limit,

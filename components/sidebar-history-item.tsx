@@ -1,9 +1,19 @@
 import Link from 'next/link';
-import { memo } from 'react';
+import { memo, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import { motion } from 'framer-motion';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import type { Chat } from '@/lib/db/schema';
-import { Globe, Lock, MoreHorizontal, Share, Trash2 } from 'lucide-react';
-import { CheckCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  CheckCircle,
+  CheckSquare,
+  Globe,
+  Lock,
+  MoreHorizontal,
+  Share,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,92 +30,191 @@ import {
   SidebarMenuItem,
 } from './ui/sidebar';
 
+export type ChatItemSelectionProps = {
+  isSelectionMode: boolean;
+  isSelected: boolean;
+  onToggle: (chatId: string) => void;
+  onRangeToggle?: (chatId: string) => void;
+  onPressStart?: (chatId: string, onInitiated?: () => void) => void;
+  onPressEnd?: () => void;
+};
+
 const PureChatItem = ({
   chat,
   isActive,
   onDelete,
   setOpenMobile,
+  selection,
 }: {
   chat: Chat;
   isActive: boolean;
   onDelete: (chatId: string) => void;
   setOpenMobile: (open: boolean) => void;
+  selection?: ChatItemSelectionProps;
 }) => {
   const { visibilityType, setVisibilityType } = useChatVisibility({
     chatId: chat.id,
     initialVisibilityType: chat.visibility,
   });
+  const longPressActivatedRef = useRef(false);
+  const isSelectionMode = selection?.isSelectionMode ?? false;
+  const isSelected = selection?.isSelected ?? false;
+
+  const handleNavigate = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (longPressActivatedRef.current) {
+      event.preventDefault();
+      longPressActivatedRef.current = false;
+      return;
+    }
+
+    if (isSelectionMode) {
+      event.preventDefault();
+      if (event.shiftKey && selection?.onRangeToggle) {
+        selection.onRangeToggle(chat.id);
+      } else {
+        selection?.onToggle(chat.id);
+      }
+      return;
+    }
+
+    setOpenMobile(false);
+  };
+
+  const handlePressStart = () => {
+    if (!selection?.onPressStart || isSelectionMode) return;
+    selection.onPressStart(chat.id, () => {
+      longPressActivatedRef.current = true;
+    });
+  };
+
+  const handlePressEnd = () => {
+    if (selection?.onPressEnd) {
+      selection.onPressEnd();
+    }
+  };
+
+  const linkClassName = cn(
+    'flex min-w-0 flex-1 items-center gap-2',
+    isSelectionMode && 'pr-1'
+  );
 
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton asChild isActive={isActive}>
-        <Link href={`/chat/${chat.id}`} onClick={() => setOpenMobile(false)}>
-          <span>{chat.title}</span>
+    <SidebarMenuItem data-selected={isSelected && isSelectionMode}>
+      <SidebarMenuButton
+        asChild
+        isActive={isSelectionMode ? isSelected : isActive}
+        className={cn(
+          'group/item flex-1 overflow-hidden',
+          isSelectionMode && 'pr-2'
+        )}
+      >
+        <Link
+          href={`/chat/${chat.id}`}
+          onClick={handleNavigate}
+          onMouseDown={handlePressStart}
+          onMouseUp={handlePressEnd}
+          onMouseLeave={handlePressEnd}
+          onTouchStart={() => {
+            handlePressStart();
+          }}
+          onTouchEnd={handlePressEnd}
+          onTouchCancel={handlePressEnd}
+          className={linkClassName}
+        >
+          {isSelectionMode && (
+            <motion.span
+              className="flex h-4 w-4 items-center justify-center"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+            >
+              {isSelected ? (
+                <CheckSquare className="h-4 w-4 text-primary" />
+              ) : (
+                <Square className="h-4 w-4 text-muted-foreground" />
+              )}
+            </motion.span>
+          )}
+          <span className="truncate text-sm font-medium text-sidebar-foreground">
+            {chat.title}
+          </span>
         </Link>
       </SidebarMenuButton>
 
-      <DropdownMenu modal={true}>
-        <DropdownMenuTrigger asChild>
-          <SidebarMenuAction
-            className="mr-0.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            showOnHover={!isActive}
-          >
-            <MoreHorizontal />
-            <span className="sr-only">More</span>
-          </SidebarMenuAction>
-        </DropdownMenuTrigger>
+      {!isSelectionMode && (
+        <DropdownMenu modal={true}>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuAction
+              className="mr-0.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              showOnHover={!isActive}
+            >
+              <MoreHorizontal />
+              <span className="sr-only">More</span>
+            </SidebarMenuAction>
+          </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="end" side="bottom">
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="cursor-pointer">
-              <Share />
-              <span>Share</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent>
-                <DropdownMenuItem
-                  className="cursor-pointer flex-row justify-between"
-                  onClick={() => {
-                    setVisibilityType('private');
-                  }}
-                >
-                  <div className="flex flex-row items-center gap-2">
-                    <Lock size={12} />
-                    <span>Private</span>
-                  </div>
-                  {visibilityType === 'private' ? <CheckCircle /> : null}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer flex-row justify-between"
-                  onClick={() => {
-                    setVisibilityType('public');
-                  }}
-                >
-                  <div className="flex flex-row items-center gap-2">
-                    <Globe />
-                    <span>Public</span>
-                  </div>
-                  {visibilityType === 'public' ? <CheckCircle /> : null}
-                </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
+          <DropdownMenuContent align="end" side="bottom">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="cursor-pointer">
+                <Share />
+                <span>Share</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem
+                    className="cursor-pointer flex-row justify-between"
+                    onClick={() => {
+                      setVisibilityType('private');
+                    }}
+                  >
+                    <div className="flex flex-row items-center gap-2">
+                      <Lock size={12} />
+                      <span>Private</span>
+                    </div>
+                    {visibilityType === 'private' ? <CheckCircle /> : null}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer flex-row justify-between"
+                    onClick={() => {
+                      setVisibilityType('public');
+                    }}
+                  >
+                    <div className="flex flex-row items-center gap-2">
+                      <Globe />
+                      <span>Public</span>
+                    </div>
+                    {visibilityType === 'public' ? <CheckCircle /> : null}
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
 
-          <DropdownMenuItem
-            className="cursor-pointer text-destructive focus:bg-destructive/15 focus:text-destructive dark:text-red-500"
-            onSelect={() => onDelete(chat.id)}
-          >
-            <Trash2 />
-            <span>Delete</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <DropdownMenuItem
+              className="cursor-pointer text-destructive focus:bg-destructive/15 focus:text-destructive dark:text-red-500"
+              onSelect={() => onDelete(chat.id)}
+            >
+              <Trash2 />
+              <span>Delete</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </SidebarMenuItem>
   );
 };
 
 export const ChatItem = memo(PureChatItem, (prevProps, nextProps) => {
   if (prevProps.isActive !== nextProps.isActive) {
+    return false;
+  }
+  if (prevProps.selection?.isSelected !== nextProps.selection?.isSelected) {
+    return false;
+  }
+  if (
+    prevProps.selection?.isSelectionMode !==
+    nextProps.selection?.isSelectionMode
+  ) {
     return false;
   }
   return true;

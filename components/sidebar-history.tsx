@@ -1,12 +1,16 @@
 'use client';
 
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useParams, useRouter } from 'next/navigation';
 type SidebarUser = { id?: string; email?: string | null };
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,7 +20,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -25,7 +31,7 @@ import {
 } from '@/components/ui/sidebar';
 import type { Chat } from '@/lib/db/schema';
 // fetcher retained in utils for other components; not needed here
-import { Loader } from 'lucide-react';
+import { CheckSquare, Loader, Loader2, Trash2 } from 'lucide-react';
 import { ChatItem } from './sidebar-history-item';
 import { ChatSearch } from './chat-search';
 
@@ -40,6 +46,21 @@ type GroupedChats = {
 export type ChatHistory = {
   chats: Chat[];
   hasMore: boolean;
+};
+
+type SelectionProps = {
+  isSelectionMode: boolean;
+  selectedSet: ReadonlySet<string>;
+  selectedIds: string[];
+  selectedCount: number;
+  isSelected: (id: string) => boolean;
+  clearSelectionMode: () => void;
+  toggleSelection: (id: string) => void;
+  setSelection: (ids: Iterable<string>) => void;
+  selectAll: (ids: Iterable<string>) => void;
+  toggleSelectionRange: (id: string, orderedIds: readonly string[]) => void;
+  handlePressStart: (id: string, onInitiated?: () => void) => void;
+  handlePressEnd: () => void;
 };
 
 const PAGE_SIZE = 20;
@@ -83,11 +104,19 @@ function buildPageUrl(cursor: string | undefined) {
   return `/api/history?ending_before=${cursor}&limit=${PAGE_SIZE}`;
 }
 
-export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
+export function SidebarHistory({
+  user,
+  selection,
+}: {
+  user: SidebarUser | undefined;
+  selection: SelectionProps;
+}) {
   const { setOpenMobile } = useSidebar();
   const { id } = useParams();
+  const currentChatId = Array.isArray(id) ? id[0] : (id as string | undefined);
 
   const queryClient = useQueryClient();
+
   const {
     data: paginatedChatHistories,
     fetchNextPage,
@@ -114,6 +143,20 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
   const router = useRouter();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const {
+    isSelectionMode,
+    selectedSet,
+    selectedIds,
+    selectedCount,
+    clearSelectionMode,
+    toggleSelection,
+    toggleSelectionRange,
+    selectAll,
+    setSelection,
+    handlePressStart,
+    handlePressEnd,
+  } = selection;
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const pages = paginatedChatHistories?.pages || [];
   const hasReachedEnd =
@@ -122,24 +165,73 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
   const hasEmptyChatHistory =
     pages.length > 0 ? pages.every((p) => p.chats.length === 0) : false;
 
+  const allChats = useMemo(() => pages.flatMap((page) => page.chats), [pages]);
+  const allChatIds = useMemo(() => allChats.map((chat) => chat.id), [allChats]);
+
+  const handleToggleSelection = useCallback(
+    (chatId: string) => {
+      toggleSelection(chatId);
+    },
+    [toggleSelection]
+  );
+
+  const handleRangeSelection = useCallback(
+    (chatId: string) => {
+      if (allChatIds.length === 0) {
+        toggleSelection(chatId);
+        return;
+      }
+      toggleSelectionRange(chatId, allChatIds);
+    },
+    [allChatIds, toggleSelection, toggleSelectionRange]
+  );
+
+  const handleSelectAllChats = useCallback(() => {
+    if (allChatIds.length === 0) return;
+    selectAll(allChatIds);
+  }, [allChatIds, selectAll]);
+
   const handleDelete = () => {
+    if (!deleteId) return;
+
     const deletePromise = fetch(`/api/chat?id=${deleteId}`, {
       method: 'DELETE',
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error('Failed to delete chat');
+      }
+      return response.json();
     });
 
     toast.promise(deletePromise, {
       loading: 'Deleting chat...',
       success: () => {
-        queryClient.setQueryData(['chat', 'history'], (current: any) => {
-          if (!current) return current;
-          return {
-            ...current,
-            pages: current.pages.map((page: ChatHistory) => ({
-              ...page,
-              chats: page.chats.filter((c) => c.id !== deleteId),
-            })),
-          };
-        });
+        queryClient.setQueryData<InfiniteData<ChatHistory>>(
+          ['chat', 'history'],
+          (current) => {
+            if (!current) return current;
+            return {
+              ...current,
+              pages: current.pages.map((page) => ({
+                ...page,
+                chats: page.chats.filter((c) => c.id !== deleteId),
+              })),
+            };
+          }
+        );
+
+        queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
+
+        if (selectedSet.has(deleteId)) {
+          const remainingIds = Array.from(selectedSet).filter(
+            (chatId) => chatId !== deleteId
+          );
+          if (remainingIds.length === 0) {
+            clearSelectionMode();
+          } else {
+            setSelection(remainingIds);
+          }
+        }
 
         return 'Chat deleted successfully';
       },
@@ -147,11 +239,73 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
     });
 
     setShowDeleteDialog(false);
+    setDeleteId(null);
 
     if (deleteId === id) {
       router.push('/');
     }
   };
+
+  const handleConfirmBulkDelete = useCallback(() => {
+    if (selectedIds.length === 0) return;
+
+    const idsToDelete = [...selectedIds];
+    const idsSet = new Set(idsToDelete);
+
+    setIsBulkDeleting(true);
+
+    const deletePromise = (async () => {
+      const response = await fetch('/api/chat/bulk-delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: idsToDelete }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete chats');
+      }
+
+      await response.json();
+
+      queryClient.setQueryData<InfiniteData<ChatHistory>>(
+        ['chat', 'history'],
+        (current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            pages: current.pages.map((page) => ({
+              ...page,
+              chats: page.chats.filter((chat) => !idsSet.has(chat.id)),
+            })),
+          };
+        }
+      );
+
+      queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
+
+      if (currentChatId && idsSet.has(currentChatId)) {
+        router.push('/');
+      }
+
+      clearSelectionMode();
+    })();
+
+    toast.promise(deletePromise, {
+      loading: 'Deleting chats...',
+      success: () => {
+        return `Deleted ${idsToDelete.length} chat${
+          idsToDelete.length === 1 ? '' : 's'
+        }`;
+      },
+      error: 'Failed to delete chats',
+    });
+
+    deletePromise.finally(() => {
+      setIsBulkDeleting(false);
+    });
+  }, [selectedIds, queryClient, currentChatId, router, clearSelectionMode]);
 
   if (!user) {
     return (
@@ -218,6 +372,101 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
 
       <SidebarGroup>
         <SidebarGroupContent>
+          {allChatIds.length > 0 && (
+            <AnimatePresence initial={false} mode="popLayout">
+              {isSelectionMode && (
+                <AlertDialog key="selection-active">
+                  <motion.div
+                    className="mb-3 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                  >
+                    <div className="flex flex-col gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <CheckSquare className="h-4 w-4 text-primary" />
+                          <span>
+                            {selectedCount > 0
+                              ? `${selectedCount} selected`
+                              : 'Select conversations'}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">
+                          Tap conversations to toggle selection
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleSelectAllChats}
+                            disabled={isBulkDeleting}
+                            className="flex-1"
+                          >
+                            Select all
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={clearSelectionMode}
+                            disabled={isBulkDeleting}
+                            className="flex-1"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={selectedCount === 0 || isBulkDeleting}
+                            className="w-full"
+                          >
+                            {isBulkDeleting ? (
+                              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                            )}
+                            Delete
+                          </Button>
+                        </AlertDialogTrigger>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete conversations</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. Are you sure you want to
+                        delete {selectedCount} conversation
+                        {selectedCount === 1 ? '' : 's'}?
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isBulkDeleting}>
+                        Cancel
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleConfirmBulkDelete}
+                        disabled={isBulkDeleting}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {isBulkDeleting ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </AnimatePresence>
+          )}
+
           <SidebarMenu>
             {pages &&
               (() => {
@@ -242,6 +491,14 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
                               setShowDeleteDialog(true);
                             }}
                             setOpenMobile={setOpenMobile}
+                            selection={{
+                              isSelectionMode,
+                              isSelected: selectedSet.has(chat.id),
+                              onToggle: handleToggleSelection,
+                              onRangeToggle: handleRangeSelection,
+                              onPressStart: handlePressStart,
+                              onPressEnd: handlePressEnd,
+                            }}
                           />
                         ))}
                       </div>
@@ -262,6 +519,14 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
                               setShowDeleteDialog(true);
                             }}
                             setOpenMobile={setOpenMobile}
+                            selection={{
+                              isSelectionMode,
+                              isSelected: selectedSet.has(chat.id),
+                              onToggle: handleToggleSelection,
+                              onRangeToggle: handleRangeSelection,
+                              onPressStart: handlePressStart,
+                              onPressEnd: handlePressEnd,
+                            }}
                           />
                         ))}
                       </div>
@@ -282,6 +547,14 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
                               setShowDeleteDialog(true);
                             }}
                             setOpenMobile={setOpenMobile}
+                            selection={{
+                              isSelectionMode,
+                              isSelected: selectedSet.has(chat.id),
+                              onToggle: handleToggleSelection,
+                              onRangeToggle: handleRangeSelection,
+                              onPressStart: handlePressStart,
+                              onPressEnd: handlePressEnd,
+                            }}
                           />
                         ))}
                       </div>
@@ -302,6 +575,14 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
                               setShowDeleteDialog(true);
                             }}
                             setOpenMobile={setOpenMobile}
+                            selection={{
+                              isSelectionMode,
+                              isSelected: selectedSet.has(chat.id),
+                              onToggle: handleToggleSelection,
+                              onRangeToggle: handleRangeSelection,
+                              onPressStart: handlePressStart,
+                              onPressEnd: handlePressEnd,
+                            }}
                           />
                         ))}
                       </div>
@@ -322,6 +603,14 @@ export function SidebarHistory({ user }: { user: SidebarUser | undefined }) {
                               setShowDeleteDialog(true);
                             }}
                             setOpenMobile={setOpenMobile}
+                            selection={{
+                              isSelectionMode,
+                              isSelected: selectedSet.has(chat.id),
+                              onToggle: handleToggleSelection,
+                              onRangeToggle: handleRangeSelection,
+                              onPressStart: handlePressStart,
+                              onPressEnd: handlePressEnd,
+                            }}
                           />
                         ))}
                       </div>

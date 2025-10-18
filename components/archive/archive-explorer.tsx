@@ -10,13 +10,6 @@ import { ArchiveList } from '@/components/archive/archive-list';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -39,6 +32,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { AnimatedButtonLabel } from '@/components/ui/animated-button';
 import { useFeedbackState } from '@/hooks/use-feedback-state';
+import { useMultiSelection } from '@/hooks/use-multi-selection';
 import {
   Search,
   Plus,
@@ -47,7 +41,6 @@ import {
   CircleAlert,
   Loader2,
   Trash2,
-  X,
   CheckSquare,
 } from 'lucide-react';
 import {
@@ -72,9 +65,18 @@ export function ArchiveExplorer() {
   const [saveFeedback, setSaveFeedback] = useFeedbackState();
 
   // Multi-selection state
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set());
-  const longPressTimerRef = useRef<number | null>(null);
+  const {
+    isSelectionMode,
+    selectedSet: selectedSlugs,
+    selectedIds: selectedSlugsArray,
+    selectedCount,
+    selectAll,
+    stopSelectionMode: clearSelectionMode,
+    toggleSelection,
+    toggleSelectionRange,
+    handlePressStart,
+    handlePressEnd,
+  } = useMultiSelection<string>();
   const [isDeletingMultiple, setIsDeletingMultiple] = useState(false);
 
   const { data: selected } = useArchiveEntry(current);
@@ -224,79 +226,26 @@ export function ArchiveExplorer() {
     setOpenEdit(true);
   }
 
-  // Multi-selection functions
-  const startSelectionMode = useCallback(() => {
-    setIsSelectionMode(true);
-  }, []);
-
-  const stopSelectionMode = useCallback(() => {
-    setIsSelectionMode(false);
-    setSelectedSlugs(new Set());
-  }, []);
-
-  const toggleSelection = useCallback((slug: string) => {
-    setSelectedSlugs((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(slug)) {
-        newSet.delete(slug);
-        // If no items selected after deselection, exit selection mode
-        if (newSet.size === 0) {
-          setIsSelectionMode(false);
-        }
-      } else {
-        newSet.add(slug);
-      }
-      return newSet;
-    });
-  }, []);
-
-  const handleLongPressStart = useCallback(
-    (slug: string, onInitiated?: () => void) => {
-      if (isSelectionMode) return;
-
-      longPressTimerRef.current = window.setTimeout(() => {
-        if (onInitiated) onInitiated();
-        startSelectionMode();
-        toggleSelection(slug);
-      }, 500); // 500ms for long press
-    },
-    [isSelectionMode, startSelectionMode, toggleSelection]
-  );
-
-  const handleLongPressEnd = useCallback(() => {
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  }, []);
-
+  // Multi-selection helpers built on shared hook
   const handleSelectAll = useCallback(() => {
     if (!archives || archives.length === 0) return;
-
-    if (!isSelectionMode) {
-      startSelectionMode();
-    }
-
-    const allSlugs = new Set(
-      archives.map((archive: ArchiveListEntry) => archive.slug)
-    );
-    setSelectedSlugs(allSlugs);
-  }, [archives, isSelectionMode, startSelectionMode]);
+    selectAll(archives.map((archive: ArchiveListEntry) => archive.slug));
+  }, [archives, selectAll]);
 
   const handleConfirmDeleteSelected = useCallback(async () => {
-    if (selectedSlugs.size === 0) return;
+    if (selectedCount === 0) return;
 
     setOpenDeleteConfirm(false);
     setIsDeletingMultiple(true);
     try {
       await bulkDeleteMutation.mutateAsync({
-        slugs: Array.from(selectedSlugs),
+        slugs: selectedSlugsArray,
       });
 
       toast.success(
-        `Deleted ${selectedSlugs.size} ${selectedSlugs.size === 1 ? 'entry' : 'entries'}`
+        `Deleted ${selectedCount} ${selectedCount === 1 ? 'entry' : 'entries'}`
       );
-      stopSelectionMode();
+      clearSelectionMode();
 
       // Clear current selection if it was deleted
       if (current && selectedSlugs.has(current)) {
@@ -307,16 +256,27 @@ export function ArchiveExplorer() {
     } finally {
       setIsDeletingMultiple(false);
     }
-  }, [selectedSlugs, current, stopSelectionMode, bulkDeleteMutation]);
+  }, [
+    selectedCount,
+    selectedSlugsArray,
+    current,
+    selectedSlugs,
+    clearSelectionMode,
+    bulkDeleteMutation,
+  ]);
 
   const handleShiftClick = useCallback(
     (slug: string) => {
-      if (!isSelectionMode) {
-        startSelectionMode();
+      if (!archives || archives.length === 0) {
+        toggleSelection(slug);
+        return;
       }
-      toggleSelection(slug);
+      const orderedSlugs = archives.map(
+        (archive: ArchiveListEntry) => archive.slug
+      );
+      toggleSelectionRange(slug, orderedSlugs);
     },
-    [isSelectionMode, startSelectionMode, toggleSelection]
+    [archives, toggleSelection, toggleSelectionRange]
   );
 
   const mutationInFlight =
@@ -508,7 +468,7 @@ export function ArchiveExplorer() {
 
           {/* Selection Mode Controls */}
           <AnimatePresence>
-            {isSelectionMode && selectedSlugs.size > 0 && (
+            {isSelectionMode && selectedCount > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -520,9 +480,10 @@ export function ArchiveExplorer() {
                   <div className="flex items-center gap-2">
                     <CheckSquare className="h-4 w-4 text-primary" />
                     <span className="text-sm font-medium">
-                      {selectedSlugs.size} of {archives?.length || 0} selected
+                      {selectedCount} of {archives?.length || 0} selected
                     </span>
                   </div>
+
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
@@ -536,7 +497,7 @@ export function ArchiveExplorer() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={stopSelectionMode}
+                      onClick={clearSelectionMode}
                       disabled={isDeletingMultiple}
                       className="flex-1 min-w-0"
                     >
@@ -550,9 +511,7 @@ export function ArchiveExplorer() {
                         <Button
                           variant="destructive"
                           size="sm"
-                          disabled={
-                            selectedSlugs.size === 0 || isDeletingMultiple
-                          }
+                          disabled={selectedCount === 0 || isDeletingMultiple}
                           className="flex-1 min-w-0"
                         >
                           {isDeletingMultiple ? (
@@ -568,10 +527,10 @@ export function ArchiveExplorer() {
                             Delete Archive Entries
                           </AlertDialogTitle>
                           <AlertDialogDescription>
-                            Are you sure you want to delete {selectedSlugs.size}{' '}
-                            archive{' '}
-                            {selectedSlugs.size === 1 ? 'entry' : 'entries'}?
-                            This action cannot be undone.
+                            Are you sure you want to delete {selectedCount}{' '}
+                            archive
+                            {selectedCount === 1 ? 'entry' : 'entries'}? This
+                            action cannot be undone.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -612,8 +571,8 @@ export function ArchiveExplorer() {
             isSelectionMode={isSelectionMode}
             selectedSlugs={selectedSlugs}
             onToggleSelection={toggleSelection}
-            onLongPressStart={handleLongPressStart}
-            onLongPressEnd={handleLongPressEnd}
+            onLongPressStart={handlePressStart}
+            onLongPressEnd={handlePressEnd}
             onShiftClick={handleShiftClick}
             archiveData={archiveData}
           />

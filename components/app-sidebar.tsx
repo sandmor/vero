@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 type AppSidebarUser = { id?: string; email?: string | null };
-import { Plus } from 'lucide-react';
+import { CheckSquare, Plus } from 'lucide-react';
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
 import { Button } from '@/components/ui/button';
@@ -16,10 +16,27 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import { useMultiSelection } from '@/hooks/use-multi-selection';
 
 export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
+
+  const {
+    isSelectionMode,
+    selectedSet,
+    selectedIds,
+    selectedCount,
+    isSelected,
+    startSelectionMode,
+    stopSelectionMode: clearSelectionMode,
+    toggleSelection,
+    toggleSelectionRange,
+    selectAll,
+    setSelection,
+    handlePressStart,
+    handlePressEnd,
+  } = useMultiSelection<string>();
 
   return (
     <Sidebar className="group-data-[side=left]:border-r-0">
@@ -37,30 +54,65 @@ export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
                 Chatbot
               </span>
             </Link>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  className="h-8 p-1 md:h-fit md:p-2"
-                  onClick={() => {
-                    setOpenMobile(false);
-                    router.push('/');
-                    router.refresh();
-                  }}
-                  type="button"
-                  variant="ghost"
-                >
-                  <Plus size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent align="end" className="hidden md:block">
-                New Chat
-              </TooltipContent>
-            </Tooltip>
+            <div className="flex items-center gap-1">
+              {!isSelectionMode && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      className="h-8 p-1 md:h-fit md:p-2"
+                      onClick={startSelectionMode}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <CheckSquare size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent align="end" className="hidden md:block">
+                    Select Chats
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    className="h-8 p-1 md:h-fit md:p-2"
+                    onClick={() => {
+                      setOpenMobile(false);
+                      router.push('/');
+                      router.refresh();
+                    }}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Plus size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent align="end" className="hidden md:block">
+                  New Chat
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarHistory user={user} />
+        <SidebarHistory
+          user={user}
+          selection={{
+            isSelectionMode,
+            selectedSet,
+            selectedIds,
+            selectedCount,
+            isSelected,
+            clearSelectionMode,
+            toggleSelection,
+            toggleSelectionRange,
+            selectAll,
+            setSelection,
+            handlePressStart,
+            handlePressEnd,
+          }}
+        />
       </SidebarContent>
       <SidebarFooter>{user && <SidebarUserNav user={user} />}</SidebarFooter>
     </Sidebar>

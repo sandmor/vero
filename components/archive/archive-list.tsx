@@ -13,7 +13,8 @@ export function ArchiveList({
   onSelect,
   activeSlug,
   isSelectionMode = false,
-  selectedSlugs = new Set(),
+  selectedSlugs = new Set<string>(),
+
   onToggleSelection,
   onLongPressStart,
   onLongPressEnd,
@@ -25,7 +26,7 @@ export function ArchiveList({
   onSelect: (slug: string) => void;
   activeSlug?: string;
   isSelectionMode?: boolean;
-  selectedSlugs?: Set<string>;
+  selectedSlugs?: ReadonlySet<string>;
   onToggleSelection?: (slug: string) => void;
   onLongPressStart?: (slug: string, onInitiated?: () => void) => void;
   onLongPressEnd?: () => void;
