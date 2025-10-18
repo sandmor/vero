@@ -37,6 +37,20 @@ const SETTING_CONFIGS: SettingConfig[] = [
       return null;
     },
   },
+  {
+    key: 'maxOutputTokens',
+    label: 'Maximum Output Tokens',
+    description: 'Maximum number of tokens to generate in a single response',
+    type: 'number',
+    defaultValue: '4096',
+    validation: (value: string) => {
+      const num = parseInt(value, 10);
+      if (isNaN(num) || num < 1 || num > 100000) {
+        return 'Must be a number between 1 and 100,000';
+      }
+      return null;
+    },
+  },
 ];
 
 export function SettingsEditor({

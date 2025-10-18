@@ -70,7 +70,7 @@ import { ZodError } from 'zod';
 import { type PostRequestBody, createPostRequestBodySchema } from './schema';
 import { prisma } from '@/lib/db/prisma';
 import { getModelCapabilities } from '@/lib/ai/model-capabilities';
-import { getMaxMessageLength } from '@/lib/settings';
+import { getSettings } from '@/lib/settings';
 import { CHAT_TOOL_IDS, normalizeChatToolIds } from '@/lib/ai/tool-ids';
 import type { ChatSettings } from '@/lib/db/schema';
 
@@ -211,6 +211,7 @@ export function getStreamContext() {
 }
 
 export async function POST(request: Request) {
+  const appSettingsPromise = getSettings();
   let requestBody: PostRequestBody;
 
   try {
@@ -220,7 +221,11 @@ export async function POST(request: Request) {
     requestBody = dynamicSchema.parse(json);
   } catch (error) {
     if (error instanceof ZodError) {
-      const friendlyMessage = await formatChatValidationError(error);
+      const appSettings = await appSettingsPromise;
+      const friendlyMessage = await formatChatValidationError(
+        error,
+        appSettings
+      );
       const err = new ChatSDKError('bad_request:api', friendlyMessage);
       return err.toResponse();
     }
@@ -258,52 +263,18 @@ export async function POST(request: Request) {
         ? Array.from(new Set(pinnedSlugs)).slice(0, 12)
         : undefined;
 
-    const session = await getAppSession();
+    const [session, chat] = await Promise.all([
+      getAppSession(),
+      getChatById({ id }),
+    ]);
 
     if (!session?.user) {
       return new ChatSDKError('unauthorized:chat').toResponse();
     }
+    let createdNewChat = false;
 
     const userType: UserType = session.user.type;
-
-    // Enforce model entitlement server-side (guards against tampered client requests)
-    const {
-      modelIds: allowedModels,
-      bucketCapacity,
-      bucketRefillAmount,
-      bucketRefillIntervalSeconds,
-    } = await getTierForUserType(userType);
-    if (!isModelIdAllowed(selectedChatModel, allowedModels)) {
-      return new ChatSDKError(
-        userType === 'guest' ? 'forbidden:model' : 'forbidden:model'
-      ).toResponse();
-    }
-
-    // Token bucket consumption: cost = 1 user message per invocation
-    try {
-      await consumeTokens({
-        userId: session.user.id,
-        cost: 1,
-        config: {
-          capacity: bucketCapacity,
-          refillAmount: bucketRefillAmount,
-          refillIntervalSeconds: bucketRefillIntervalSeconds,
-        },
-      });
-    } catch (e) {
-      if (
-        e instanceof ChatSDKError &&
-        e.type === 'rate_limit' &&
-        e.surface === 'chat'
-      ) {
-        return e.toResponse();
-      }
-      throw e;
-    }
-
-    // Fetch chat + any other needed data concurrently where possible
-    const chat = await getChatById({ id });
-    let createdNewChat = false;
+    const tierPromise = getTierForUserType(userType);
 
     if (chat) {
       if (chat.userId !== session.user.id) {
@@ -409,6 +380,40 @@ export async function POST(request: Request) {
       }
     }
 
+    const {
+      modelIds: allowedModels,
+      bucketCapacity,
+      bucketRefillAmount,
+      bucketRefillIntervalSeconds,
+    } = await tierPromise;
+    if (!isModelIdAllowed(selectedChatModel, allowedModels)) {
+      return new ChatSDKError(
+        userType === 'guest' ? 'forbidden:model' : 'forbidden:model'
+      ).toResponse();
+    }
+
+    // Token bucket consumption: cost = 1 user message per invocation
+    try {
+      await consumeTokens({
+        userId: session.user.id,
+        cost: 1,
+        config: {
+          capacity: bucketCapacity,
+          refillAmount: bucketRefillAmount,
+          refillIntervalSeconds: bucketRefillIntervalSeconds,
+        },
+      });
+    } catch (e) {
+      if (
+        e instanceof ChatSDKError &&
+        e.type === 'rate_limit' &&
+        e.surface === 'chat'
+      ) {
+        return e.toResponse();
+      }
+      throw e;
+    }
+
     const { longitude, latitude, city, country } = geolocation(request);
 
     const requestHints: RequestHints = {
@@ -460,12 +465,14 @@ export async function POST(request: Request) {
           pinnedForPrompt,
           settings,
           modelCapabilities,
+          appSettings,
         ] = await Promise.all([
           messagesPromise,
           modelPromise,
           pinnedEntriesPromise,
           settingsPromise,
           modelCapabilitiesPromise,
+          appSettingsPromise,
         ]);
 
         const dbUiMessages = convertToUIMessages(messagesFromDb);
@@ -708,6 +715,7 @@ export async function POST(request: Request) {
           'Merged Model Messages:',
           JSON.stringify(mergedModelMessages, null, 2)
         );
+        const { maxOutputTokens } = appSettings;
         const result = streamText({
           model,
           system: composedSystemPrompt,
@@ -716,6 +724,7 @@ export async function POST(request: Request) {
           experimental_activeTools: allowedToolIds,
           experimental_transform: smoothStream({ chunking: 'word' }),
           tools: activeTools,
+          maxOutputTokens,
           ...(Object.keys(providerOptions).length > 0 && { providerOptions }),
           experimental_telemetry: {
             isEnabled: isProductionEnvironment,
@@ -924,7 +933,10 @@ async function resolvePinnedPromptEntries({
   }
 }
 
-async function formatChatValidationError(error: ZodError): Promise<string> {
+async function formatChatValidationError(
+  error: ZodError,
+  appSettings: Awaited<ReturnType<typeof getSettings>>
+): Promise<string> {
   const issue = error.issues[0];
   if (!issue) {
     return 'The chat request is missing required fields. Please try again.';
@@ -937,7 +949,7 @@ async function formatChatValidationError(error: ZodError): Promise<string> {
     typeof issue.maximum === 'number' &&
     issue.path.includes('text')
   ) {
-    const maxLength = await getMaxMessageLength();
+    const { maxMessageLength: maxLength } = appSettings;
     if (issue.maximum === maxLength) {
       return `Your message is too long. Please shorten it to ${maxLength.toLocaleString()} characters or fewer.`;
     }

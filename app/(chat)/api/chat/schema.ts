@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getMaxMessageLength } from '@/lib/settings';
+import { getSettings } from '@/lib/settings';
 
 const filePartSchema = z.object({
   type: z.enum(['file']),
@@ -9,7 +9,7 @@ const filePartSchema = z.object({
 });
 
 export async function createPostRequestBodySchema() {
-  const maxLength = await getMaxMessageLength();
+  const { maxMessageLength: maxLength } = await getSettings();
   const textPartSchema = z.object({
     type: z.enum(['text']),
     text: z.string().min(1).max(maxLength),
