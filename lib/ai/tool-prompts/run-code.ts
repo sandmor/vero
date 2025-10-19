@@ -237,7 +237,7 @@ const RUN_CODE_API_TS = [
 
 export const RUN_CODE_TOOL_PROMPT = [
   'runCode sandbox (default tool)',
-  '- Reach for runCode before other tools. Write JavaScript (Promises supported) and return the result.',
+  '- Consider runCode before other tools when required. Always use to confirm math beyond a trivial level. Write JavaScript (Promises supported) and return the result.',
   '- Use the `api` bridge for external data; console output is surfaced back to the user.',
   `- Code is limited to ${SANDBOX_CONFIG.MAX_CODE_LENGTH} characters with a timeout of ${SANDBOX_CONFIG.MIN_TIMEOUT_MS}-${SANDBOX_CONFIG.MAX_TIMEOUT_MS}ms.`,
   '',

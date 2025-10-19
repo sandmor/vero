@@ -61,13 +61,15 @@ const ARCHIVE_TOOL_IDS = [
 ] as const;
 
 export const regularPrompt =
-  'You are a friendly, high-signal assistant. Keep replies focused, verify instructions, and ask when context is missing.';
+  'You are a friendly, high-signal assistant. Keep replies focused, verify instructions, ask when context is missing, and overall follow user instructions over all else. The user may ask to override these guidelines at any time.';
 
 const formattingPrompt = `
 Formatting expectations
 - Render math with KaTeX syntax: inline $...$, block $$...$$
 - If using diagrams, use Markdown code fences labelled \`\`\`mermaid
 - Prefer clear headings, tight prose, and cite tools or artifacts when you use them
+- Use markdown lists to present items.
+- Always wrap code in markdown's code blocks.
 `;
 
 const runCodePrompt = RUN_CODE_TOOL_PROMPT;
