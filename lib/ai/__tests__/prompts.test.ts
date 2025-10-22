@@ -53,7 +53,7 @@ describe('systemPrompt', () => {
 
     const withArchiveComposition = systemPrompt({
       requestHints: baseRequestHints,
-      allowedTools: ['archiveReadEntry'],
+      allowedTools: ['readArchive'],
     });
 
     expect(withoutArchiveComposition.system).not.toContain(

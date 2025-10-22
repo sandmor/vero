@@ -43,4 +43,4 @@ yarn-error.log*
 /playwright/*
 
 # Prisma
-/generated/prisma-client/
+generated/prisma-client/

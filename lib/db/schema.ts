@@ -43,3 +43,16 @@ export type ArchiveLink = Prisma.ArchiveLinkGetPayload<{}>;
 
 // Message is the current message table used by the app
 export type DBMessage = Prisma.MessageGetPayload<{}>;
+
+export interface MessageTreeNode extends DBMessage {
+  pathText: string;
+  parentPath: string | null;
+  depth: number;
+  children: MessageTreeNode[];
+}
+
+export interface MessageTreeResult {
+  tree: MessageTreeNode[];
+  nodes: MessageTreeNode[];
+  branch: MessageTreeNode[];
+}

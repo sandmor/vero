@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { prisma } from './prisma';
+import { Prisma as PrismaRuntime } from '../../generated/prisma-client';
 import type { Prisma } from '../../generated/prisma-client';
 import type { ArtifactKind } from '@/components/artifact';
 import type { VisibilityType } from '@/components/visibility-selector';
@@ -13,9 +14,158 @@ import {
   type Suggestion,
   type User,
   type Document,
+  type DBMessage,
+  type MessageTreeNode,
+  type MessageTreeResult,
 } from './schema';
 import { refreshPinnedEntriesCache } from './chat-settings';
 import { generateTitleFromChatHistory } from '../../app/(chat)/actions';
+
+const PATH_SEGMENT_PATTERN = /^_[0-9a-z]{2}$/;
+const PATH_PATTERN = /^(_[0-9a-z]{2})(\._[0-9a-z]{2})*$/;
+const ROOT_KEY = '__root__';
+
+function parsePathSegments(path: string): string[] {
+  return path.split('.').filter(Boolean);
+}
+
+function getParentPathFromText(path: string): string | null {
+  const lastDot = path.lastIndexOf('.');
+  return lastDot === -1 ? null : path.slice(0, lastDot);
+}
+
+function getLastSegment(path: string): string {
+  const lastDot = path.lastIndexOf('.');
+  return lastDot === -1 ? path : path.slice(lastDot + 1);
+}
+
+function toBase36Label(index: number): string {
+  const normalized = index < 0 ? 0 : index;
+  return `_${normalized.toString(36).padStart(2, '0')}`;
+}
+
+function parseLabelIndex(label: string): number {
+  const normalized = label.startsWith('_') ? label.slice(1) : label;
+  const parsed = parseInt(normalized, 36);
+  return Number.isNaN(parsed) ? -1 : parsed;
+}
+
+function dedupePaths(paths: Array<string | null | undefined>): string[] {
+  const unique = Array.from(
+    new Set(
+      paths.filter(
+        (value): value is string =>
+          typeof value === 'string' && value.length > 0
+      )
+    )
+  ).sort((a, b) => a.length - b.length);
+
+  const result: string[] = [];
+  for (const path of unique) {
+    const alreadyCovered = result.some(
+      (candidate) => path === candidate || path.startsWith(`${candidate}.`)
+    );
+    if (!alreadyCovered) {
+      result.push(path);
+    }
+  }
+  return result;
+}
+
+function buildMessageTree(messages: DBMessage[]): MessageTreeResult {
+  if (!messages.length) {
+    return { tree: [], nodes: [], branch: [] };
+  }
+
+  const nodesByPath = new Map<string, MessageTreeNode>();
+  const nodes: MessageTreeNode[] = [];
+
+  for (const message of messages) {
+    const pathText = message.pathText;
+    if (!pathText || !PATH_PATTERN.test(pathText)) {
+      continue;
+    }
+
+    const parentPath = getParentPathFromText(pathText);
+    const node: MessageTreeNode = {
+      ...message,
+      pathText,
+      parentPath,
+      depth: parsePathSegments(pathText).length,
+      children: [],
+    };
+
+    nodesByPath.set(pathText, node);
+    nodes.push(node);
+  }
+
+  const roots: MessageTreeNode[] = [];
+
+  for (const node of nodes) {
+    if (!node.parentPath) {
+      roots.push(node);
+      continue;
+    }
+    const parent = nodesByPath.get(node.parentPath);
+    if (parent) {
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  const sortChildren = (items: MessageTreeNode[]) => {
+    items.sort((a, b) => a.pathText.localeCompare(b.pathText));
+    for (const child of items) {
+      if (child.children.length) {
+        sortChildren(child.children);
+      }
+    }
+  };
+
+  sortChildren(roots);
+
+  let latest: MessageTreeNode | null = null;
+  for (const node of nodes) {
+    if (!latest) {
+      latest = node;
+      continue;
+    }
+    if (node.createdAt > latest.createdAt) {
+      latest = node;
+      continue;
+    }
+    if (
+      node.createdAt.getTime() === latest.createdAt.getTime() &&
+      node.pathText.localeCompare(latest.pathText) > 0
+    ) {
+      latest = node;
+    }
+  }
+
+  const branch: MessageTreeNode[] = [];
+  if (latest) {
+    let cursor: MessageTreeNode | undefined = latest;
+    while (cursor) {
+      branch.push(cursor);
+      if (!cursor.parentPath) {
+        break;
+      }
+      cursor = nodesByPath.get(cursor.parentPath);
+    }
+    branch.reverse();
+  }
+
+  return { tree: roots, nodes, branch };
+}
+
+function buildLtreeArraySql(
+  paths: string[]
+): ReturnType<typeof PrismaRuntime.sql> {
+  return PrismaRuntime.sql`ARRAY[${PrismaRuntime.join(
+    paths.map((path) => PrismaRuntime.sql`${path}::ltree`)
+  )}]::ltree[]`;
+}
 
 export async function getUser(email: string): Promise<User[]> {
   try {
@@ -524,6 +674,10 @@ type SaveMessageInput = {
   parts: unknown;
   attachments: unknown;
   createdAt: Date;
+  model?: string | null;
+  parentId?: string | null;
+  parentPath?: string | null;
+  path?: string | null;
 };
 
 export async function saveMessages({
@@ -531,26 +685,179 @@ export async function saveMessages({
 }: {
   messages: SaveMessageInput[];
 }) {
-  try {
-    // Use skipDuplicates to make this operation idempotent in cases like
-    // regeneration where the client legitimately re-sends the last user
-    // message (same id) alongside a request to regenerate an assistant
-    // response. This prevents a hard 400 due to unique constraint violation
-    // on the message id while preserving exactly-once semantics for inserts.
-    await prisma.message.createMany({
-      data: messages.map((m) => ({
-        id: m.id,
-        chatId: m.chatId,
-        role: m.role,
-        // Ensure JSON-safe payloads for Prisma
-        parts: m.parts as Prisma.InputJsonValue,
-        attachments: m.attachments as Prisma.InputJsonValue,
-        createdAt: m.createdAt,
-      })),
-      skipDuplicates: true,
-    });
+  if (!messages.length) {
     return;
-  } catch (_error) {
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const chatIds = Array.from(
+        new Set(messages.map((message) => message.chatId))
+      );
+      if (chatIds.length !== 1) {
+        throw new ChatSDKError(
+          'bad_request:database',
+          'saveMessages currently supports a single chat per call'
+        );
+      }
+
+      const [chatId] = chatIds;
+
+      const existing = await tx.message.findMany({
+        where: { chatId },
+        select: { id: true, pathText: true, createdAt: true },
+      });
+
+      const pathById = new Map<string, string>();
+      const nextIndexByParent = new Map<string, number>();
+
+      let tailPath: string | null = null;
+      let tailTimestamp = -Infinity;
+
+      for (const row of existing) {
+        const pathText = row.pathText;
+        if (!pathText || !PATH_PATTERN.test(pathText)) {
+          continue;
+        }
+
+        pathById.set(row.id, pathText);
+
+        const parentPath = getParentPathFromText(pathText);
+        const label = getLastSegment(pathText);
+        if (PATH_SEGMENT_PATTERN.test(label)) {
+          const parentKey = parentPath ?? ROOT_KEY;
+          const index = parseLabelIndex(label);
+          const nextIndex = nextIndexByParent.get(parentKey) ?? 0;
+          if (index + 1 > nextIndex) {
+            nextIndexByParent.set(parentKey, index + 1);
+          }
+        }
+
+        const createdAt =
+          row.createdAt instanceof Date
+            ? row.createdAt
+            : new Date(row.createdAt as unknown as string);
+        const timestamp = createdAt.getTime();
+        if (
+          timestamp > tailTimestamp ||
+          (timestamp === tailTimestamp &&
+            (!tailPath || pathText.localeCompare(tailPath) > 0))
+        ) {
+          tailTimestamp = timestamp;
+          tailPath = pathText;
+        }
+      }
+
+      const insertedPaths = new Map<string, string>();
+      let currentTailPath = tailPath;
+
+      const rows: {
+        id: string;
+        chatId: string;
+        role: string;
+        partsJson: string;
+        attachmentsJson: string;
+        createdAt: Date;
+        model: string | null;
+        path: string;
+      }[] = [];
+
+      for (const message of messages) {
+        let path = message.path ?? null;
+        const createdAt =
+          message.createdAt instanceof Date
+            ? message.createdAt
+            : new Date(message.createdAt);
+        const model = message.model ?? null;
+
+        if (path) {
+          if (!PATH_PATTERN.test(path)) {
+            throw new ChatSDKError(
+              'bad_request:database',
+              'Invalid message path provided'
+            );
+          }
+        } else {
+          let parentPath: string | null;
+          if (message.parentPath !== undefined) {
+            parentPath = message.parentPath;
+          } else if (message.parentId) {
+            parentPath =
+              insertedPaths.get(message.parentId) ??
+              pathById.get(message.parentId) ??
+              null;
+            if (!parentPath && !pathById.has(message.parentId)) {
+              parentPath = currentTailPath ?? null;
+            }
+          } else {
+            parentPath = currentTailPath ?? null;
+          }
+
+          const parentKey = parentPath ?? ROOT_KEY;
+          const nextIndex = nextIndexByParent.get(parentKey) ?? 0;
+          const label = toBase36Label(nextIndex);
+          nextIndexByParent.set(parentKey, nextIndex + 1);
+          path = parentPath ? `${parentPath}.${label}` : label;
+        }
+
+        const parentPathForCache = getParentPathFromText(path);
+        const labelForCache = getLastSegment(path);
+        if (PATH_SEGMENT_PATTERN.test(labelForCache)) {
+          const parentKey = parentPathForCache ?? ROOT_KEY;
+          const index = parseLabelIndex(labelForCache);
+          const nextIndex = nextIndexByParent.get(parentKey) ?? 0;
+          if (index + 1 > nextIndex) {
+            nextIndexByParent.set(parentKey, index + 1);
+          }
+        }
+
+        insertedPaths.set(message.id, path);
+        pathById.set(message.id, path);
+        currentTailPath = path;
+
+        rows.push({
+          id: message.id,
+          chatId: message.chatId,
+          role: message.role,
+          partsJson: JSON.stringify(message.parts ?? []),
+          attachmentsJson: JSON.stringify(message.attachments ?? []),
+          createdAt,
+          model,
+          path,
+        });
+      }
+
+      if (!rows.length) {
+        return;
+      }
+
+      const values = rows.map(
+        (row) =>
+          PrismaRuntime.sql`(
+            ${row.id}::uuid,
+            ${row.chatId}::uuid,
+            ${row.role},
+            ${row.partsJson}::jsonb,
+            ${row.attachmentsJson}::jsonb,
+            ${row.createdAt},
+            ${row.model},
+            ${row.path}::ltree
+          )`
+      );
+
+      await tx.$executeRaw(
+        PrismaRuntime.sql`
+          INSERT INTO "Message"
+            ("id", "chatId", "role", "parts", "attachments", "createdAt", "model", "path")
+          VALUES ${PrismaRuntime.join(values)}
+          ON CONFLICT ("id") DO NOTHING
+        `
+      );
+    });
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
     throw new ChatSDKError('bad_request:database', 'Failed to save messages');
   }
 }
@@ -562,26 +869,34 @@ export async function saveAssistantMessage({
   parts,
   attachments = [],
   model,
+  parentId,
 }: {
   id: string;
   chatId: string;
   parts: unknown;
   attachments?: unknown;
-  model?: string;
+  model?: string | null;
+  parentId?: string | null;
 }) {
   try {
-    await prisma.message.create({
-      data: {
-        id,
-        chatId,
-        role: 'assistant',
-        parts: parts as Prisma.InputJsonValue,
-        attachments: attachments as Prisma.InputJsonValue,
-        createdAt: new Date(),
-        model,
-      },
+    await saveMessages({
+      messages: [
+        {
+          id,
+          chatId,
+          role: 'assistant',
+          parts,
+          attachments: attachments ?? [],
+          createdAt: new Date(),
+          model: model ?? null,
+          parentId: parentId ?? undefined,
+        },
+      ],
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to save assistant message'
@@ -589,12 +904,17 @@ export async function saveAssistantMessage({
   }
 }
 
-export async function getMessagesByChatId({ id }: { id: string }) {
+export async function getMessagesByChatId({
+  id,
+}: {
+  id: string;
+}): Promise<MessageTreeResult> {
   try {
-    return await prisma.message.findMany({
+    const rows = await prisma.message.findMany({
       where: { chatId: id },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { pathText: 'asc' },
     });
+    return buildMessageTree(rows as DBMessage[]);
   } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
@@ -604,13 +924,14 @@ export async function getMessagesByChatId({ id }: { id: string }) {
 }
 
 // Return only active (non-superseded) message versions in chronological order
-// Flat retrieval (no version filtering)
-export async function getActiveMessagesByChatId({ id }: { id: string }) {
+export async function getActiveMessagesByChatId({
+  id,
+}: {
+  id: string;
+}): Promise<MessageTreeNode[]> {
   try {
-    return await prisma.message.findMany({
-      where: { chatId: id },
-      orderBy: { createdAt: 'asc' },
-    });
+    const { branch } = await getMessagesByChatId({ id });
+    return branch;
   } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
@@ -645,17 +966,33 @@ export async function forkChat({
     if (sourceChat.userId !== userId)
       throw new ChatSDKError('forbidden:database', 'Ownership mismatch');
 
-    const all = await prisma.message.findMany({
-      where: { chatId: sourceChatId },
-      orderBy: { createdAt: 'asc' },
-    });
-    const pivotIndex = all.findIndex((m: any) => m.id === pivotMessageId);
-    if (pivotIndex === -1)
-      throw new ChatSDKError('not_found:database', 'Pivot message not in chat');
+    const messageTree = await getMessagesByChatId({ id: sourceChatId });
+    const nodesById = new Map<string, MessageTreeNode>(
+      messageTree.nodes.map((node) => [node.id, node])
+    );
 
-    // For regeneration: pivot is assistant -> copy messages before it (exclude pivot)
-    // For edit: pivot is user/assistant -> copy messages before it (exclude old message), then insert edited message
-    const prefix = all.slice(0, pivotIndex);
+    const pivotNode = nodesById.get(pivotMessageId);
+    if (!pivotNode) {
+      throw new ChatSDKError('not_found:database', 'Pivot message not in chat');
+    }
+
+    const nodesByPath = new Map<string, MessageTreeNode>(
+      messageTree.nodes.map((node) => [node.pathText, node])
+    );
+
+    const branchToPivot: MessageTreeNode[] = [];
+    let cursor: MessageTreeNode | undefined = pivotNode;
+    while (cursor) {
+      branchToPivot.push(cursor);
+      if (!cursor.parentPath) {
+        break;
+      }
+      cursor = nodesByPath.get(cursor.parentPath);
+    }
+
+    branchToPivot.reverse();
+
+    const branchPrefix = branchToPivot.slice(0, -1);
 
     // Determine new chat title (use source title as placeholder)
     const newChatId = generateUUID();
@@ -677,45 +1014,69 @@ export async function forkChat({
       } as any,
     });
 
-    if (prefix.length) {
-      await prisma.message.createMany({
-        data: prefix.map((m: any) => ({
-          id: generateUUID(),
+    let lastReplayedId: string | undefined;
+
+    if (branchPrefix.length) {
+      const replayMessages: SaveMessageInput[] = [];
+      for (const original of branchPrefix) {
+        const newId = generateUUID();
+        replayMessages.push({
+          id: newId,
           chatId: newChatId,
-          role: m.role,
-          parts: m.parts as Prisma.InputJsonValue,
-          attachments: m.attachments as Prisma.InputJsonValue,
-          createdAt: m.createdAt,
-        })),
-      });
+          role: original.role,
+          parts: original.parts,
+          attachments: original.attachments,
+          createdAt:
+            original.createdAt instanceof Date
+              ? original.createdAt
+              : new Date(original.createdAt),
+          model:
+            typeof original.model === 'string' &&
+            original.model.trim().length > 0
+              ? original.model
+              : null,
+          parentId: replayMessages.length
+            ? replayMessages[replayMessages.length - 1].id
+            : undefined,
+        });
+      }
+      if (replayMessages.length) {
+        await saveMessages({ messages: replayMessages });
+        lastReplayedId = replayMessages[replayMessages.length - 1]?.id;
+      }
     }
 
     // For edit mode: insert the edited message immediately
     // The role depends on the pivot message role
     let insertedEditedMessageId: string | undefined;
     if (mode === 'edit') {
-      const pivotMessage = all[pivotIndex];
+      const pivotMessage = pivotNode;
       insertedEditedMessageId = generateUUID();
-      await prisma.message.create({
-        data: {
-          id: insertedEditedMessageId,
-          chatId: newChatId,
-          role: pivotMessage.role,
-          parts: [{ type: 'text', text: editedText }] as Prisma.InputJsonValue,
-          attachments: [] as Prisma.InputJsonValue,
-          createdAt: new Date(),
-        },
+      await saveMessages({
+        messages: [
+          {
+            id: insertedEditedMessageId,
+            chatId: newChatId,
+            role: pivotMessage.role,
+            parts: [{ type: 'text', text: editedText }],
+            attachments: [],
+            createdAt: new Date(),
+            parentId: lastReplayedId,
+          },
+        ],
       });
+      lastReplayedId = insertedEditedMessageId;
     }
 
     // For regenerate mode we return the previous user message text so client can re-send it
     let previousUserText: string | undefined;
     if (mode === 'regenerate') {
-      // Find the last user message in prefix (which should precede assistant pivot)
-      for (let i = prefix.length - 1; i >= 0; i--) {
-        if (prefix[i].role === 'user') {
-          const textParts = Array.isArray(prefix[i].parts)
-            ? (prefix[i].parts as any[])
+      // Find the last user message in the duplicated branch (which should precede assistant pivot)
+      for (let i = branchPrefix.length - 1; i >= 0; i--) {
+        const candidate = branchPrefix[i];
+        if (candidate.role === 'user') {
+          const textParts = Array.isArray(candidate.parts)
+            ? (candidate.parts as any[])
                 .filter((p) => p && p.type === 'text')
                 .map((p) => p.text)
                 .join('\n')
@@ -1482,17 +1843,26 @@ export async function deleteMessagesByChatIdAfterTimestamp({
   try {
     const messagesToDelete = await prisma.message.findMany({
       where: { chatId, createdAt: { gte: timestamp } },
-      select: { id: true },
+      select: { pathText: true },
     });
 
-    const messageIds = (messagesToDelete as Array<{ id: string }>).map(
-      ({ id }) => id
+    const targetPaths = dedupePaths(
+      messagesToDelete.map((message) => message.pathText)
     );
 
-    if (messageIds.length > 0) {
-      await prisma.message.deleteMany({
-        where: { chatId, id: { in: messageIds } },
-      });
+    if (targetPaths.length > 0) {
+      const ltreeArray = buildLtreeArraySql(targetPaths);
+      await prisma.$executeRaw(
+        PrismaRuntime.sql`
+          DELETE FROM "Message"
+          WHERE "chatId" = ${chatId}::uuid
+            AND EXISTS (
+              SELECT 1
+              FROM unnest(${ltreeArray}) AS target
+              WHERE "Message"."path" <@ target
+            )
+        `
+      );
     }
     return;
   } catch (_error) {
@@ -1519,6 +1889,7 @@ export async function deleteMessageById({
         select: {
           id: true,
           chatId: true,
+          pathText: true,
           chat: {
             select: {
               userId: true,
@@ -1545,7 +1916,21 @@ export async function deleteMessageById({
         );
       }
 
-      await tx.message.delete({ where: { id: messageId } });
+      const targetPath = message.pathText;
+      if (!targetPath || !PATH_PATTERN.test(targetPath)) {
+        throw new ChatSDKError(
+          'bad_request:database',
+          'Message path missing or invalid'
+        );
+      }
+
+      await tx.$executeRaw(
+        PrismaRuntime.sql`
+          DELETE FROM "Message"
+          WHERE "chatId" = ${chatId}::uuid
+            AND "path" <@ ${targetPath}::ltree
+        `
+      );
 
       const remainingMessages = await tx.message.count({
         where: { chatId },
@@ -1588,6 +1973,7 @@ export async function deleteMessagesByIds({
         select: {
           id: true,
           chatId: true,
+          pathText: true,
           chat: {
             select: {
               userId: true,
@@ -1618,9 +2004,23 @@ export async function deleteMessagesByIds({
         }
       }
 
-      const deleted = await tx.message.deleteMany({
-        where: { id: { in: messageIds } },
-      });
+      const targetPaths = dedupePaths(
+        messages.map((message) => message.pathText)
+      );
+
+      const deletedCount = targetPaths.length
+        ? await tx.$executeRaw(
+            PrismaRuntime.sql`
+              DELETE FROM "Message"
+              WHERE "chatId" = ${chatId}::uuid
+                AND EXISTS (
+                  SELECT 1
+                  FROM unnest(${buildLtreeArraySql(targetPaths)}) AS target
+                  WHERE "Message"."path" <@ target
+                )
+            `
+          )
+        : 0;
 
       const remainingMessages = await tx.message.count({
         where: { chatId },
@@ -1631,13 +2031,13 @@ export async function deleteMessagesByIds({
         await tx.chat.delete({ where: { id: chatId } });
 
         return {
-          deleted: deleted.count,
+          deleted: Number(deletedCount),
           chatDeleted: true,
         } as const;
       }
 
       return {
-        deleted: deleted.count,
+        deleted: Number(deletedCount),
         chatDeleted: false,
       } as const;
     });

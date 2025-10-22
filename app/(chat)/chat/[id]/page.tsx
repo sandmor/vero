@@ -40,11 +40,11 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     }
   }
 
-  const messagesFromDb = await getMessagesByChatId({
+  const messageTree = await getMessagesByChatId({
     id,
   });
 
-  const uiMessages = convertToUIMessages(messagesFromDb);
+  const uiMessages = convertToUIMessages(messageTree.branch);
 
   // Fetch agent if exists
   let initialAgent = null;

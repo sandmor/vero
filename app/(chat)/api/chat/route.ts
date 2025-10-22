@@ -504,6 +504,7 @@ export async function POST(request: Request) {
                   parts: message.parts,
                   attachments: [],
                   createdAt: new Date(),
+                  parentId: lastPersistedDbMessage?.id,
                 },
               ],
             }).catch((e) => {
@@ -800,12 +801,22 @@ export async function POST(request: Request) {
           (m) => m.role === 'assistant'
         );
         if (assistantMessage) {
+          const assistantIndex = messages.findLastIndex(
+            (m) => m.role === 'assistant'
+          );
+          const parentCandidate =
+            assistantIndex > 0 ? messages[assistantIndex - 1] : undefined;
+          const parentId =
+            parentCandidate && typeof parentCandidate.id === 'string'
+              ? parentCandidate.id
+              : undefined;
           await saveAssistantMessage({
             id: assistantMessage.id,
             chatId: id,
             parts: assistantMessage.parts,
             attachments: [],
             model: selectedChatModel,
+            parentId,
           });
         }
 
