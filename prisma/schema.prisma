@@ -111,9 +111,14 @@ model Message {
   createdAt   DateTime
   model       String?
 
+  path     Unsupported("ltree") @map("path")
+  pathText String?              @map("path_text") @db.Text
+
   chat Chat @relation(fields: [chatId], references: [id])
 
+  @@unique([chatId, path])
   @@index([chatId])
+  @@index([chatId, pathText])
   @@map("Message")
 }
 
