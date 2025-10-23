@@ -24,6 +24,7 @@ type MessagesProps = {
   onToggleSelectMessage?: (messageId: string) => void;
   selectedMessageIds: Set<string>;
   isSelectionMode: boolean;
+  onNavigate?: (messageId: string, direction: 'next' | 'prev') => void;
   allowedModels?: import('@/lib/ai/models').ChatModelOption[];
 };
 
@@ -38,6 +39,7 @@ export function Messages({
   selectedMessageIds,
   isSelectionMode,
   onRegenerateAssistant,
+  onNavigate,
   disableRegenerate,
   allowedModels,
 }: MessagesProps) {
@@ -95,6 +97,7 @@ export function Messages({
               isSelected={selectedMessageIds.has(message.id)}
               isSelectionMode={isSelectionMode}
               onRegenerateAssistant={onRegenerateAssistant}
+              onNavigate={(direction) => onNavigate?.(message.id, direction)}
               disableRegenerate={disableRegenerate}
               allowedModels={allowedModels}
             />

@@ -209,3 +209,25 @@ export function getTextFromMessage(message: ChatMessage): string {
     .map((part) => part.text)
     .join('');
 }
+
+export function buildBranchFromNode(node: MessageTreeNode): ChatMessage[] {
+  const branch: ChatMessage[] = [];
+  let currentNode: MessageTreeNode | undefined = node;
+
+  while (currentNode) {
+    branch.push({
+      id: currentNode.id,
+      role: currentNode.role as 'user' | 'assistant' | 'system',
+      parts: currentNode.parts as UIMessagePart<CustomUIDataTypes, ChatTools>[],
+      metadata: {
+        createdAt: formatISO(currentNode.createdAt),
+        model: currentNode.model ?? undefined,
+        siblingIndex: currentNode.siblingIndex,
+        siblingsCount: currentNode.siblingsCount,
+      },
+    });
+    // Assuming the primary branch is the last child
+    currentNode = currentNode.children?.[currentNode.children.length - 1];
+  }
+  return branch;
+}

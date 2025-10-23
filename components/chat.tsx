@@ -18,7 +18,11 @@ import {
   useUpdateModelId,
   useUpdateReasoningEffort,
 } from '@/hooks/use-chat-settings';
-import type { ChatSettings, MessageTreeResult } from '@/lib/db/schema';
+import type {
+  ChatSettings,
+  MessageTreeResult,
+  MessageTreeNode,
+} from '@/lib/db/schema';
 import { ChatSDKError } from '@/lib/errors';
 import type { Attachment, ChatMessage } from '@/lib/types';
 import type { AppUsage } from '@/lib/usage';
@@ -28,6 +32,7 @@ import {
   fetchWithErrorHandlers,
   generateUUID,
   isValidUUID,
+  buildBranchFromNode,
 } from '@/lib/utils';
 import { Artifact } from './artifact';
 import { useDataStream } from './data-stream-provider';
@@ -127,6 +132,11 @@ export function Chat({
     () =>
       initialMessageTree ? convertToUIMessages(initialMessageTree.branch) : [],
     [initialMessageTree]
+  );
+
+  // Local message tree ref for branch switching with new messages
+  const currentMessageTreeRef = useRef<MessageTreeResult | undefined>(
+    initialMessageTree
   );
 
   const [selectedAgent, setSelectedAgent] = useState<AgentPreset | null>(
@@ -799,6 +809,53 @@ export function Chat({
     [isForking, queryClient, router]
   );
 
+  const handleNavigate = useCallback(
+    (messageId: string, direction: 'next' | 'prev') => {
+      if (!currentMessageTreeRef.current) return;
+
+      const findParent = (
+        nodes: MessageTreeResult['branch'],
+        id: string
+      ): MessageTreeResult['branch'][0] | null => {
+        for (const node of nodes) {
+          if (node.children.some((child) => child.id === id)) {
+            return node;
+          }
+        }
+        return null;
+      };
+
+      const parent = findParent(
+        currentMessageTreeRef.current.branch,
+        messageId
+      );
+      if (!parent || !parent.children) return;
+
+      const currentIndex = parent.children.findIndex(
+        (child) => child.id === messageId
+      );
+      if (currentIndex === -1) return;
+
+      const newIndex =
+        direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+      if (newIndex < 0 || newIndex >= parent.children.length) return;
+
+      const newSiblingNode = parent.children[newIndex];
+      const newBranch = buildBranchFromNode(newSiblingNode);
+
+      setMessages((currentMessages) => {
+        const switchIndex = currentMessages.findIndex(
+          (msg) => msg.id === messageId
+        );
+        if (switchIndex === -1) return currentMessages;
+
+        const baseMessages = currentMessages.slice(0, switchIndex);
+        return [...baseMessages, ...newBranch];
+      });
+    },
+    [setMessages]
+  );
+
   const handleAddStagedPin = useCallback((slug: string) => {
     setStagedPinnedSlugs((prev) =>
       prev.includes(slug) ? prev : [...prev, slug]
@@ -866,6 +923,7 @@ export function Chat({
           selectedMessageIds={selectionSet}
           isSelectionMode={isSelectionMode}
           onRegenerateAssistant={handleForkRegenerate}
+          onNavigate={handleNavigate}
           selectedModelId={currentModelId}
           status={status}
           disableRegenerate={isForking}

@@ -37,6 +37,7 @@ const PurePreviewMessage = ({
   onDeleteMessage,
   onDeleteMessageCascade,
   onToggleSelectMessage,
+  onNavigate,
   isSelected,
   isSelectionMode,
   allowedModels,
@@ -53,6 +54,7 @@ const PurePreviewMessage = ({
     messageId: string
   ) => Promise<{ chatDeleted: boolean }>;
   onToggleSelectMessage?: (messageId: string) => void;
+  onNavigate?: (direction: 'next' | 'prev') => void;
   isSelected?: boolean;
   isSelectionMode?: boolean;
   allowedModels?: ChatModelOption[];
@@ -702,10 +704,29 @@ const PurePreviewMessage = ({
               siblingsBadge={
                 message.metadata?.siblingsCount &&
                 message.metadata.siblingsCount > 1 ? (
-                  <span className="rounded-full bg-muted/30 px-2 py-0.5 text-sm font-medium text-muted-foreground">
-                    {message.metadata.siblingIndex + 1} /{' '}
-                    {message.metadata.siblingsCount}
-                  </span>
+                  <div className="flex items-center rounded-full bg-muted/30 px-2 py-0.5 text-sm font-medium text-muted-foreground">
+                    <button
+                      className="mr-1"
+                      disabled={message.metadata.siblingIndex === 0}
+                      onClick={() => onNavigate?.('prev')}
+                    >
+                      ‹
+                    </button>
+                    <span>
+                      {message.metadata.siblingIndex + 1} /{' '}
+                      {message.metadata.siblingsCount}
+                    </span>
+                    <button
+                      className="ml-1"
+                      disabled={
+                        message.metadata.siblingIndex ===
+                        message.metadata.siblingsCount - 1
+                      }
+                      onClick={() => onNavigate?.('next')}
+                    >
+                      ›
+                    </button>
+                  </div>
                 ) : null
               }
             />
@@ -752,6 +773,7 @@ export const PreviewMessage = memo(
     if (prevProps.isSelectionMode !== nextProps.isSelectionMode) return false;
     if (prevProps.onToggleSelectMessage !== nextProps.onToggleSelectMessage)
       return false;
+    if (prevProps.onNavigate !== nextProps.onNavigate) return false;
     if (!equal(prevProps.allowedModels, nextProps.allowedModels)) return false;
 
     // otherwise skip rerender
