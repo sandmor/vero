@@ -28,6 +28,7 @@ export function PureMessageActions({
   onRegenerate,
   disableRegenerate,
   modelBadge,
+  siblingsBadge,
   onDelete,
   onDeleteCascade,
   onToggleSelect,
@@ -41,6 +42,7 @@ export function PureMessageActions({
   onRegenerate?: (assistantMessageId: string) => void;
   disableRegenerate?: boolean;
   modelBadge?: React.ReactNode;
+  siblingsBadge?: React.ReactNode;
   onDelete?: (messageId: string) => Promise<{ chatDeleted: boolean }>;
   onDeleteCascade?: (messageId: string) => Promise<{ chatDeleted: boolean }>;
   onToggleSelect?: (messageId: string) => void;
@@ -239,8 +241,11 @@ export function PureMessageActions({
         </div>
       </Actions>
 
-      {message.role === 'assistant' && modelBadge ? (
-        <div className="flex items-center">{modelBadge}</div>
+      {modelBadge || siblingsBadge ? (
+        <div className="flex items-center gap-2">
+          {modelBadge}
+          {siblingsBadge}
+        </div>
       ) : null}
     </div>
   );

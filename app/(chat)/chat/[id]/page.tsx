@@ -8,7 +8,6 @@ import { DEFAULT_CHAT_MODEL, isModelIdAllowed } from '@/lib/ai/models';
 import { resolveChatModelOptions } from '@/lib/ai/models.server';
 import { getTierForUserType } from '@/lib/ai/tiers';
 import { getChatById, getMessagesByChatId } from '@/lib/db/queries';
-import { convertToUIMessages } from '@/lib/utils';
 import {
   normalizeModelId,
   normalizeReasoningEffort,
@@ -43,8 +42,6 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
   const messageTree = await getMessagesByChatId({
     id,
   });
-
-  const uiMessages = convertToUIMessages(messageTree.branch);
 
   // Fetch agent if exists
   let initialAgent = null;
@@ -125,7 +122,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           id={chat.id}
           initialChatModel={initialModel}
           initialLastContext={chat.lastContext ?? undefined}
-          initialMessages={uiMessages}
+          initialMessageTree={messageTree}
           initialVisibilityType={chat.visibility}
           isReadonly={session?.user?.id !== chat.userId}
           allowedModels={allowedModels}
@@ -146,7 +143,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
         id={chat.id}
         initialChatModel={initialModel}
         initialLastContext={chat.lastContext ?? undefined}
-        initialMessages={uiMessages}
+        initialMessageTree={messageTree}
         initialVisibilityType={chat.visibility}
         isReadonly={session?.user?.id !== chat.userId}
         allowedModels={allowedModels}

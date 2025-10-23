@@ -112,7 +112,6 @@ export default async function Page({
           autoResume={false}
           id={id}
           initialChatModel={initialModel}
-          initialMessages={[]}
           initialVisibilityType="private"
           isReadonly={false}
           key={id}
@@ -132,7 +131,6 @@ export default async function Page({
       <Chat
         key={id}
         id={id}
-        initialMessages={[]}
         initialChatModel={initialModel}
         initialVisibilityType="private"
         isReadonly={false}

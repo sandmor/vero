@@ -18,11 +18,12 @@ import {
   useUpdateModelId,
   useUpdateReasoningEffort,
 } from '@/hooks/use-chat-settings';
-import type { ChatSettings } from '@/lib/db/schema';
+import type { ChatSettings, MessageTreeResult } from '@/lib/db/schema';
 import { ChatSDKError } from '@/lib/errors';
 import type { Attachment, ChatMessage } from '@/lib/types';
 import type { AppUsage } from '@/lib/usage';
 import {
+  convertToUIMessages,
   fetcher,
   fetchWithErrorHandlers,
   generateUUID,
@@ -47,7 +48,7 @@ import type { ChatModelOption } from '@/lib/ai/models';
 
 export function Chat({
   id,
-  initialMessages,
+  initialMessageTree,
   initialChatModel,
   initialVisibilityType,
   isReadonly,
@@ -59,7 +60,7 @@ export function Chat({
   initialSettings,
 }: {
   id: string;
-  initialMessages: ChatMessage[];
+  initialMessageTree?: MessageTreeResult;
   initialChatModel: string;
   initialVisibilityType: VisibilityType;
   isReadonly: boolean;
@@ -121,6 +122,13 @@ export function Chat({
 
   const [currentModelId, setCurrentModelId] = useState(initialModelId);
   const currentModelIdRef = useRef(currentModelId);
+
+  const initialMessages = useMemo<ChatMessage[]>(
+    () =>
+      initialMessageTree ? convertToUIMessages(initialMessageTree.branch) : [],
+    [initialMessageTree]
+  );
+
   const [selectedAgent, setSelectedAgent] = useState<AgentPreset | null>(
     resolvedInitialAgent
   );

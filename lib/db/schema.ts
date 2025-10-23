@@ -48,6 +48,8 @@ export interface MessageTreeNode extends DBMessage {
   pathText: string;
   parentPath: string | null;
   depth: number;
+  siblingsCount: number; // including self
+  siblingIndex: number; // zero-based index among siblings
   children: MessageTreeNode[];
 }
 

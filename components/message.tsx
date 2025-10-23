@@ -699,6 +699,15 @@ const PurePreviewMessage = ({
                   </span>
                 ) : null
               }
+              siblingsBadge={
+                message.metadata?.siblingsCount &&
+                message.metadata.siblingsCount > 1 ? (
+                  <span className="rounded-full bg-muted/30 px-2 py-0.5 text-sm font-medium text-muted-foreground">
+                    {message.metadata.siblingIndex + 1} /{' '}
+                    {message.metadata.siblingsCount}
+                  </span>
+                ) : null
+              }
             />
           )}
         </div>
@@ -728,6 +737,16 @@ export const PreviewMessage = memo(
     )
       return false;
     if (prevProps.message.metadata?.model !== nextProps.message.metadata?.model)
+      return false;
+    if (
+      prevProps.message.metadata?.siblingIndex !==
+      nextProps.message.metadata?.siblingIndex
+    )
+      return false;
+    if (
+      prevProps.message.metadata?.siblingsCount !==
+      nextProps.message.metadata?.siblingsCount
+    )
       return false;
     if (prevProps.isSelected !== nextProps.isSelected) return false;
     if (prevProps.isSelectionMode !== nextProps.isSelectionMode) return false;

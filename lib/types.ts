@@ -17,6 +17,8 @@ export type DataPart = { type: 'append-message'; message: string };
 export const messageMetadataSchema = z.object({
   createdAt: z.string(),
   model: z.string().optional(),
+  siblingIndex: z.number(),
+  siblingsCount: z.number(),
 });
 
 export type MessageMetadata = z.infer<typeof messageMetadataSchema>;

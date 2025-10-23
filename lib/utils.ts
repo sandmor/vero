@@ -7,7 +7,7 @@ import type {
 import { type ClassValue, clsx } from 'clsx';
 import { formatISO } from 'date-fns';
 import { twMerge } from 'tailwind-merge';
-import type { DBMessage, Document } from '@/lib/db/schema';
+import type { DBMessage, Document, MessageTreeNode } from '@/lib/db/schema';
 import { ChatSDKError, type ErrorCode } from './errors';
 import type { ChatMessage, ChatTools, CustomUIDataTypes } from './types';
 
@@ -189,7 +189,7 @@ export function normalizeLatexMathDelimiters(markdown: string): string {
   return parts.join('');
 }
 
-export function convertToUIMessages(messages: DBMessage[]): ChatMessage[] {
+export function convertToUIMessages(messages: MessageTreeNode[]): ChatMessage[] {
   return messages.map((message) => ({
     id: message.id,
     role: message.role as 'user' | 'assistant' | 'system',
@@ -197,6 +197,8 @@ export function convertToUIMessages(messages: DBMessage[]): ChatMessage[] {
     metadata: {
       createdAt: formatISO(message.createdAt),
       model: message.model ?? undefined,
+      siblingIndex: message.siblingIndex,
+      siblingsCount: message.siblingsCount,
     },
   }));
 }

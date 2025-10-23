@@ -80,6 +80,7 @@ function buildMessageTree(messages: DBMessage[]): MessageTreeResult {
   const nodesByPath = new Map<string, MessageTreeNode>();
   const nodes: MessageTreeNode[] = [];
 
+  // Build nodes
   for (const message of messages) {
     const pathText = message.pathText;
     if (!pathText || !PATH_PATTERN.test(pathText)) {
@@ -87,20 +88,23 @@ function buildMessageTree(messages: DBMessage[]): MessageTreeResult {
     }
 
     const parentPath = getParentPathFromText(pathText);
+    const depth = parsePathSegments(pathText).length;
     const node: MessageTreeNode = {
       ...message,
       pathText,
       parentPath,
-      depth: parsePathSegments(pathText).length,
+      depth,
       children: [],
+      siblingsCount: 0,
+      siblingIndex: 0,
     };
 
     nodesByPath.set(pathText, node);
     nodes.push(node);
   }
 
+  // Link parent/children and collect roots
   const roots: MessageTreeNode[] = [];
-
   for (const node of nodes) {
     if (!node.parentPath) {
       roots.push(node);
@@ -110,50 +114,48 @@ function buildMessageTree(messages: DBMessage[]): MessageTreeResult {
     if (parent) {
       parent.children.push(node);
     } else {
+      // Orphaned node: treat as root
       roots.push(node);
     }
   }
 
+  // Sort siblings by label order (ascending). With labels '_00'..'_zz'
+  // a simple pathText compare is sufficient since siblings only differ at the last segment
   const sortChildren = (items: MessageTreeNode[]) => {
-    items.sort((a, b) => a.pathText.localeCompare(b.pathText));
+    items.sort((a, b) =>
+      a.pathText.localeCompare(b.pathText, 'en', { sensitivity: 'case' })
+    );
     for (const child of items) {
-      if (child.children.length) {
-        sortChildren(child.children);
+      if (child.children.length) sortChildren(child.children);
+    }
+  };
+  sortChildren(roots);
+
+  // Stamp siblingsCount (including self) and siblingIndex (0-based in label order)
+  const stampSiblingStats = (topLevel: MessageTreeNode[]) => {
+    const queue: MessageTreeNode[][] = [topLevel];
+    while (queue.length) {
+      const siblings = queue.shift()!;
+      const count = siblings.length;
+      for (let i = 0; i < count; i++) {
+        const n = siblings[i];
+        n.siblingsCount = count; // includes the node itself
+        n.siblingIndex = i; // rank within siblings ordered by label
+        if (n.children.length) queue.push(n.children);
       }
     }
   };
+  stampSiblingStats(roots);
 
-  sortChildren(roots);
-
-  let latest: MessageTreeNode | null = null;
-  for (const node of nodes) {
-    if (!latest) {
-      latest = node;
-      continue;
-    }
-    if (node.createdAt > latest.createdAt) {
-      latest = node;
-      continue;
-    }
-    if (
-      node.createdAt.getTime() === latest.createdAt.getTime() &&
-      node.pathText.localeCompare(latest.pathText) > 0
-    ) {
-      latest = node;
-    }
-  }
-
+  // Build branch by label: at each level choose the sibling with the highest label
   const branch: MessageTreeNode[] = [];
-  if (latest) {
-    let cursor: MessageTreeNode | undefined = latest;
+  if (roots.length) {
+    let cursor: MessageTreeNode | undefined = roots[roots.length - 1]; // highest-label root
     while (cursor) {
       branch.push(cursor);
-      if (!cursor.parentPath) {
-        break;
-      }
-      cursor = nodesByPath.get(cursor.parentPath);
+      if (!cursor.children.length) break;
+      cursor = cursor.children[cursor.children.length - 1]; // highest-label child
     }
-    branch.reverse();
   }
 
   return { tree: roots, nodes, branch };
