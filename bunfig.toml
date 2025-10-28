@@ -1,0 +1,7 @@
+[test]
+preload = ["./test/setup.ts"]
+
+[resolve.alias]
+"server-only" = "./test/mocks/server-only.ts"
+"next/navigation" = "./test/mocks/next-navigation.ts"
+"next/navigation.js" = "./test/mocks/next-navigation.ts"

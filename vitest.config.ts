@@ -14,10 +14,22 @@ export default defineConfig({
         inline: ['server-only'],
       },
     },
+    include: ['test/**/*.test.ts', 'test/**/*.test.tsx'],
+    exclude: ['node_modules', 'lib/ai/__tests__'],
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './'),
+      'server-only': path.resolve(__dirname, './test/mocks/server-only.ts'),
+      'next/navigation': path.resolve(
+        __dirname,
+        './test/mocks/next-navigation.ts'
+      ),
+      'next/navigation.js': path.resolve(
+        __dirname,
+        './test/mocks/next-navigation.ts'
+      ),
+      'bun:test': 'vitest',
     },
   },
 });
