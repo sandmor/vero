@@ -712,10 +712,6 @@ export async function POST(request: Request) {
           });
         }
 
-        console.log(
-          'Merged Model Messages:',
-          JSON.stringify(mergedModelMessages, null, 2)
-        );
         const { maxOutputTokens } = appSettings;
         const result = streamText({
           model,
