@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { memo } from 'react';
+import equal from 'fast-deep-equal';
 import { DocumentToolResult } from '@/components/document';
 import { DocumentPreview } from '@/components/document-preview';
 import {
@@ -68,393 +70,432 @@ const toDocumentKind = (value: unknown): DocumentKind | undefined => {
   return undefined;
 };
 
-const renderWeather = (part: WeatherPart) => {
-  const { toolCallId, state, input, output } = part;
-  const isRecord =
-    output && typeof output === 'object' && !Array.isArray(output);
-  const explicitError =
-    output && typeof output === 'object' && 'error' in output
-      ? String((output as { error: unknown }).error)
-      : undefined;
-  const errorText =
-    state === 'output-error'
-      ? (part.errorText ?? explicitError)
-      : explicitError;
-  const canRenderWeather = Boolean(!errorText && isRecord);
+const WeatherRenderer = memo(
+  ({ part }: { part: WeatherPart }) => {
+    const { toolCallId, state, input, output } = part;
+    const isRecord =
+      output && typeof output === 'object' && !Array.isArray(output);
+    const explicitError =
+      output && typeof output === 'object' && 'error' in output
+        ? String((output as { error: unknown }).error)
+        : undefined;
+    const errorText =
+      state === 'output-error'
+        ? (part.errorText ?? explicitError)
+        : explicitError;
+    const canRenderWeather = Boolean(!errorText && isRecord);
 
-  return (
-    <Tool
-      className="w-full max-w-full overflow-hidden"
-      defaultOpen
-      key={toolCallId}
-    >
-      <ToolHeader state={state} type="tool-getWeather" />
-      <ToolContent>
-        {state === 'input-available' ? <ToolInput input={input ?? {}} /> : null}
-        {state === 'output-available' ? (
-          <ToolOutput
-            errorText={errorText}
-            output={
-              canRenderWeather ? <Weather weatherAtLocation={output} /> : null
-            }
-          />
-        ) : null}
-        {state === 'output-error' ? (
-          <ToolOutput
-            errorText={errorText ?? 'Unable to retrieve weather data.'}
-          />
-        ) : null}
-      </ToolContent>
-    </Tool>
-  );
-};
+    return (
+      <Tool
+        className="w-full max-w-full overflow-hidden"
+        defaultOpen
+        key={toolCallId}
+      >
+        <ToolHeader state={state} type="tool-getWeather" />
+        <ToolContent>
+          {state === 'input-available' ? (
+            <ToolInput input={input ?? {}} />
+          ) : null}
+          {state === 'output-available' ? (
+            <ToolOutput
+              errorText={errorText}
+              output={
+                canRenderWeather ? <Weather weatherAtLocation={output} /> : null
+              }
+            />
+          ) : null}
+          {state === 'output-error' ? (
+            <ToolOutput
+              errorText={errorText ?? 'Unable to retrieve weather data.'}
+            />
+          ) : null}
+        </ToolContent>
+      </Tool>
+    );
+  },
+  (prevProps, nextProps) => equal(prevProps.part, nextProps.part)
+);
 
-const renderArchive = (part: ArchivePart) => {
-  const { toolCallId, type, state, input, output, errorText } = part;
-  const outputHasError =
-    output &&
-    typeof output === 'object' &&
-    !Array.isArray(output) &&
-    'error' in output;
-  const derivedError = outputHasError
-    ? String((output as { error: unknown }).error ?? '')
-    : undefined;
+WeatherRenderer.displayName = 'WeatherRenderer';
 
-  return (
-    <Tool
-      className="w-full max-w-full overflow-hidden"
-      defaultOpen
-      key={toolCallId}
-    >
-      <ToolHeader state={state} type={type} />
-      <ToolContent>
-        <ToolInput input={input ?? {}} />
-        {state === 'output-available' || state === 'output-error' ? (
-          <ToolOutput
-            errorText={
-              state === 'output-error'
-                ? (errorText ?? derivedError)
-                : derivedError
-            }
-            output={
-              state === 'output-available' && !outputHasError && output ? (
-                <CodeBlock
-                  code={JSON.stringify(output, null, 2)}
-                  language="json"
-                />
-              ) : null
-            }
-          />
-        ) : null}
-      </ToolContent>
-    </Tool>
-  );
-};
-
-const renderDocument = (part: DocumentPart, context: ToolRendererContext) => {
-  const { toolCallId, type, output } = part;
-  const error =
-    output &&
-    typeof output === 'object' &&
-    !Array.isArray(output) &&
-    'error' in output
+const ArchiveRenderer = memo(
+  ({ part }: { part: ArchivePart }) => {
+    const { toolCallId, type, state, input, output, errorText } = part;
+    const outputHasError =
+      output &&
+      typeof output === 'object' &&
+      !Array.isArray(output) &&
+      'error' in output;
+    const derivedError = outputHasError
       ? String((output as { error: unknown }).error ?? '')
       : undefined;
 
-  if (error) {
     return (
-      <div
-        className="w-full max-w-full rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400"
+      <Tool
+        className="w-full max-w-full overflow-hidden"
+        defaultOpen
         key={toolCallId}
       >
-        Error {type === 'tool-createDocument' ? 'creating' : 'updating'}{' '}
-        document: {error}
+        <ToolHeader state={state} type={type} />
+        <ToolContent>
+          <ToolInput input={input ?? {}} />
+          {state === 'output-available' || state === 'output-error' ? (
+            <ToolOutput
+              errorText={
+                state === 'output-error'
+                  ? (errorText ?? derivedError)
+                  : derivedError
+              }
+              output={
+                state === 'output-available' && !outputHasError && output ? (
+                  <CodeBlock
+                    code={JSON.stringify(output, null, 2)}
+                    language="json"
+                  />
+                ) : null
+              }
+            />
+          ) : null}
+        </ToolContent>
+      </Tool>
+    );
+  },
+  (prevProps, nextProps) => equal(prevProps.part, nextProps.part)
+);
+
+ArchiveRenderer.displayName = 'ArchiveRenderer';
+
+const DocumentRenderer = memo(
+  ({ part, context }: { part: DocumentPart; context: ToolRendererContext }) => {
+    const { toolCallId, type, output } = part;
+    const error =
+      output &&
+      typeof output === 'object' &&
+      !Array.isArray(output) &&
+      'error' in output
+        ? String((output as { error: unknown }).error ?? '')
+        : undefined;
+
+    if (error) {
+      return (
+        <div
+          className="w-full max-w-full rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400"
+          key={toolCallId}
+        >
+          Error {type === 'tool-createDocument' ? 'creating' : 'updating'}{' '}
+          document: {error}
+        </div>
+      );
+    }
+
+    if (type === 'tool-createDocument') {
+      return (
+        <DocumentPreview
+          isReadonly={context.isReadonly}
+          key={toolCallId}
+          result={output}
+        />
+      );
+    }
+
+    const result = output && typeof output === 'object' ? output : undefined;
+    const derivedKind =
+      result && 'kind' in result
+        ? toDocumentKind((result as { kind?: unknown }).kind)
+        : undefined;
+    const derivedTitle =
+      result && 'title' in result && typeof result.title === 'string'
+        ? result.title
+        : undefined;
+    const derivedId =
+      result && 'id' in result && typeof result.id === 'string'
+        ? result.id
+        : undefined;
+
+    return (
+      <div className="relative w-full max-w-full" key={toolCallId}>
+        <DocumentPreview
+          args={
+            result
+              ? {
+                  title: derivedTitle,
+                  kind: derivedKind,
+                  isUpdate: true,
+                }
+              : undefined
+          }
+          isReadonly={context.isReadonly}
+          result={
+            result
+              ? {
+                  id: derivedId,
+                  title: derivedTitle,
+                  kind: derivedKind,
+                }
+              : undefined
+          }
+        />
       </div>
     );
-  }
+  },
+  (prevProps, nextProps) =>
+    equal(prevProps.part, nextProps.part) &&
+    prevProps.context.isReadonly === nextProps.context.isReadonly
+);
 
-  if (type === 'tool-createDocument') {
-    return (
-      <DocumentPreview
-        isReadonly={context.isReadonly}
-        key={toolCallId}
-        result={output}
-      />
+DocumentRenderer.displayName = 'DocumentRenderer';
+
+const SuggestionsRenderer = memo(
+  ({
+    part,
+    context,
+  }: {
+    part: SuggestionsPart;
+    context: ToolRendererContext;
+  }) => {
+    const { toolCallId, state, input, output, errorText } = part;
+    const outputHasError =
+      output &&
+      typeof output === 'object' &&
+      !Array.isArray(output) &&
+      'error' in output;
+    const derivedError = outputHasError
+      ? String((output as { error: unknown }).error ?? '')
+      : undefined;
+    const isRenderableSuggestion =
+      output &&
+      !outputHasError &&
+      typeof output === 'object' &&
+      'id' in output &&
+      'title' in output &&
+      'kind' in output;
+    const suggestionKind = isRenderableSuggestion
+      ? toDocumentKind((output as { kind?: unknown }).kind)
+      : undefined;
+    const canRenderSuggestion = Boolean(
+      isRenderableSuggestion && suggestionKind
     );
-  }
 
-  const result = output && typeof output === 'object' ? output : undefined;
-  const derivedKind =
-    result && 'kind' in result
-      ? toDocumentKind((result as { kind?: unknown }).kind)
-      : undefined;
-  const derivedTitle =
-    result && 'title' in result && typeof result.title === 'string'
-      ? result.title
-      : undefined;
-  const derivedId =
-    result && 'id' in result && typeof result.id === 'string'
-      ? result.id
-      : undefined;
-
-  return (
-    <div className="relative w-full max-w-full" key={toolCallId}>
-      <DocumentPreview
-        args={
-          result
-            ? {
-                title: derivedTitle,
-                kind: derivedKind,
-                isUpdate: true,
+    return (
+      <Tool
+        className="w-full max-w-full overflow-hidden"
+        defaultOpen
+        key={toolCallId}
+      >
+        <ToolHeader state={state} type="tool-requestSuggestions" />
+        <ToolContent>
+          <ToolInput input={input ?? {}} />
+          {state === 'output-available' || state === 'output-error' ? (
+            <ToolOutput
+              errorText={
+                state === 'output-error'
+                  ? (errorText ?? derivedError)
+                  : derivedError
               }
-            : undefined
-        }
-        isReadonly={context.isReadonly}
-        result={
-          result
-            ? {
-                id: derivedId,
-                title: derivedTitle,
-                kind: derivedKind,
+              output={
+                state === 'output-available' && canRenderSuggestion ? (
+                  <DocumentToolResult
+                    isReadonly={context.isReadonly}
+                    result={{
+                      id: (output as { id: string }).id,
+                      title: (output as { title: string }).title,
+                      kind: suggestionKind!,
+                    }}
+                    type="request-suggestions"
+                  />
+                ) : null
               }
-            : undefined
-        }
-      />
-    </div>
-  );
-};
+            />
+          ) : null}
+        </ToolContent>
+      </Tool>
+    );
+  },
+  (prevProps, nextProps) =>
+    equal(prevProps.part, nextProps.part) &&
+    prevProps.context.isReadonly === nextProps.context.isReadonly
+);
 
-const renderSuggestions = (
-  part: SuggestionsPart,
-  context: ToolRendererContext
-) => {
-  const { toolCallId, state, input, output, errorText } = part;
-  const outputHasError =
-    output &&
-    typeof output === 'object' &&
-    !Array.isArray(output) &&
-    'error' in output;
-  const derivedError = outputHasError
-    ? String((output as { error: unknown }).error ?? '')
-    : undefined;
-  const isRenderableSuggestion =
-    output &&
-    !outputHasError &&
-    typeof output === 'object' &&
-    'id' in output &&
-    'title' in output &&
-    'kind' in output;
-  const suggestionKind = isRenderableSuggestion
-    ? toDocumentKind((output as { kind?: unknown }).kind)
-    : undefined;
-  const canRenderSuggestion = Boolean(isRenderableSuggestion && suggestionKind);
+SuggestionsRenderer.displayName = 'SuggestionsRenderer';
 
-  return (
-    <Tool
-      className="w-full max-w-full overflow-hidden"
-      defaultOpen
-      key={toolCallId}
-    >
-      <ToolHeader state={state} type="tool-requestSuggestions" />
-      <ToolContent>
-        <ToolInput input={input ?? {}} />
-        {state === 'output-available' || state === 'output-error' ? (
-          <ToolOutput
-            errorText={
-              state === 'output-error'
-                ? (errorText ?? derivedError)
-                : derivedError
-            }
-            output={
-              state === 'output-available' && canRenderSuggestion ? (
-                <DocumentToolResult
-                  isReadonly={context.isReadonly}
-                  result={{
-                    id: (output as { id: string }).id,
-                    title: (output as { title: string }).title,
-                    kind: suggestionKind!,
-                  }}
-                  type="request-suggestions"
-                />
-              ) : null
-            }
-          />
-        ) : null}
-      </ToolContent>
-    </Tool>
-  );
-};
+const RunCodeRenderer = memo(
+  ({ part }: { part: RunCodePart }) => {
+    const { toolCallId, state, input, output, errorText } = part;
+    const execution = isExecutionResult(output) ? output : undefined;
+    const executionError =
+      execution?.status === 'error' ? execution.error : null;
+    const stdout = execution?.stdout ?? [];
+    const stderr = execution?.stderr ?? [];
+    const truncatedStdout = execution?.truncatedStdout ?? 0;
+    const truncatedStderr = execution?.truncatedStderr ?? 0;
+    const runtimeMs = execution?.runtimeMs;
+    const codeSize = execution?.codeSize;
+    const environment = execution?.environment;
 
-const renderRunCode = (part: RunCodePart) => {
-  const { toolCallId, state, input, output, errorText } = part;
-  const execution = isExecutionResult(output) ? output : undefined;
-  const executionError = execution?.status === 'error' ? execution.error : null;
-  const stdout = execution?.stdout ?? [];
-  const stderr = execution?.stderr ?? [];
-  const truncatedStdout = execution?.truncatedStdout ?? 0;
-  const truncatedStderr = execution?.truncatedStderr ?? 0;
-  const runtimeMs = execution?.runtimeMs;
-  const codeSize = execution?.codeSize;
-  const environment = execution?.environment;
+    const code =
+      input && typeof input === 'object' && 'code' in input
+        ? String((input as { code?: unknown }).code ?? '')
+        : '';
+    const timeoutMs =
+      input && typeof input === 'object' && 'timeoutMs' in input
+        ? (input as { timeoutMs?: number }).timeoutMs
+        : undefined;
 
-  const code =
-    input && typeof input === 'object' && 'code' in input
-      ? String((input as { code?: unknown }).code ?? '')
-      : '';
-  const timeoutMs =
-    input && typeof input === 'object' && 'timeoutMs' in input
-      ? (input as { timeoutMs?: number }).timeoutMs
-      : undefined;
+    const derivedError =
+      formatSerializableError(executionError ?? null) ?? errorText ?? undefined;
 
-  const derivedError =
-    formatSerializableError(executionError ?? null) ?? errorText ?? undefined;
+    return (
+      <Tool
+        className="w-full max-w-full overflow-hidden"
+        defaultOpen
+        key={toolCallId}
+      >
+        <ToolHeader state={state} type="tool-runCode" />
+        <ToolContent className="[&_pre]:max-w-full [&_pre]:break-words">
+          {(state === 'input-available' ||
+            state === 'output-available' ||
+            state === 'output-error') &&
+          code ? (
+            <div className="space-y-2 p-4">
+              <h4 className={sectionTitleClass}>Code Executed</h4>
+              <CodeBlock code={code} language="typescript" />
+              {timeoutMs ? (
+                <p className="text-muted-foreground text-xs">
+                  Timeout: {timeoutMs}ms
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
-  return (
-    <Tool
-      className="w-full max-w-full overflow-hidden"
-      defaultOpen
-      key={toolCallId}
-    >
-      <ToolHeader state={state} type="tool-runCode" />
-      <ToolContent className="[&_pre]:max-w-full [&_pre]:break-words">
-        {(state === 'input-available' ||
-          state === 'output-available' ||
-          state === 'output-error') &&
-        code ? (
-          <div className="space-y-2 p-4">
-            <h4 className={sectionTitleClass}>Code Executed</h4>
-            <CodeBlock code={code} language="typescript" />
-            {timeoutMs ? (
-              <p className="text-muted-foreground text-xs">
-                Timeout: {timeoutMs}ms
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {state === 'output-available' && execution ? (
-          <div className="space-y-4 p-4 pt-0">
-            {execution.result !== null && execution.result !== undefined ? (
-              <div className="space-y-2">
-                <h4 className={sectionTitleClass}>Result</h4>
-                <div className="rounded-md bg-green-500/10 p-3">
-                  <pre className="max-w-full overflow-x-auto font-mono text-xs">
-                    {typeof execution.result === 'object'
-                      ? JSON.stringify(execution.result, null, 2)
-                      : String(execution.result)}
-                  </pre>
-                </div>
-              </div>
-            ) : null}
-
-            {stdout.length ? (
-              <div className="space-y-2">
-                <h4 className={sectionTitleClass}>Console Output</h4>
-                <div className="rounded-md bg-muted/50 p-3">
-                  <pre className="max-w-full overflow-x-auto font-mono text-xs">
-                    {stdout.join('\n')}
-                  </pre>
-                </div>
-                {truncatedStdout > 0 ? (
-                  <p className="text-muted-foreground text-xs">
-                    +{truncatedStdout} more lines truncated
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {stderr.length ? (
-              <div className="space-y-2">
-                <h4 className={sectionTitleClass}>Error Output</h4>
-                <div className="rounded-md bg-red-500/10 p-3">
-                  <pre className="max-w-full overflow-x-auto font-mono text-xs text-red-600 dark:text-red-400">
-                    {stderr.join('\n')}
-                  </pre>
-                </div>
-                {truncatedStderr > 0 ? (
-                  <p className="text-muted-foreground text-xs">
-                    +{truncatedStderr} more lines truncated
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {environment ? (
-              <div className="space-y-2">
-                <h4 className={sectionTitleClass}>Execution Info</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {runtimeMs ? (
-                    <div className="rounded-md bg-muted/30 p-2">
-                      <span className="text-muted-foreground">Runtime:</span>{' '}
-                      <span className="font-medium">{runtimeMs}ms</span>
-                    </div>
-                  ) : null}
-                  {environment.language ? (
-                    <div className="rounded-md bg-muted/30 p-2">
-                      <span className="text-muted-foreground">Language:</span>{' '}
-                      <span className="font-medium">
-                        {environment.language}
-                      </span>
-                    </div>
-                  ) : null}
-                  {environment.timeoutMs ? (
-                    <div className="rounded-md bg-muted/30 p-2">
-                      <span className="text-muted-foreground">Timeout:</span>{' '}
-                      <span className="font-medium">
-                        {environment.timeoutMs}ms
-                      </span>
-                    </div>
-                  ) : null}
-                  {codeSize ? (
-                    <div className="rounded-md bg-muted/30 p-2">
-                      <span className="text-muted-foreground">Code Size:</span>{' '}
-                      <span className="font-medium">{codeSize} chars</span>
-                    </div>
-                  ) : null}
-                </div>
-                {environment.warnings && environment.warnings.length ? (
-                  <div className="mt-2 rounded-md bg-yellow-500/10 p-2">
-                    <p className="font-medium text-xs text-yellow-700 dark:text-yellow-400">
-                      ⚠️ Warnings:
-                    </p>
-                    <ul className="ml-4 mt-1 list-disc text-xs text-yellow-600 dark:text-yellow-300">
-                      {environment.warnings.map((warning, index) => (
-                        <li key={index}>{warning}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {executionError ? (
-              <div className="space-y-2">
-                <h4 className={sectionTitleClass}>Execution Error</h4>
-                <div className="rounded-md bg-red-500/10 p-3">
-                  <p className="font-medium text-xs text-red-600 dark:text-red-400">
-                    {executionError.name}: {executionError.message}
-                  </p>
-                  {executionError.stack ? (
-                    <pre className="mt-2 max-w-full overflow-x-auto font-mono text-xs text-red-500">
-                      {executionError.stack}
+          {state === 'output-available' && execution ? (
+            <div className="space-y-4 p-4 pt-0">
+              {execution.result !== null && execution.result !== undefined ? (
+                <div className="space-y-2">
+                  <h4 className={sectionTitleClass}>Result</h4>
+                  <div className="rounded-md bg-green-500/10 p-3">
+                    <pre className="max-w-full overflow-x-auto font-mono text-xs">
+                      {typeof execution.result === 'object'
+                        ? JSON.stringify(execution.result, null, 2)
+                        : String(execution.result)}
                     </pre>
+                  </div>
+                </div>
+              ) : null}
+
+              {stdout.length ? (
+                <div className="space-y-2">
+                  <h4 className={sectionTitleClass}>Console Output</h4>
+                  <div className="rounded-md bg-muted/50 p-3">
+                    <pre className="max-w-full overflow-x-auto font-mono text-xs">
+                      {stdout.join('\n')}
+                    </pre>
+                  </div>
+                  {truncatedStdout > 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      +{truncatedStdout} more lines truncated
+                    </p>
                   ) : null}
                 </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+              ) : null}
 
-        {state === 'output-error' ? (
-          <ToolOutput
-            className="pt-0"
-            errorText={derivedError ?? 'Code execution failed.'}
-          />
-        ) : null}
-      </ToolContent>
-    </Tool>
-  );
-};
+              {stderr.length ? (
+                <div className="space-y-2">
+                  <h4 className={sectionTitleClass}>Error Output</h4>
+                  <div className="rounded-md bg-red-500/10 p-3">
+                    <pre className="max-w-full overflow-x-auto font-mono text-xs text-red-600 dark:text-red-400">
+                      {stderr.join('\n')}
+                    </pre>
+                  </div>
+                  {truncatedStderr > 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      +{truncatedStderr} more lines truncated
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {environment ? (
+                <div className="space-y-2">
+                  <h4 className={sectionTitleClass}>Execution Info</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {runtimeMs ? (
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <span className="text-muted-foreground">Runtime:</span>{' '}
+                        <span className="font-medium">{runtimeMs}ms</span>
+                      </div>
+                    ) : null}
+                    {environment.language ? (
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <span className="text-muted-foreground">Language:</span>{' '}
+                        <span className="font-medium">
+                          {environment.language}
+                        </span>
+                      </div>
+                    ) : null}
+                    {environment.timeoutMs ? (
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <span className="text-muted-foreground">Timeout:</span>{' '}
+                        <span className="font-medium">
+                          {environment.timeoutMs}ms
+                        </span>
+                      </div>
+                    ) : null}
+                    {codeSize ? (
+                      <div className="rounded-md bg-muted/30 p-2">
+                        <span className="text-muted-foreground">
+                          Code Size:
+                        </span>{' '}
+                        <span className="font-medium">{codeSize} chars</span>
+                      </div>
+                    ) : null}
+                  </div>
+                  {environment.warnings && environment.warnings.length ? (
+                    <div className="mt-2 rounded-md bg-yellow-500/10 p-2">
+                      <p className="font-medium text-xs text-yellow-700 dark:text-yellow-400">
+                        ⚠️ Warnings:
+                      </p>
+                      <ul className="ml-4 mt-1 list-disc text-xs text-yellow-600 dark:text-yellow-300">
+                        {environment.warnings.map((warning, index) => (
+                          <li key={index}>{warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {executionError ? (
+                <div className="space-y-2">
+                  <h4 className={sectionTitleClass}>Execution Error</h4>
+                  <div className="rounded-md bg-red-500/10 p-3">
+                    <p className="font-medium text-xs text-red-600 dark:text-red-400">
+                      {executionError.name}: {executionError.message}
+                    </p>
+                    {executionError.stack ? (
+                      <pre className="mt-2 max-w-full overflow-x-auto font-mono text-xs text-red-500">
+                        {executionError.stack}
+                      </pre>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {state === 'output-error' ? (
+            <ToolOutput
+              className="pt-0"
+              errorText={derivedError ?? 'Code execution failed.'}
+            />
+          ) : null}
+        </ToolContent>
+      </Tool>
+    );
+  },
+  (prevProps, nextProps) => equal(prevProps.part, nextProps.part)
+);
+
+RunCodeRenderer.displayName = 'RunCodeRenderer';
 
 export const renderToolPart = (
   part: ToolPart,
@@ -462,18 +503,26 @@ export const renderToolPart = (
 ): ReactNode => {
   switch (part.type) {
     case 'tool-getWeather':
-      return renderWeather(part);
+      return <WeatherRenderer key={part.toolCallId} part={part} />;
     case 'tool-readArchive':
     case 'tool-writeArchive':
     case 'tool-manageChatPins':
-      return renderArchive(part);
+      return <ArchiveRenderer key={part.toolCallId} part={part} />;
     case 'tool-createDocument':
     case 'tool-updateDocument':
-      return renderDocument(part, context);
+      return (
+        <DocumentRenderer key={part.toolCallId} part={part} context={context} />
+      );
     case 'tool-requestSuggestions':
-      return renderSuggestions(part, context);
+      return (
+        <SuggestionsRenderer
+          key={part.toolCallId}
+          part={part}
+          context={context}
+        />
+      );
     case 'tool-runCode':
-      return renderRunCode(part);
+      return <RunCodeRenderer key={part.toolCallId} part={part} />;
     default:
       return null;
   }
