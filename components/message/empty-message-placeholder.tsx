@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 
 type LoadingDotsProps = {
@@ -6,7 +7,7 @@ type LoadingDotsProps = {
   className?: string;
 };
 
-export const LoadingDots = ({
+const PureLoadingDots = ({
   'aria-label': ariaLabel = 'Loading',
   className,
 }: LoadingDotsProps) => (
@@ -32,6 +33,10 @@ export const LoadingDots = ({
   </div>
 );
 
+PureLoadingDots.displayName = 'LoadingDots';
+
+export const LoadingDots = memo(PureLoadingDots);
+
 type EmptyMessagePlaceholderProps = {
   className?: string;
   isLoading: boolean;
@@ -39,7 +44,7 @@ type EmptyMessagePlaceholderProps = {
   emptyLabel?: string;
 };
 
-export const EmptyMessagePlaceholder = ({
+const PureEmptyMessagePlaceholder = ({
   className,
   isLoading,
   loadingLabel = 'Generating response',
@@ -55,4 +60,19 @@ export const EmptyMessagePlaceholder = ({
       <span>{emptyLabel}</span>
     )}
   </div>
+);
+
+PureEmptyMessagePlaceholder.displayName = 'EmptyMessagePlaceholder';
+
+export const EmptyMessagePlaceholder = memo(
+  PureEmptyMessagePlaceholder,
+  (prevProps, nextProps) => {
+    // Only re-render if props that affect rendering actually changed
+    return (
+      prevProps.className === nextProps.className &&
+      prevProps.isLoading === nextProps.isLoading &&
+      prevProps.loadingLabel === nextProps.loadingLabel &&
+      prevProps.emptyLabel === nextProps.emptyLabel
+    );
+  }
 );

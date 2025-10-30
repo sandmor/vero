@@ -379,7 +379,7 @@ export const PreviewMessage = memo(
   }
 );
 
-export const ThinkingMessage = () => {
+const PureThinkingMessage = () => {
   const role = 'assistant';
 
   return (
@@ -404,3 +404,7 @@ export const ThinkingMessage = () => {
     </motion.div>
   );
 };
+
+PureThinkingMessage.displayName = 'ThinkingMessage';
+
+export const ThinkingMessage = memo(PureThinkingMessage);
