@@ -1,13 +1,15 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../generated/prisma-client"
+  provider        = "prisma-client-js"
+  output          = "../generated/prisma-client"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
   // Prisma CLI loads .env by default. Next.js will load .env.local at runtime.
   // Ensure DATABASE_URL is available when running Prisma commands.
-  url      = env("DATABASE_URL")
+  url        = env("DATABASE_URL")
+  extensions = [ltree]
 }
 
 // Stores per-provider API keys overriding environment variables.
@@ -90,6 +92,10 @@ model Chat {
   forkedFromMessageId String? @db.Uuid
   forkDepth           Int     @default(0)
 
+  // The message at the tip of the chat's active thread
+  headMessage   Message? @relation("HeadMessage", fields: [headMessageId], references: [id])
+  headMessageId String?  @unique @db.Uuid
+
   agentId String? @db.Uuid
 
   user                 User                     @relation(fields: [userId], references: [id])
@@ -108,13 +114,14 @@ model Message {
   role        String
   parts       Json
   attachments Json
-  createdAt   DateTime
+  createdAt   DateTime @default(now())
   model       String?
 
   path     Unsupported("ltree") @map("path")
   pathText String?              @map("path_text") @db.Text
 
-  chat Chat @relation(fields: [chatId], references: [id])
+  chat       Chat  @relation(fields: [chatId], references: [id])
+  headOfChat Chat? @relation("HeadMessage")
 
   @@unique([chatId, path])
   @@index([chatId])

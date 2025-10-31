@@ -1,5 +1,5 @@
--- ltree extension
-CREATE EXTENSION IF NOT EXISTS ltree;
+-- CreateExtension
+CREATE EXTENSION IF NOT EXISTS "ltree";
 
 -- CreateTable
 CREATE TABLE "Provider" (
@@ -62,6 +62,7 @@ CREATE TABLE "Chat" (
     "parentChatId" UUID,
     "forkedFromMessageId" UUID,
     "forkDepth" INTEGER NOT NULL DEFAULT 0,
+    "headMessageId" UUID,
     "agentId" UUID,
 
     CONSTRAINT "Chat_pkey" PRIMARY KEY ("id")
@@ -74,23 +75,13 @@ CREATE TABLE "Message" (
     "role" TEXT NOT NULL,
     "parts" JSONB NOT NULL,
     "attachments" JSONB NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "model" TEXT,
     "path" ltree NOT NULL,
     "path_text" TEXT,
 
     CONSTRAINT "Message_pkey" PRIMARY KEY ("id")
 );
-
--- Columns
-ALTER TABLE "Message"
-  ADD COLUMN "path" ltree NOT NULL,
-  ADD COLUMN "path_text" text GENERATED ALWAYS AS ("path"::text) STORED;
-
--- Shape constraint
-ALTER TABLE "Message"
-  ADD CONSTRAINT "Message_path_shape_chk"
-  CHECK (("path")::text ~ '^(_[0-9a-z]{2})(\._[0-9a-z]{2})*$');
 
 -- CreateTable
 CREATE TABLE "Document" (
@@ -189,13 +180,10 @@ CREATE TABLE "Setting" (
 );
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Chat_headMessageId_key" ON "Chat"("headMessageId");
+
+-- CreateIndex
 CREATE INDEX "Chat_parentChatId_idx" ON "Chat"("parentChatId");
-
--- CreateIndex
-CREATE INDEX IF NOT EXISTS "Chat_title_gin_idx" ON "Chat" USING gin(to_tsvector('simple', title));
-
--- CreateIndex
-CREATE INDEX IF NOT EXISTS "Chat_userId_createdAt_idx" ON "Chat"("userId", "createdAt" DESC);
 
 -- CreateIndex
 CREATE INDEX "Message_chatId_idx" ON "Message"("chatId");
@@ -205,9 +193,6 @@ CREATE INDEX "Message_chatId_path_text_idx" ON "Message"("chatId", "path_text");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Message_chatId_path_key" ON "Message"("chatId", "path");
-
--- CreateIndex
-CREATE INDEX "Message_path_gist_idx" ON "Message" USING GIST ("path");
 
 -- CreateIndex
 CREATE INDEX "ArchiveEntry_userId_slug_idx" ON "ArchiveEntry"("userId", "slug");
@@ -244,6 +229,9 @@ ALTER TABLE "UserRateLimit" ADD CONSTRAINT "UserRateLimit_userId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "Agent" ADD CONSTRAINT "Agent_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Chat" ADD CONSTRAINT "Chat_headMessageId_fkey" FOREIGN KEY ("headMessageId") REFERENCES "Message"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Chat" ADD CONSTRAINT "Chat_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -283,4 +271,3 @@ ALTER TABLE "ArchiveLink" ADD CONSTRAINT "ArchiveLink_sourceId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "ArchiveLink" ADD CONSTRAINT "ArchiveLink_targetId_fkey" FOREIGN KEY ("targetId") REFERENCES "ArchiveEntry"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
