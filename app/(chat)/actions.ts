@@ -1,6 +1,6 @@
 'use server';
 
-import { generateText, type UIMessage } from 'ai';
+import { generateObject, type UIMessage } from 'ai';
 import { cookies } from 'next/headers';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { getLanguageModel } from '@/lib/ai/providers';
@@ -12,6 +12,7 @@ import {
   updateChatVisiblityById,
 } from '@/lib/db/queries';
 import { getAppSession } from '@/lib/auth/session';
+import z from 'zod';
 
 export async function saveChatModelAsCookie(model: string) {
   const cookieStore = await cookies();
@@ -35,8 +36,14 @@ export async function generateTitleFromChatHistory({
   messages: UIMessage[];
 }) {
   const model = await getLanguageModel(TITLE_GENERATION_MODEL);
-  const { text: title } = await generateText({
+  const { object } = await generateObject({
     model,
+    schema: z.object({
+      title: z
+        .string()
+        .max(80)
+        .describe('A short title summarizing the conversation'),
+    }),
     system: `\n
     - you will generate a short title based on the conversation content
     - ensure it is not more than 80 characters long
@@ -48,7 +55,7 @@ export async function generateTitleFromChatHistory({
     prompt: JSON.stringify(messages),
   });
 
-  return title;
+  return object.title;
 }
 
 export async function deleteTrailingMessages({ id }: { id: string }) {
