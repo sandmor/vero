@@ -26,11 +26,12 @@ export interface ChatSettings {
 
 export type Chat = Omit<
   Prisma.ChatGetPayload<{ include: { agent: true } }>,
-  'lastContext' | 'visibility' | 'settings'
+  'lastContext' | 'visibility' | 'settings' | 'headMessageId'
 > & {
   lastContext: AppUsage | null;
   visibility: VisibilityType;
   settings: ChatSettings | null;
+  headMessageId?: string | null;
 };
 export type Agent = Prisma.AgentGetPayload<{}>;
 export type Document = Omit<Prisma.DocumentGetPayload<{}>, 'kind'> & {

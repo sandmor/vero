@@ -72,7 +72,10 @@ function dedupePaths(paths: Array<string | null | undefined>): string[] {
   return result;
 }
 
-function buildMessageTree(messages: DBMessage[]): MessageTreeResult {
+function buildMessageTree(
+  messages: DBMessage[],
+  headMessageId?: string | null
+): MessageTreeResult {
   if (!messages.length) {
     return { tree: [], nodes: [], branch: [] };
   }
@@ -150,12 +153,27 @@ function buildMessageTree(messages: DBMessage[]): MessageTreeResult {
   // Build branch by label: at each level choose the sibling with the highest label
   const branch: MessageTreeNode[] = [];
   if (roots.length) {
-    let cursor: MessageTreeNode | undefined = roots[roots.length - 1]; // highest-label root
+    const headMessage = messages.find((m) => m.id === headMessageId);
+    let cursor: MessageTreeNode | undefined;
+    if (headMessage) {
+      cursor = nodesByPath.get(headMessage.pathText!);
+    } else {
+      // Fallback to latest message if no headMessageId is provided or found
+      let latestMessage = messages[0];
+      for (let i = 1; i < messages.length; i++) {
+        if (messages[i].createdAt > latestMessage.createdAt) {
+          latestMessage = messages[i];
+        }
+      }
+      cursor = nodesByPath.get(latestMessage.pathText!);
+    }
+
     while (cursor) {
       branch.push(cursor);
-      if (!cursor.children.length) break;
-      cursor = cursor.children[cursor.children.length - 1]; // highest-label child
+      if (!cursor.parentPath) break;
+      cursor = nodesByPath.get(cursor.parentPath);
     }
+    branch.reverse();
   }
 
   return { tree: roots, nodes, branch };
@@ -167,6 +185,79 @@ function buildLtreeArraySql(
   return PrismaRuntime.sql`ARRAY[${PrismaRuntime.join(
     paths.map((path) => PrismaRuntime.sql`${path}::ltree`)
   )}]::ltree[]`;
+}
+
+// Reassigns the direct child subtrees of a removed node so their paths remain valid.
+async function reattachDescendantsAfterDeletion(
+  tx: Prisma.TransactionClient,
+  chatId: string,
+  targetPath: string
+) {
+  if (!targetPath || !PATH_PATTERN.test(targetPath)) {
+    return;
+  }
+
+  const parentPath = getParentPathFromText(targetPath);
+  const parentPattern = parentPath ? `${parentPath}.*{1}` : '*{1}';
+
+  const siblingRows = await tx.$queryRaw<Array<{ pathText: string | null }>>(
+    PrismaRuntime.sql`
+      SELECT "path_text" AS "pathText"
+      FROM "Message"
+      WHERE "chatId" = ${chatId}::uuid
+        AND "path_text" IS NOT NULL
+        AND "path" ~ ${parentPattern}::lquery
+    `
+  );
+
+  let nextIndex = 0;
+  for (const row of siblingRows) {
+    const pathText = row.pathText;
+    if (!pathText || pathText === targetPath || !PATH_PATTERN.test(pathText)) {
+      continue;
+    }
+    const label = getLastSegment(pathText);
+    if (!PATH_SEGMENT_PATTERN.test(label)) {
+      continue;
+    }
+    const index = parseLabelIndex(label);
+    if (index + 1 > nextIndex) {
+      nextIndex = index + 1;
+    }
+  }
+
+  const childPattern = `${targetPath}.*{1}`;
+  const childRows = await tx.$queryRaw<Array<{ pathText: string }>>(
+    PrismaRuntime.sql`
+      SELECT "path_text" AS "pathText"
+      FROM "Message"
+      WHERE "chatId" = ${chatId}::uuid
+        AND "path_text" IS NOT NULL
+        AND "path" ~ ${childPattern}::lquery
+      ORDER BY "path_text" ASC
+    `
+  );
+
+  for (const child of childRows) {
+    const childPath = child.pathText;
+    if (!childPath || !PATH_PATTERN.test(childPath)) {
+      continue;
+    }
+
+    const childDepth = parsePathSegments(childPath).length;
+    const newLabel = toBase36Label(nextIndex++);
+    const newPrefix = parentPath ? `${parentPath}.${newLabel}` : newLabel;
+
+    await tx.$executeRaw(
+      PrismaRuntime.sql`
+        UPDATE "Message"
+        SET "path" = text2ltree(${newPrefix}) || subpath("path", ${childDepth}),
+            "path_text" = ltree2text(text2ltree(${newPrefix}) || subpath("path", ${childDepth}))
+        WHERE "chatId" = ${chatId}::uuid
+          AND "path" <@ ${childPath}::ltree
+      `
+    );
+  }
 }
 
 export async function getUser(email: string): Promise<User[]> {
@@ -762,6 +853,7 @@ export async function saveMessages({
         createdAt: Date;
         model: string | null;
         path: string;
+        pathText: string;
       }[] = [];
 
       for (const message of messages) {
@@ -826,8 +918,32 @@ export async function saveMessages({
           createdAt,
           model,
           path,
+          pathText: path,
         });
       }
+
+      const finalNewHead = rows.reduce(
+        (currentHead, row) => {
+          const rowTimestamp = row.createdAt.getTime();
+          if (
+            rowTimestamp > currentHead.timestamp ||
+            (rowTimestamp === currentHead.timestamp &&
+              row.path.localeCompare(currentHead.path ?? '') > 0)
+          ) {
+            return {
+              id: row.id,
+              timestamp: rowTimestamp,
+              path: row.path,
+            };
+          }
+          return currentHead;
+        },
+        {
+          id: null as string | null,
+          timestamp: -Infinity,
+          path: null as string | null,
+        }
+      );
 
       if (!rows.length) {
         return;
@@ -843,18 +959,26 @@ export async function saveMessages({
             ${row.attachmentsJson}::jsonb,
             ${row.createdAt},
             ${row.model},
-            ${row.path}::ltree
+            ${row.path}::ltree,
+            ${row.pathText}
           )`
       );
 
       await tx.$executeRaw(
         PrismaRuntime.sql`
           INSERT INTO "Message"
-            ("id", "chatId", "role", "parts", "attachments", "createdAt", "model", "path")
+            ("id", "chatId", "role", "parts", "attachments", "createdAt", "model", "path", "path_text")
           VALUES ${PrismaRuntime.join(values)}
           ON CONFLICT ("id") DO NOTHING
         `
       );
+
+      if (finalNewHead.id) {
+        await tx.chat.update({
+          where: { id: chatId },
+          data: { headMessageId: finalNewHead.id },
+        });
+      }
     });
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -912,11 +1036,15 @@ export async function getMessagesByChatId({
   id: string;
 }): Promise<MessageTreeResult> {
   try {
+    const chat = await prisma.chat.findUnique({
+      where: { id },
+      select: { headMessageId: true },
+    });
     const rows = await prisma.message.findMany({
       where: { chatId: id },
       orderBy: { pathText: 'asc' },
     });
-    return buildMessageTree(rows as DBMessage[]);
+    return buildMessageTree(rows as DBMessage[], chat?.headMessageId);
   } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
@@ -1293,8 +1421,6 @@ export async function getMessageById({ id }: { id: string }) {
     );
   }
 }
-
-// getAssistantVariantsByMessageId removed (no longer applicable)
 
 // ===================== Archive (Memory) =====================
 import { slugify, appendSuffix, normalizeTags } from '../archive/utils';
@@ -1926,13 +2052,9 @@ export async function deleteMessageById({
         );
       }
 
-      await tx.$executeRaw(
-        PrismaRuntime.sql`
-          DELETE FROM "Message"
-          WHERE "chatId" = ${chatId}::uuid
-            AND "path" <@ ${targetPath}::ltree
-        `
-      );
+      await reattachDescendantsAfterDeletion(tx, chatId, targetPath);
+
+      await tx.message.delete({ where: { id: messageId } });
 
       const remainingMessages = await tx.message.count({
         where: { chatId },
@@ -1943,6 +2065,25 @@ export async function deleteMessageById({
         await tx.chat.delete({ where: { id: chatId } });
 
         return { messageId, chatId, chatDeleted: true } as const;
+      }
+
+      const chat = await tx.chat.findUnique({
+        where: { id: chatId },
+        select: { headMessageId: true },
+      });
+
+      if (chat?.headMessageId === messageId) {
+        const messages = await tx.message.findMany({
+          where: { chatId },
+          orderBy: { createdAt: 'desc' },
+        });
+        const newHead = messages.find(
+          (m) => m.id !== messageId && !m.pathText?.startsWith(targetPath)
+        );
+        await tx.chat.update({
+          where: { id: chatId },
+          data: { headMessageId: newHead?.id ?? null },
+        });
       }
 
       return { messageId, chatId, chatDeleted: false } as const;
@@ -1968,10 +2109,12 @@ export async function deleteMessagesByIds({
     return { deleted: 0 as const, chatDeleted: false as const } as const;
   }
 
+  const uniqueMessageIds = Array.from(new Set(messageIds));
+
   try {
     return await prisma.$transaction(async (tx) => {
       const messages = await tx.message.findMany({
-        where: { id: { in: messageIds } },
+        where: { id: { in: uniqueMessageIds } },
         select: {
           id: true,
           chatId: true,
@@ -1984,7 +2127,7 @@ export async function deleteMessagesByIds({
         },
       });
 
-      if (messages.length !== messageIds.length) {
+      if (messages.length !== uniqueMessageIds.length) {
         throw new ChatSDKError(
           'not_found:database',
           'One or more messages missing'
@@ -2006,23 +2149,52 @@ export async function deleteMessagesByIds({
         }
       }
 
-      const targetPaths = dedupePaths(
-        messages.map((message) => message.pathText)
-      );
+      const orderedMessages = messages
+        .map((message) => {
+          const pathText = message.pathText;
+          if (!pathText || !PATH_PATTERN.test(pathText)) {
+            throw new ChatSDKError(
+              'bad_request:database',
+              'Message path missing or invalid'
+            );
+          }
+          return {
+            id: message.id,
+            depth: parsePathSegments(pathText).length,
+            pathText,
+          };
+        })
+        .sort((a, b) => {
+          if (a.depth !== b.depth) return a.depth - b.depth;
+          return a.pathText.localeCompare(b.pathText, 'en', {
+            sensitivity: 'case',
+          });
+        });
 
-      const deletedCount = targetPaths.length
-        ? await tx.$executeRaw(
-            PrismaRuntime.sql`
-              DELETE FROM "Message"
-              WHERE "chatId" = ${chatId}::uuid
-                AND EXISTS (
-                  SELECT 1
-                  FROM unnest(${buildLtreeArraySql(targetPaths)}) AS target
-                  WHERE "Message"."path" <@ target
-                )
-            `
-          )
-        : 0;
+      let deletedCount = 0;
+
+      for (const entry of orderedMessages) {
+        const current = await tx.message.findUnique({
+          where: { id: entry.id },
+          select: { pathText: true },
+        });
+
+        if (!current) {
+          continue;
+        }
+
+        const currentPath = current.pathText;
+        if (!currentPath || !PATH_PATTERN.test(currentPath)) {
+          throw new ChatSDKError(
+            'bad_request:database',
+            'Message path missing or invalid'
+          );
+        }
+
+        await reattachDescendantsAfterDeletion(tx, chatId, currentPath);
+        await tx.message.delete({ where: { id: entry.id } });
+        deletedCount += 1;
+      }
 
       const remainingMessages = await tx.message.count({
         where: { chatId },
@@ -2031,17 +2203,31 @@ export async function deleteMessagesByIds({
       if (remainingMessages === 0) {
         await tx.stream.deleteMany({ where: { chatId } });
         await tx.chat.delete({ where: { id: chatId } });
-
-        return {
-          deleted: Number(deletedCount),
-          chatDeleted: true,
-        } as const;
+        return { deleted: messages.length, chatDeleted: true };
       }
 
-      return {
-        deleted: Number(deletedCount),
-        chatDeleted: false,
-      } as const;
+      const chat = await tx.chat.findUnique({
+        where: { id: chatId },
+        select: { headMessageId: true },
+      });
+
+      if (
+        chat?.headMessageId &&
+        uniqueMessageIds.includes(chat.headMessageId)
+      ) {
+        const remaining = await tx.message.findMany({
+          where: { chatId },
+          orderBy: { createdAt: 'desc' },
+        });
+        const deletedSet = new Set(uniqueMessageIds);
+        const newHead = remaining.find((m) => !deletedSet.has(m.id));
+        await tx.chat.update({
+          where: { id: chatId },
+          data: { headMessageId: newHead?.id ?? null },
+        });
+      }
+
+      return { deleted: deletedCount, chatDeleted: false };
     });
   } catch (error) {
     if (error instanceof ChatSDKError) {
