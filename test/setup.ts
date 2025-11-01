@@ -105,9 +105,14 @@ const chatActionsMock = {
   saveChatModelAsCookie: vi.fn(),
   saveReasoningEffortAsCookie: vi.fn(),
   updateChatVisibility: vi.fn(),
+  updateHeadMessage: vi.fn(),
   deleteTrailingMessages: vi.fn(),
   generateTitleFromChatHistory: vi.fn(),
   forkChatAction: vi.fn(),
+  branchMessageAction: vi.fn(),
+  getMessageTreeAction: vi
+    .fn()
+    .mockResolvedValue({ tree: [], nodes: [], branch: [] }),
 };
 
 vi.mock('@/app/(chat)/actions', () => chatActionsMock);

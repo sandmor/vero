@@ -5,7 +5,7 @@ import { useCopyToClipboard } from 'usehooks-ts';
 import type { ChatMessage } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Action, Actions } from './elements/actions';
-import { Copy, Pencil, RotateCcw, Trash2 } from 'lucide-react';
+import { Copy, GitBranchPlus, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { ChatSDKError } from '@/lib/errors';
 import {
   AlertDialog,
@@ -34,6 +34,7 @@ export function PureMessageActions({
   onToggleSelect,
   isSelected,
   isSelectionMode,
+  onFork,
 }: {
   chatId: string;
   message: ChatMessage;
@@ -48,6 +49,7 @@ export function PureMessageActions({
   onToggleSelect?: (messageId: string) => void;
   isSelected?: boolean;
   isSelectionMode?: boolean;
+  onFork?: (messageId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -229,6 +231,12 @@ export function PureMessageActions({
             </Action>
           )}
 
+          {onFork && (
+            <Action onClick={() => onFork(message.id)} tooltip="Fork">
+              <GitBranchPlus size={16} />
+            </Action>
+          )}
+
           {onRegenerate && message.role === 'assistant' && (
             <Action
               onClick={() => !disableRegenerate && onRegenerate(message.id)}
@@ -270,6 +278,9 @@ export const MessageActions = memo(
       return false;
     }
     if (prevProps.isLoading !== nextProps.isLoading) {
+      return false;
+    }
+    if (prevProps.onFork !== nextProps.onFork) {
       return false;
     }
 

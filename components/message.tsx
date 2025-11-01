@@ -14,6 +14,7 @@ import { MessageActions } from './message-actions';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
 import { PreviewAttachment } from './preview-attachment';
+import { MessageVersionPicker } from './message-version-picker';
 import {
   EmptyMessagePlaceholder,
   LoadingDots,
@@ -40,6 +41,8 @@ const PurePreviewMessage = ({
   onNavigate,
   isSelected,
   isSelectionMode,
+  onForkMessage,
+  onEditMessage,
   allowedModels,
 }: {
   chatId: string;
@@ -57,6 +60,8 @@ const PurePreviewMessage = ({
   onNavigate?: (direction: 'next' | 'prev') => void;
   isSelected?: boolean;
   isSelectionMode?: boolean;
+  onForkMessage?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, text: string) => Promise<void>;
   allowedModels?: ChatModelOption[];
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
@@ -81,6 +86,14 @@ const PurePreviewMessage = ({
   const inlineReasoningTrimmed = inlineReasoningText.trim();
   const hasInlineReasoning = inlineReasoningTrimmed.length > 0;
   const shouldShowPlaceholder = mode === 'view' && !hasVisibleContent;
+  const siblingsPicker =
+    message.metadata?.siblingsCount && message.metadata.siblingsCount > 1 ? (
+      <MessageVersionPicker
+        activeIndex={message.metadata.siblingIndex}
+        onNavigate={onNavigate}
+        total={message.metadata.siblingsCount}
+      />
+    ) : null;
 
   return (
     <motion.div
@@ -236,6 +249,12 @@ const PurePreviewMessage = ({
                           key={message.id}
                           message={message}
                           setMode={setMode}
+                          onSubmit={async (nextText) => {
+                            if (!onEditMessage) {
+                              return;
+                            }
+                            await onEditMessage(message.id, nextText);
+                          }}
                         />
                       </div>
                     </div>
@@ -299,34 +318,8 @@ const PurePreviewMessage = ({
                   </span>
                 ) : null
               }
-              siblingsBadge={
-                message.metadata?.siblingsCount &&
-                message.metadata.siblingsCount > 1 ? (
-                  <div className="flex items-center rounded-full bg-muted/30 px-2 py-0.5 text-sm font-medium text-muted-foreground">
-                    <button
-                      className="mr-1"
-                      disabled={message.metadata.siblingIndex === 0}
-                      onClick={() => onNavigate?.('prev')}
-                    >
-                      ‹
-                    </button>
-                    <span>
-                      {message.metadata.siblingIndex + 1} /{' '}
-                      {message.metadata.siblingsCount}
-                    </span>
-                    <button
-                      className="ml-1"
-                      disabled={
-                        message.metadata.siblingIndex ===
-                        message.metadata.siblingsCount - 1
-                      }
-                      onClick={() => onNavigate?.('next')}
-                    >
-                      ›
-                    </button>
-                  </div>
-                ) : null
-              }
+              siblingsBadge={siblingsPicker}
+              onFork={onForkMessage}
             />
           )}
         </div>
@@ -372,6 +365,8 @@ export const PreviewMessage = memo(
     if (prevProps.onToggleSelectMessage !== nextProps.onToggleSelectMessage)
       return false;
     if (prevProps.onNavigate !== nextProps.onNavigate) return false;
+    if (prevProps.onForkMessage !== nextProps.onForkMessage) return false;
+    if (prevProps.onEditMessage !== nextProps.onEditMessage) return false;
     if (!equal(prevProps.allowedModels, nextProps.allowedModels)) return false;
 
     // otherwise skip rerender

@@ -122,9 +122,11 @@ export function Chat({
     handleDeleteMessage,
     handleDeleteMessageCascade,
     handleDeleteSelected,
-    handleForkRegenerate,
+    handleForkMessage,
+    handleEditMessage,
+    handleRegenerateAssistant,
     handleNavigate,
-    isForking,
+    disableRegenerate,
     isBulkDeleting,
   } = useChatMessaging({
     chatId: id,
@@ -280,11 +282,13 @@ export function Chat({
         onToggleSelectMessage={!isReadonly ? toggleMessageSelection : undefined}
         selectedMessageIds={selectedMessageIdsSet}
         isSelectionMode={isSelectionMode}
-        onRegenerateAssistant={handleForkRegenerate}
+        onRegenerateAssistant={handleRegenerateAssistant}
         onNavigate={handleNavigate}
+        onForkMessage={handleForkMessage}
+        onEditMessage={handleEditMessage}
         selectedModelId={preferences.currentModelId}
         status={status}
-        disableRegenerate={isForking}
+        disableRegenerate={disableRegenerate}
         allowedModels={allowedModels}
       />
 
@@ -337,18 +341,6 @@ export function Chat({
           />
         )}
       </div>
-
-      {isForking && (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center bg-gradient-to-t from-background/80 via-background/20 to-transparent p-6">
-          <div className="flex items-center gap-2 rounded-full border bg-background/90 px-4 py-2 text-sm shadow-lg backdrop-blur-md">
-            <span className="relative inline-flex h-4 w-4">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-40" />
-              <span className="relative inline-flex h-4 w-4 rounded-full bg-primary" />
-            </span>
-            <span>Creating fork…</span>
-          </div>
-        </div>
-      )}
 
       <Artifact
         attachments={attachments}

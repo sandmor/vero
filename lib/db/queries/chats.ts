@@ -560,7 +560,7 @@ export async function forkChat({
   sourceChatId: string;
   pivotMessageId: string;
   userId: string;
-  mode: 'regenerate' | 'edit';
+  mode: 'regenerate' | 'edit' | 'clone';
   editedText?: string;
 }) {
   if (mode === 'edit' && (!editedText || !editedText.trim())) {
@@ -601,7 +601,8 @@ export async function forkChat({
 
     branchToPivot.reverse();
 
-    const branchPrefix = branchToPivot.slice(0, -1);
+    const branchPrefix =
+      mode === 'clone' ? branchToPivot : branchToPivot.slice(0, -1);
 
     const newChatId = generateUUID();
     await prisma.chat.create({

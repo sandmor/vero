@@ -5,7 +5,14 @@ import { cookies } from 'next/headers';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { getLanguageModel } from '@/lib/ai/providers';
 import { TITLE_GENERATION_MODEL } from '@/lib/ai/models';
-import { forkChat, updateChatVisiblityById } from '@/lib/db/queries';
+import {
+  forkChat,
+  getChatById,
+  getMessagesByChatId,
+  branchMessageWithEdit,
+  updateHeadMessageByChatId,
+  updateChatVisiblityById,
+} from '@/lib/db/queries';
 import { getAppSession } from '@/lib/auth/session';
 import z from 'zod';
 
@@ -63,6 +70,26 @@ export async function updateChatVisibility({
   await updateChatVisiblityById({ chatId, visibility });
 }
 
+export async function updateHeadMessage({
+  chatId,
+  messageId,
+  expectedHeadId,
+}: {
+  chatId: string;
+  messageId: string;
+  expectedHeadId?: string | null;
+}) {
+  const session = await getAppSession();
+  if (!session?.user) throw new Error('Unauthorized');
+
+  await updateHeadMessageByChatId({
+    chatId,
+    messageId,
+    userId: session.user.id,
+    expectedHeadId,
+  });
+}
+
 export async function forkChatAction({
   sourceChatId,
   pivotMessageId,
@@ -71,7 +98,7 @@ export async function forkChatAction({
 }: {
   sourceChatId: string;
   pivotMessageId: string; // id of message being regenerated (assistant) or edited (user/assistant)
-  mode: 'regenerate' | 'edit';
+  mode: 'regenerate' | 'edit' | 'clone';
   editedText?: string;
 }) {
   const session = await getAppSession();
@@ -84,4 +111,35 @@ export async function forkChatAction({
     editedText,
   });
   return result;
+}
+
+export async function branchMessageAction({
+  chatId,
+  messageId,
+  editedText,
+}: {
+  chatId: string;
+  messageId: string;
+  editedText: string;
+}) {
+  const session = await getAppSession();
+  if (!session?.user) throw new Error('Unauthorized');
+
+  return branchMessageWithEdit({
+    chatId,
+    pivotMessageId: messageId,
+    userId: session.user.id,
+    editedText,
+  });
+}
+
+export async function getMessageTreeAction({ chatId }: { chatId: string }) {
+  const session = await getAppSession();
+  if (!session?.user) throw new Error('Unauthorized');
+
+  const chat = await getChatById({ id: chatId });
+  if (!chat) throw new Error('Chat not found');
+  if (chat.userId !== session.user.id) throw new Error('Forbidden');
+
+  return getMessagesByChatId({ id: chatId });
 }

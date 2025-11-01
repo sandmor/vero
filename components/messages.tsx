@@ -25,6 +25,8 @@ type MessagesProps = {
   selectedMessageIds: Set<string>;
   isSelectionMode: boolean;
   onNavigate?: (messageId: string, direction: 'next' | 'prev') => void;
+  onForkMessage?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, text: string) => Promise<void>;
   allowedModels?: import('@/lib/ai/models').ChatModelOption[];
 };
 
@@ -40,6 +42,8 @@ export function Messages({
   isSelectionMode,
   onRegenerateAssistant,
   onNavigate,
+  onForkMessage,
+  onEditMessage,
   disableRegenerate,
   allowedModels,
 }: MessagesProps) {
@@ -98,6 +102,8 @@ export function Messages({
               isSelectionMode={isSelectionMode}
               onRegenerateAssistant={onRegenerateAssistant}
               onNavigate={(direction) => onNavigate?.(message.id, direction)}
+              onForkMessage={onForkMessage}
+              onEditMessage={onEditMessage}
               disableRegenerate={disableRegenerate}
               allowedModels={allowedModels}
             />

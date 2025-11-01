@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useState } from 'react';
 import type { ChatMessage } from '@/lib/types';
+import type { MessageTreeResult } from '@/lib/db/schema';
 import { useChatMessaging } from '@/components/chat/use-chat-messaging';
 
 const toastMock = vi.fn();
@@ -24,6 +25,46 @@ const createChatMessage = (
     model: role === 'assistant' ? 'openai:gpt-4' : undefined,
   },
 });
+
+const createTree = (messages: ChatMessage[]): MessageTreeResult => {
+  const nodes = messages.map((message, index, array) => {
+    const pathLabel = `_${index.toString(36).padStart(2, '0')}`;
+    const parentPath =
+      index === 0 ? null : `_${(index - 1).toString(36).padStart(2, '0')}`;
+
+    const createdAt = message.metadata?.createdAt ?? '2024-01-01T00:00:00.000Z';
+
+    return {
+      id: message.id,
+      chatId: 'test-chat',
+      role: message.role,
+      parts: message.parts,
+      attachments: [],
+      metadata: null,
+      createdAt: new Date(createdAt),
+      updatedAt: new Date(createdAt),
+      model: message.metadata?.model ?? null,
+      parentId: index === 0 ? null : array[index - 1].id,
+      path: null,
+      pathText: parentPath ? `${parentPath}.${pathLabel}` : pathLabel,
+      parentPath,
+      depth: index + 1,
+      siblingsCount: 1,
+      siblingIndex: 0,
+      children: [] as any[],
+    } as unknown as import('@/lib/db/schema').MessageTreeNode;
+  });
+
+  for (let i = 0; i < nodes.length - 1; i += 1) {
+    nodes[i].children.push(nodes[i + 1]);
+  }
+
+  return {
+    tree: nodes.length ? [nodes[0]] : [],
+    nodes,
+    branch: nodes,
+  } as MessageTreeResult;
+};
 
 vi.mock('@ai-sdk/react', () => ({
   useChat: vi.fn((options: any) => {
@@ -66,6 +107,31 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     invalidateQueries: invalidateQueriesMock,
   }),
+  useMutation: (options: any) => {
+    const mutate = async (
+      variables: any,
+      mutateOptions?: {
+        onError?: (error: unknown) => void;
+        onSuccess?: () => void;
+      }
+    ) => {
+      try {
+        await options.mutationFn(variables);
+        options.onSuccess?.(undefined, variables, undefined);
+        mutateOptions?.onSuccess?.();
+      } catch (error) {
+        options.onError?.(error as Error, variables, undefined);
+        mutateOptions?.onError?.(error);
+        throw error;
+      }
+    };
+
+    return {
+      mutate,
+      mutateAsync: mutate,
+      isPending: false,
+    };
+  },
 }));
 
 vi.mock('@/components/toast', () => ({
@@ -85,6 +151,7 @@ vi.mock('@/lib/utils', () => ({
   buildBranchFromNode: vi.fn(),
   fetchWithErrorHandlers: (...args: unknown[]) => fetchMock(...args),
   generateUUID: () => 'test-uuid',
+  getTextFromMessage: vi.fn(() => 'mock-text'),
 }));
 
 describe('useChatMessaging', () => {
@@ -138,7 +205,7 @@ describe('useChatMessaging', () => {
     const { result } = renderHook(() =>
       useChatMessaging({
         chatId: 'test-chat',
-        initialMessageTree: undefined,
+        initialMessageTree: createTree(initialMessages),
         initialMessages,
         visibilityType: 'private' as any,
         isReadonly: false,
@@ -176,7 +243,7 @@ describe('useChatMessaging', () => {
     const { result } = renderHook(() =>
       useChatMessaging({
         chatId: 'test-chat',
-        initialMessageTree: undefined,
+        initialMessageTree: createTree(initialMessages),
         initialMessages,
         visibilityType: 'private' as any,
         isReadonly: false,
@@ -197,5 +264,95 @@ describe('useChatMessaging', () => {
 
     expect(result.current.messages).toHaveLength(2);
     expect(selection.setSelection).toHaveBeenCalledWith(['msg-1']);
+  });
+
+  it('forks assistant messages by cloning the pivot branch', async () => {
+    const selection = createSelectionApi();
+    const initialMessages = [
+      createChatMessage('msg-1', 'user', 'Hello'),
+      createChatMessage('msg-2', 'assistant', 'Hi there'),
+    ];
+
+    const actions = await import('@/app/(chat)/actions');
+    const forkChatActionMock = actions.forkChatAction as vi.Mock;
+    forkChatActionMock.mockResolvedValue({
+      newChatId: 'new-chat-id',
+      insertedEditedMessageId: undefined,
+      previousUserText: undefined,
+    } as any);
+
+    const { result } = renderHook(() =>
+      useChatMessaging({
+        chatId: 'test-chat',
+        initialMessageTree: createTree(initialMessages),
+        initialMessages,
+        visibilityType: 'private' as any,
+        isReadonly: false,
+        preferences: createPreferences(),
+        setUsage: vi.fn(),
+        setDataStream: vi.fn(),
+        selection,
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleForkMessage('msg-2');
+    });
+
+    expect(forkChatActionMock).toHaveBeenCalledWith({
+      sourceChatId: 'test-chat',
+      pivotMessageId: 'msg-2',
+      mode: 'clone',
+      editedText: undefined,
+    });
+  });
+
+  it('branches the edited message within the same chat', async () => {
+    const selection = createSelectionApi();
+    const initialMessages = [
+      createChatMessage('msg-1', 'user', 'Hello there'),
+      createChatMessage('msg-2', 'assistant', 'Hi again'),
+    ];
+
+    const actions = await import('@/app/(chat)/actions');
+    const branchMessageActionMock = actions.branchMessageAction as vi.Mock;
+    branchMessageActionMock.mockResolvedValue({
+      newMessageId: 'msg-1b',
+      previousHeadId: 'msg-2',
+    });
+
+    const getMessageTreeActionMock = actions.getMessageTreeAction as vi.Mock;
+    getMessageTreeActionMock.mockResolvedValue(
+      createTree([createChatMessage('msg-1b', 'user', 'Updated message')])
+    );
+
+    const { result } = renderHook(() =>
+      useChatMessaging({
+        chatId: 'test-chat',
+        initialMessageTree: createTree(initialMessages),
+        initialMessages,
+        visibilityType: 'private' as any,
+        isReadonly: false,
+        preferences: createPreferences(),
+        setUsage: vi.fn(),
+        setDataStream: vi.fn(),
+        selection,
+      })
+    );
+
+    await act(async () => {
+      await result.current.handleEditMessage('msg-1', 'Updated message');
+    });
+
+    expect(branchMessageActionMock).toHaveBeenCalledWith({
+      chatId: 'test-chat',
+      messageId: 'msg-1',
+      editedText: 'Updated message',
+    });
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0]).toMatchObject({
+      id: 'msg-1b',
+      parts: [{ type: 'text', text: 'Updated message' }],
+    });
   });
 });

@@ -53,6 +53,7 @@ import {
   deleteChatById,
   getChatById,
   getActiveMessagesByChatId,
+  getMessagesByChatId,
   saveChat,
   saveMessages,
   updateChatLastContextById,
@@ -72,7 +73,7 @@ import { prisma } from '@/lib/db/prisma';
 import { getModelCapabilities } from '@/lib/ai/model-capabilities';
 import { getSettings } from '@/lib/settings';
 import { CHAT_TOOL_IDS, normalizeChatToolIds } from '@/lib/ai/tool-ids';
-import type { ChatSettings } from '@/lib/db/schema';
+import type { ChatSettings, MessageTreeNode } from '@/lib/db/schema';
 
 export const maxDuration = 300;
 
@@ -235,13 +236,14 @@ export async function POST(request: Request) {
   try {
     const {
       id,
-      message,
+      message: requestUserMessage,
       selectedChatModel,
       selectedVisibilityType,
       pinnedSlugs,
       allowedTools: rawAllowedTools,
       agentId,
       reasoningEffort,
+      regenerateMessageId,
     }: {
       id: string;
       message: ChatMessage;
@@ -251,7 +253,10 @@ export async function POST(request: Request) {
       allowedTools?: string[] | null;
       agentId?: string;
       reasoningEffort?: 'low' | 'medium' | 'high';
+      regenerateMessageId?: string;
     } = requestBody;
+
+    const isRegeneration = typeof regenerateMessageId === 'string';
 
     const allowedTools =
       rawAllowedTools === undefined || rawAllowedTools === null
@@ -284,7 +289,7 @@ export async function POST(request: Request) {
       // Fast placeholder title from user text (avoid model call latency)
       const placeholder = (() => {
         try {
-          const textParts = message.parts
+          const textParts = requestUserMessage.parts
             .filter((p: any) => p.type === 'text' && typeof p.text === 'string')
             .map((p: any) => p.text)
             .join(' ')
@@ -340,7 +345,7 @@ export async function POST(request: Request) {
       (async () => {
         try {
           const realTitle = await generateTitleFromChatHistory({
-            messages: [message],
+            messages: [requestUserMessage],
           });
           if (realTitle && realTitle !== placeholder) {
             await updateChatTitleById({ chatId: id, title: realTitle });
@@ -423,7 +428,18 @@ export async function POST(request: Request) {
       country,
     };
 
-    const messagesPromise = loadActiveMessagesOrEmpty(id);
+    let regenerationContextPromise: Promise<RegenerationContext> | null = null;
+    if (isRegeneration) {
+      regenerationContextPromise = loadRegenerationContext({
+        chatId: id,
+        targetMessageId: regenerateMessageId!,
+      });
+    }
+
+    const messagesPromise: Promise<MessageTreeNode[]> =
+      regenerationContextPromise
+        ? regenerationContextPromise.then((context) => context.branch)
+        : loadActiveMessagesOrEmpty(id);
     const pinnedEntriesPromise = resolvePinnedPromptEntries({
       chatId: id,
       userId: session.user.id,
@@ -442,6 +458,23 @@ export async function POST(request: Request) {
     const modelPromise = getLanguageModel(selectedChatModel);
     const modelCapabilitiesPromise =
       getCachedModelCapabilities(selectedChatModel)();
+
+    let regenerationParentMessageId: string | null = null;
+
+    const effectiveUserMessagePromise: Promise<ChatMessage> =
+      regenerationContextPromise
+        ? regenerationContextPromise.then((context) => {
+            const [userMessage] = convertToUIMessages([context.parent]);
+            if (!userMessage) {
+              throw new ChatSDKError(
+                'bad_request:chat',
+                'Failed to resolve user message for regeneration'
+              );
+            }
+            regenerationParentMessageId = userMessage.id;
+            return userMessage;
+          })
+        : Promise.resolve(requestUserMessage);
 
     // Regeneration replays an existing user turn; avoid duplicating it in persistence.
     let finalMergedUsage: AppUsage | undefined;
@@ -466,6 +499,7 @@ export async function POST(request: Request) {
           settings,
           modelCapabilities,
           appSettings,
+          effectiveUserMessage,
         ] = await Promise.all([
           messagesPromise,
           modelPromise,
@@ -473,6 +507,7 @@ export async function POST(request: Request) {
           settingsPromise,
           modelCapabilitiesPromise,
           appSettingsPromise,
+          effectiveUserMessagePromise,
         ]);
 
         const dbUiMessages = convertToUIMessages(messagesFromDb);
@@ -481,27 +516,30 @@ export async function POST(request: Request) {
           lastPersistedDbMessage?.parts
         );
         const comparableIncomingContent = extractComparableUserContent(
-          message.parts
+          effectiveUserMessage.parts
         );
 
         const duplicateUserTailExists =
+          !isRegeneration &&
           Boolean(chat?.forkedFromMessageId) &&
           lastPersistedDbMessage?.role === 'user' &&
-          message.role === 'user' &&
+          effectiveUserMessage.role === 'user' &&
           comparableUserContentEqual(
             comparablePersistedContent,
             comparableIncomingContent
           );
 
-        const persistUserMessagePromise = duplicateUserTailExists
+        const skipUserPersistence = duplicateUserTailExists || isRegeneration;
+
+        const persistUserMessagePromise = skipUserPersistence
           ? Promise.resolve()
           : saveMessages({
               messages: [
                 {
                   chatId: id,
-                  id: message.id,
+                  id: effectiveUserMessage.id,
                   role: 'user',
-                  parts: message.parts,
+                  parts: effectiveUserMessage.parts,
                   attachments: [],
                   createdAt: new Date(),
                   parentId: lastPersistedDbMessage?.id,
@@ -511,9 +549,9 @@ export async function POST(request: Request) {
               console.warn('Failed to persist user message (non-fatal)', e);
             });
 
-        const uiMessages = duplicateUserTailExists
+        const uiMessages = skipUserPersistence
           ? dbUiMessages
-          : [...dbUiMessages, message];
+          : [...dbUiMessages, effectiveUserMessage];
         const modelMessages = convertToModelMessages(uiMessages);
 
         const modelSupportsTools = modelCapabilities?.supportsTools ?? true; // Default to true if not found
@@ -803,9 +841,10 @@ export async function POST(request: Request) {
           const parentCandidate =
             assistantIndex > 0 ? messages[assistantIndex - 1] : undefined;
           const parentId =
-            parentCandidate && typeof parentCandidate.id === 'string'
+            regenerationParentMessageId ??
+            (parentCandidate && typeof parentCandidate.id === 'string'
               ? parentCandidate.id
-              : undefined;
+              : undefined);
           await saveAssistantMessage({
             id: assistantMessage.id,
             chatId: id,
@@ -872,6 +911,80 @@ async function loadActiveMessagesOrEmpty(chatId: string) {
     });
     return [];
   }
+}
+
+type RegenerationContext = {
+  branch: MessageTreeNode[];
+  parent: MessageTreeNode;
+  target: MessageTreeNode;
+};
+
+async function loadRegenerationContext({
+  chatId,
+  targetMessageId,
+}: {
+  chatId: string;
+  targetMessageId: string;
+}): Promise<RegenerationContext> {
+  const messageTree = await getMessagesByChatId({ id: chatId });
+  const nodesById = new Map(messageTree.nodes.map((node) => [node.id, node]));
+  const target = nodesById.get(targetMessageId);
+
+  if (!target) {
+    throw new ChatSDKError(
+      'not_found:chat',
+      'Message not found for regeneration'
+    );
+  }
+
+  if (target.role !== 'assistant') {
+    throw new ChatSDKError(
+      'bad_request:chat',
+      'Only assistant messages can be regenerated'
+    );
+  }
+
+  const parentPath = target.parentPath;
+  if (!parentPath) {
+    throw new ChatSDKError(
+      'bad_request:chat',
+      'Target message has no parent to regenerate from'
+    );
+  }
+
+  const nodesByPath = new Map(
+    messageTree.nodes.map((node) => [node.pathText, node])
+  );
+  const parent = nodesByPath.get(parentPath);
+
+  if (!parent) {
+    throw new ChatSDKError(
+      'bad_request:chat',
+      'Parent message missing for regeneration'
+    );
+  }
+
+  if (parent.role !== 'user') {
+    throw new ChatSDKError(
+      'bad_request:chat',
+      'Regeneration requires a user message parent'
+    );
+  }
+
+  const branch: MessageTreeNode[] = [];
+  let cursor: MessageTreeNode | undefined = parent;
+
+  while (cursor) {
+    branch.push(cursor);
+    if (!cursor.parentPath) {
+      break;
+    }
+    cursor = nodesByPath.get(cursor.parentPath);
+  }
+
+  branch.reverse();
+
+  return { branch, parent, target };
 }
 
 async function resolvePinnedPromptEntries({

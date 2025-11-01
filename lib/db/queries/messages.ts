@@ -1,4 +1,5 @@
 import { Prisma as PrismaRuntime } from '../../../generated/prisma-client';
+import { randomUUID } from 'crypto';
 import type { Prisma } from '../../../generated/prisma-client';
 import { prisma } from '../prisma';
 import { ChatSDKError } from '../../errors';
@@ -31,28 +32,6 @@ function parseLabelIndex(label: string): number {
   const normalized = label.startsWith('_') ? label.slice(1) : label;
   const parsed = parseInt(normalized, 36);
   return Number.isNaN(parsed) ? -1 : parsed;
-}
-
-function dedupePaths(paths: Array<string | null | undefined>): string[] {
-  const unique = Array.from(
-    new Set(
-      paths.filter(
-        (value): value is string =>
-          typeof value === 'string' && value.length > 0
-      )
-    )
-  ).sort((a, b) => a.length - b.length);
-
-  const result: string[] = [];
-  for (const path of unique) {
-    const alreadyCovered = result.some(
-      (candidate) => path === candidate || path.startsWith(`${candidate}.`)
-    );
-    if (!alreadyCovered) {
-      result.push(path);
-    }
-  }
-  return result;
 }
 
 function buildMessageTree(
@@ -463,6 +442,94 @@ export async function saveMessages({
   }
 }
 
+export async function branchMessageWithEdit({
+  chatId,
+  pivotMessageId,
+  userId,
+  editedText,
+}: {
+  chatId: string;
+  pivotMessageId: string;
+  userId: string;
+  editedText: string;
+}) {
+  const trimmed = editedText.trim();
+  if (!trimmed) {
+    throw new ChatSDKError('bad_request:database', 'Edited text required');
+  }
+
+  try {
+    const [chat, pivot] = await Promise.all([
+      prisma.chat.findUnique({
+        where: { id: chatId },
+        select: { userId: true, headMessageId: true },
+      }),
+      prisma.message.findUnique({
+        where: { id: pivotMessageId },
+        select: {
+          id: true,
+          chatId: true,
+          role: true,
+          attachments: true,
+          model: true,
+          pathText: true,
+        },
+      }),
+    ]);
+
+    if (!chat) {
+      throw new ChatSDKError('not_found:database', 'Chat not found');
+    }
+
+    if (chat.userId !== userId) {
+      throw new ChatSDKError(
+        'forbidden:database',
+        'Chat ownership mismatch when branching edited message'
+      );
+    }
+
+    if (!pivot || pivot.chatId !== chatId) {
+      throw new ChatSDKError(
+        'bad_request:database',
+        'Message does not belong to the specified chat'
+      );
+    }
+
+    const newMessageId = randomUUID();
+    const parentPath = pivot.pathText
+      ? getParentPathFromText(pivot.pathText)
+      : null;
+
+    await saveMessages({
+      messages: [
+        {
+          id: newMessageId,
+          chatId,
+          role: pivot.role,
+          parts: [{ type: 'text', text: trimmed }],
+          attachments: pivot.attachments ?? [],
+          createdAt: new Date(),
+          model: pivot.model ?? null,
+          parentPath,
+        },
+      ],
+    });
+
+    return {
+      newMessageId,
+      previousHeadId: chat.headMessageId ?? null,
+    } as const;
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
+    throw new ChatSDKError(
+      'bad_request:database',
+      'Failed to branch edited message'
+    );
+  }
+}
+
 export async function saveAssistantMessage({
   id,
   chatId,
@@ -781,14 +848,96 @@ export async function deleteMessagesByIds({
   }
 }
 
-export async function getMessageById({ id }: { id: string }) {
+export async function updateHeadMessageByChatId({
+  chatId,
+  messageId,
+  userId,
+  expectedHeadId,
+}: {
+  chatId: string;
+  messageId: string;
+  userId: string;
+  expectedHeadId?: string | null;
+}) {
   try {
-    const msg = await prisma.message.findUnique({ where: { id } });
-    return msg ? ([msg] as any) : ([] as any);
-  } catch (_error) {
+    return await prisma.$transaction(async (tx) => {
+      const chat = await tx.chat.findUnique({
+        where: { id: chatId },
+        select: { userId: true },
+      });
+
+      if (!chat) {
+        throw new ChatSDKError('not_found:database', 'Chat not found');
+      }
+
+      if (chat.userId !== userId) {
+        throw new ChatSDKError(
+          'forbidden:database',
+          'Chat ownership mismatch when updating head message'
+        );
+      }
+
+      const message = await tx.message.findUnique({
+        where: { id: messageId },
+        select: {
+          id: true,
+          chatId: true,
+          pathText: true,
+        },
+      });
+
+      if (!message) {
+        throw new ChatSDKError('not_found:database', 'Message not found');
+      }
+
+      if (message.chatId !== chatId) {
+        throw new ChatSDKError(
+          'bad_request:database',
+          'Message does not belong to the specified chat'
+        );
+      }
+
+      const pathText = message.pathText;
+
+      if (!pathText || !PATH_PATTERN.test(pathText)) {
+        throw new ChatSDKError(
+          'bad_request:database',
+          'Message path missing or invalid'
+        );
+      }
+
+      const headMatch =
+        expectedHeadId === undefined
+          ? {}
+          : expectedHeadId === null
+            ? { headMessageId: null }
+            : { headMessageId: expectedHeadId };
+
+      const updated = await tx.chat.updateMany({
+        where: {
+          id: chatId,
+          ...headMatch,
+        },
+        data: { headMessageId: messageId },
+      });
+
+      if (updated.count === 0) {
+        throw new ChatSDKError(
+          'bad_request:database',
+          'Head message update conflict'
+        );
+      }
+
+      return { headMessageId: messageId } as const;
+    });
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
+
     throw new ChatSDKError(
       'bad_request:database',
-      'Failed to get message by id'
+      'Failed to update head message'
     );
   }
 }

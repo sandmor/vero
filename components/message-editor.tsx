@@ -8,9 +8,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { forkChatAction } from '@/app/(chat)/actions';
-import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import type { ChatMessage } from '@/lib/types';
 import { getTextFromMessage } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -20,9 +17,14 @@ import { toast } from './toast';
 export type MessageEditorProps = {
   message: ChatMessage;
   setMode: Dispatch<SetStateAction<'view' | 'edit'>>;
+  onSubmit: (nextText: string) => Promise<void>;
 };
 
-export function MessageEditor({ message, setMode }: MessageEditorProps) {
+export function MessageEditor({
+  message,
+  setMode,
+  onSubmit,
+}: MessageEditorProps) {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const [draftContent, setDraftContent] = useState<string>(
@@ -47,9 +49,6 @@ export function MessageEditor({ message, setMode }: MessageEditorProps) {
     setDraftContent(event.target.value);
     adjustHeight();
   };
-
-  const router = useRouter();
-  const queryClient = useQueryClient();
   return (
     <div className="flex w-full flex-col gap-2">
       <Textarea
@@ -75,35 +74,21 @@ export function MessageEditor({ message, setMode }: MessageEditorProps) {
           data-testid="message-editor-send-button"
           disabled={isSubmitting}
           onClick={async () => {
+            const trimmed = draftContent.trim();
+            if (!trimmed) {
+              toast({
+                type: 'error',
+                description: 'Message cannot be empty.',
+              });
+              return;
+            }
+
             setIsSubmitting(true);
             setMode('view');
-            toast({ type: 'success', description: 'Forking chat…' });
             try {
-              const match = window.location.pathname.match(/\/chat\/(.+)$/);
-              if (!match) throw new Error('Cannot infer chat id for fork');
-              const currentChatId = match[1];
-              const { newChatId } = await forkChatAction({
-                sourceChatId: currentChatId,
-                pivotMessageId: message.id,
-                mode: 'edit',
-                editedText: draftContent,
-              });
-              // Invalidate chat history query so sidebar updates with new chat
-              queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
-              // Refetch again after title generation completes (async operation)
-              setTimeout(() => {
-                queryClient.invalidateQueries({
-                  queryKey: ['chat', 'history'],
-                });
-              }, 8000); // Wait 8 seconds for title generation to complete
-              // For user messages, trigger regeneration. For assistant messages, just navigate.
-              const shouldRegenerate = message.role === 'user';
-              router.push(
-                `/chat/${newChatId}${shouldRegenerate ? '?regenerate=true' : ''}`
-              );
+              await onSubmit(trimmed);
             } catch (err) {
-              console.error('Fork failed', err);
-              toast({ type: 'error', description: 'Failed to fork chat' });
+              console.error('Edit failed', err);
               setMode('edit'); // Re-enable edit mode on failure
             } finally {
               setIsSubmitting(false);
