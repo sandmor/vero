@@ -5,7 +5,6 @@ import { Fragment, memo, useState } from 'react';
 import type { ChatMessage } from '@/lib/types';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { cn, sanitizeText } from '@/lib/utils';
-import { useDataStream } from './data-stream-provider';
 import { MessageContent } from './elements/message';
 import { Response } from './elements/response';
 import { Sparkle, Cpu, UserRound } from 'lucide-react';
@@ -73,8 +72,6 @@ const PurePreviewMessage = ({
     hasVisibleContent,
   } = useProcessedMessageParts(message);
   const hasTextPart = firstTextIndex !== -1;
-
-  useDataStream();
 
   const messageBubbleClass = cn(
     'w-full max-w-full break-words rounded-2xl border border-border/60 px-5 py-4 text-left text-base leading-relaxed transition-colors',

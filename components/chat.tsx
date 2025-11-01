@@ -16,7 +16,7 @@ import type { Attachment, ChatMessage } from '@/lib/types';
 import type { AppUsage } from '@/lib/usage';
 import { cn, convertToUIMessages } from '@/lib/utils';
 import { Artifact } from './artifact';
-import { useDataStream } from './data-stream-provider';
+import { useDataStreamDispatch } from './data-stream-provider';
 import { Messages } from './messages';
 import { MultimodalInput } from './multimodal-input';
 import { toast } from './toast';
@@ -96,7 +96,7 @@ export function Chat({
     chatId: id,
     initialVisibilityType,
   });
-  const { setDataStream } = useDataStream();
+  const setDataStream = useDataStreamDispatch();
   const { setArtifact, setMetadata } = useArtifact();
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
 

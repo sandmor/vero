@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 import { useMessages } from '@/hooks/use-messages';
 import type { ChatMessage } from '@/lib/types';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
-import { useDataStream } from './data-stream-provider';
 import { Conversation, ConversationContent } from './elements/conversation';
 import { Greeting } from './greeting';
 import { PreviewMessage, ThinkingMessage } from './message';
@@ -56,8 +55,6 @@ export function Messages({
   } = useMessages({
     status,
   });
-
-  useDataStream();
 
   useEffect(() => {
     if (status === 'submitted') {
