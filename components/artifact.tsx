@@ -29,6 +29,7 @@ import { useSidebar } from './ui/sidebar';
 import { VersionFooter } from './version-footer';
 import type { VisibilityType } from './visibility-selector';
 import type { ChatModelOption } from '@/lib/ai/models';
+import type { MessageDeletionMode } from '@/lib/message-deletion';
 
 export const artifactDefinitions = [
   textArtifact,
@@ -64,7 +65,6 @@ function PureArtifact({
   sendMessage,
   messages,
   onDeleteMessage,
-  onDeleteMessageCascade,
   setMessages,
   isReadonly,
   selectedVisibilityType,
@@ -82,9 +82,9 @@ function PureArtifact({
   attachments: Attachment[];
   setAttachments: Dispatch<SetStateAction<Attachment[]>>;
   messages: ChatMessage[];
-  onDeleteMessage: (messageId: string) => Promise<{ chatDeleted: boolean }>;
-  onDeleteMessageCascade: (
-    messageId: string
+  onDeleteMessage: (
+    messageId: string,
+    mode: MessageDeletionMode
   ) => Promise<{ chatDeleted: boolean }>;
   setMessages: UseChatHelpers<ChatMessage>['setMessages'];
   sendMessage: UseChatHelpers<ChatMessage>['sendMessage'];
@@ -354,7 +354,6 @@ function PureArtifact({
                   isReadonly={isReadonly}
                   messages={messages}
                   onDeleteMessage={onDeleteMessage}
-                  onDeleteMessageCascade={onDeleteMessageCascade}
                   onToggleSelectMessage={onToggleSelectMessage}
                   selectedMessageIds={selectedMessageIds}
                   isSelectionMode={isSelectionMode}
@@ -546,9 +545,6 @@ export const Artifact = memo(PureArtifact, (prevProps, nextProps) => {
     return false;
   }
   if (prevProps.onDeleteMessage !== nextProps.onDeleteMessage) {
-    return false;
-  }
-  if (prevProps.onDeleteMessageCascade !== nextProps.onDeleteMessageCascade) {
     return false;
   }
   if (prevProps.isSelectionMode !== nextProps.isSelectionMode) {

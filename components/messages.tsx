@@ -3,6 +3,7 @@ import { ArrowDownIcon } from 'lucide-react';
 import { useEffect } from 'react';
 import { useMessages } from '@/hooks/use-messages';
 import type { ChatMessage } from '@/lib/types';
+import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { useDataStream } from './data-stream-provider';
 import { Conversation, ConversationContent } from './elements/conversation';
 import { Greeting } from './greeting';
@@ -17,9 +18,9 @@ type MessagesProps = {
   selectedModelId: string;
   onRegenerateAssistant?: (assistantMessageId: string) => void;
   disableRegenerate?: boolean;
-  onDeleteMessage: (messageId: string) => Promise<{ chatDeleted: boolean }>;
-  onDeleteMessageCascade?: (
-    messageId: string
+  onDeleteMessage: (
+    messageId: string,
+    mode: MessageDeletionMode
   ) => Promise<{ chatDeleted: boolean }>;
   onToggleSelectMessage?: (messageId: string) => void;
   selectedMessageIds: Set<string>;
@@ -36,7 +37,6 @@ export function Messages({
   messages,
   isReadonly,
   onDeleteMessage,
-  onDeleteMessageCascade,
   onToggleSelectMessage,
   selectedMessageIds,
   isSelectionMode,
@@ -96,7 +96,6 @@ export function Messages({
                 hasSentMessage && index === messages.length - 1
               }
               onDeleteMessage={onDeleteMessage}
-              onDeleteMessageCascade={onDeleteMessageCascade}
               onToggleSelectMessage={onToggleSelectMessage}
               isSelected={selectedMessageIds.has(message.id)}
               isSelectionMode={isSelectionMode}

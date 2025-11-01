@@ -152,15 +152,40 @@ vi.mock('@/lib/utils', () => ({
   fetchWithErrorHandlers: (...args: unknown[]) => fetchMock(...args),
   generateUUID: () => 'test-uuid',
   getTextFromMessage: vi.fn(() => 'mock-text'),
+  convertToUIMessages: vi.fn((nodes: any[]) =>
+    nodes.map((node) => ({
+      id: node.id,
+      role: node.role,
+      parts: node.parts,
+      metadata: {
+        createdAt:
+          node.createdAt instanceof Date
+            ? node.createdAt.toISOString()
+            : (node.createdAt ?? '2024-01-01T00:00:00.000Z'),
+        model: node.model ?? undefined,
+        siblingIndex: node.siblingIndex ?? 0,
+        siblingsCount: node.siblingsCount ?? 1,
+      },
+    }))
+  ),
 }));
 
 describe('useChatMessaging', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     fetchMock.mockReset();
     toastMock.mockReset();
     invalidateQueriesMock.mockReset();
     routerReplaceMock.mockReset();
+
+    const actions = await import('@/app/(chat)/actions');
+    const getMessageTreeActionMock = actions.getMessageTreeAction as vi.Mock;
+    getMessageTreeActionMock.mockReset();
+    getMessageTreeActionMock.mockResolvedValue({
+      tree: [],
+      nodes: [],
+      branch: [],
+    });
   });
 
   const createPreferences = () =>
@@ -202,6 +227,12 @@ describe('useChatMessaging', () => {
       createChatMessage('msg-2', 'assistant', 'Hi there'),
     ];
 
+    const actions = await import('@/app/(chat)/actions');
+    const getMessageTreeActionMock = actions.getMessageTreeAction as vi.Mock;
+    getMessageTreeActionMock.mockResolvedValue(
+      createTree([initialMessages[1]])
+    );
+
     const { result } = renderHook(() =>
       useChatMessaging({
         chatId: 'test-chat',
@@ -217,11 +248,11 @@ describe('useChatMessaging', () => {
     );
 
     await act(async () => {
-      await result.current.handleDeleteMessage('msg-1');
+      await result.current.handleDeleteMessage('msg-1', 'version');
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/chat/test-chat/messages/msg-1',
+      '/api/chat/test-chat/messages/msg-1?mode=version',
       { method: 'DELETE' }
     );
     expect(result.current.messages).toHaveLength(1);
@@ -257,7 +288,7 @@ describe('useChatMessaging', () => {
     await expect(
       (async () => {
         await act(async () => {
-          await result.current.handleDeleteMessage('msg-1');
+          await result.current.handleDeleteMessage('msg-1', 'version');
         });
       })()
     ).rejects.toThrow('boom');

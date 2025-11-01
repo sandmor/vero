@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { memo } from 'react';
 import { useMessages } from '@/hooks/use-messages';
 import type { ChatMessage } from '@/lib/types';
+import type { MessageDeletionMode } from '@/lib/message-deletion';
 import type { UIArtifact } from './artifact';
 import { PreviewMessage, ThinkingMessage } from './message';
 
@@ -12,9 +13,9 @@ type ArtifactMessagesProps = {
   messages: ChatMessage[];
   isReadonly: boolean;
   artifactStatus: UIArtifact['status'];
-  onDeleteMessage?: (messageId: string) => Promise<{ chatDeleted: boolean }>;
-  onDeleteMessageCascade?: (
-    messageId: string
+  onDeleteMessage?: (
+    messageId: string,
+    mode: MessageDeletionMode
   ) => Promise<{ chatDeleted: boolean }>;
   onToggleSelectMessage?: (messageId: string) => void;
   selectedMessageIds: Set<string>;
@@ -28,7 +29,6 @@ function PureArtifactMessages({
   messages,
   isReadonly,
   onDeleteMessage,
-  onDeleteMessageCascade,
   onToggleSelectMessage,
   selectedMessageIds,
   isSelectionMode,
@@ -60,7 +60,6 @@ function PureArtifactMessages({
             hasSentMessage && index === messages.length - 1
           }
           onDeleteMessage={onDeleteMessage}
-          onDeleteMessageCascade={onDeleteMessageCascade}
           onToggleSelectMessage={onToggleSelectMessage}
           isSelected={selectedMessageIds.has(message.id)}
           isSelectionMode={isSelectionMode}
@@ -94,9 +93,6 @@ function areEqual(
   }
 
   if (prevProps.onDeleteMessage !== nextProps.onDeleteMessage) {
-    return false;
-  }
-  if (prevProps.onDeleteMessageCascade !== nextProps.onDeleteMessageCascade) {
     return false;
   }
   if (prevProps.onToggleSelectMessage !== nextProps.onToggleSelectMessage) {

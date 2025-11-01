@@ -1,6 +1,10 @@
 import { getAppSession } from '@/lib/auth/session';
 import { deleteMessagesByIds } from '@/lib/db/queries';
 import { ChatSDKError } from '@/lib/errors';
+import {
+  isMessageDeletionMode,
+  type MessageDeletionMode,
+} from '@/lib/message-deletion';
 
 export async function DELETE(
   request: Request,
@@ -25,10 +29,15 @@ export async function DELETE(
     ).toResponse();
   }
 
-  const messageIds = Array.isArray((payload as any)?.messageIds)
-    ? (payload as any).messageIds.filter(
-        (id: unknown) => typeof id === 'string' && id.trim().length > 0
-      )
+  const body = (payload ?? null) as Record<string, unknown> | null;
+  const rawMessageIds = Array.isArray(body?.['messageIds'])
+    ? (body?.['messageIds'] as unknown[])
+    : null;
+  const messageIds = rawMessageIds
+    ? (rawMessageIds.filter(
+        (id: unknown): id is string =>
+          typeof id === 'string' && id.trim().length > 0
+      ) as string[])
     : null;
 
   if (!messageIds || messageIds.length === 0) {
@@ -36,6 +45,18 @@ export async function DELETE(
       'bad_request:api',
       'Request body must include messageIds as a non-empty array of strings.'
     ).toResponse();
+  }
+
+  let mode: MessageDeletionMode = 'version';
+  if (body && 'mode' in body) {
+    const rawMode = body['mode'];
+    if (!isMessageDeletionMode(rawMode)) {
+      return new ChatSDKError(
+        'bad_request:api',
+        'Invalid deletion mode.'
+      ).toResponse();
+    }
+    mode = rawMode;
   }
 
   const session = await getAppSession();
@@ -49,6 +70,7 @@ export async function DELETE(
       chatId,
       messageIds,
       userId: session.user.id,
+      mode,
     });
 
     return Response.json(result, { status: 200 });

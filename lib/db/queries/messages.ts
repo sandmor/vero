@@ -4,6 +4,7 @@ import type { Prisma } from '../../../generated/prisma-client';
 import { prisma } from '../prisma';
 import { ChatSDKError } from '../../errors';
 import type { DBMessage, MessageTreeNode, MessageTreeResult } from '../schema';
+import type { MessageDeletionMode } from '../../message-deletion';
 
 const PATH_SEGMENT_PATTERN = /^_[0-9a-z]{2}$/;
 const PATH_PATTERN = /^(_[0-9a-z]{2})(\._[0-9a-z]{2})*$/;
@@ -141,47 +142,98 @@ function buildLtreeArraySql(
   )}]::ltree[]`;
 }
 
-// Reassigns the direct child subtrees of a removed node so their paths remain valid.
-async function reattachDescendantsAfterDeletion(
+async function renameSubtree(
   tx: Prisma.TransactionClient,
   chatId: string,
-  targetPath: string
+  fromPath: string,
+  toPath: string
 ) {
-  if (!targetPath || !PATH_PATTERN.test(targetPath)) {
+  if (
+    !fromPath ||
+    !toPath ||
+    fromPath === toPath ||
+    !PATH_PATTERN.test(fromPath) ||
+    !PATH_PATTERN.test(toPath)
+  ) {
     return;
   }
 
-  const parentPath = getParentPathFromText(targetPath);
+  const depth = parsePathSegments(fromPath).length;
+
+  await tx.$executeRaw(
+    PrismaRuntime.sql`
+      UPDATE "Message"
+      SET "path" = text2ltree(${toPath}) || subpath("path", ${depth}),
+          "path_text" = ltree2text(text2ltree(${toPath}) || subpath("path", ${depth}))
+      WHERE "chatId" = ${chatId}::uuid
+        AND "path" <@ ${fromPath}::ltree
+    `
+  );
+}
+
+async function getDirectChildrenPaths(
+  tx: Prisma.TransactionClient,
+  chatId: string,
+  parentPath: string | null
+): Promise<string[]> {
   const parentPattern = parentPath ? `${parentPath}.*{1}` : '*{1}';
 
-  const siblingRows = await tx.$queryRaw<Array<{ pathText: string | null }>>(
+  const rows = await tx.$queryRaw<Array<{ pathText: string | null }>>(
     PrismaRuntime.sql`
       SELECT "path_text" AS "pathText"
       FROM "Message"
       WHERE "chatId" = ${chatId}::uuid
         AND "path_text" IS NOT NULL
         AND "path" ~ ${parentPattern}::lquery
+      ORDER BY "path_text" ASC
     `
   );
 
-  let nextIndex = 0;
-  for (const row of siblingRows) {
+  const paths: string[] = [];
+  for (const row of rows) {
     const pathText = row.pathText;
-    if (!pathText || pathText === targetPath || !PATH_PATTERN.test(pathText)) {
-      continue;
+    if (pathText && PATH_PATTERN.test(pathText)) {
+      paths.push(pathText);
     }
-    const label = getLastSegment(pathText);
-    if (!PATH_SEGMENT_PATTERN.test(label)) {
-      continue;
-    }
-    const index = parseLabelIndex(label);
-    if (index + 1 > nextIndex) {
-      nextIndex = index + 1;
-    }
+  }
+  return paths;
+}
+
+async function deleteSubtrees(
+  tx: Prisma.TransactionClient,
+  chatId: string,
+  prefixes: string[]
+): Promise<string[]> {
+  const valid = prefixes.filter((path) => path && PATH_PATTERN.test(path));
+
+  if (!valid.length) {
+    return [];
+  }
+
+  const deleted = await tx.$queryRaw<Array<{ id: string }>>(
+    PrismaRuntime.sql`
+      DELETE FROM "Message"
+      WHERE "chatId" = ${chatId}::uuid
+        AND "path" <@ ANY(${buildLtreeArraySql(valid)})
+      RETURNING "id"
+    `
+  );
+
+  return deleted.map((row) => row.id);
+}
+
+async function promoteChildrenToParent(
+  tx: Prisma.TransactionClient,
+  chatId: string,
+  targetPath: string,
+  parentPath: string | null
+) {
+  if (!targetPath || !PATH_PATTERN.test(targetPath)) {
+    return;
   }
 
   const childPattern = `${targetPath}.*{1}`;
-  const childRows = await tx.$queryRaw<Array<{ pathText: string }>>(
+  const childRows = await tx.$queryRaw<Array<{ pathText: string | null }>>(
     PrismaRuntime.sql`
       SELECT "path_text" AS "pathText"
       FROM "Message"
@@ -192,25 +244,51 @@ async function reattachDescendantsAfterDeletion(
     `
   );
 
+  if (!childRows.length) {
+    return;
+  }
+
+  const siblingPaths = await getDirectChildrenPaths(tx, chatId, parentPath);
+  let nextIndex = 0;
+  for (const siblingPath of siblingPaths) {
+    if (!siblingPath || siblingPath === targetPath) {
+      continue;
+    }
+    const label = getLastSegment(siblingPath);
+    if (!PATH_SEGMENT_PATTERN.test(label)) {
+      continue;
+    }
+    const index = parseLabelIndex(label);
+    if (index + 1 > nextIndex) {
+      nextIndex = index + 1;
+    }
+  }
+
   for (const child of childRows) {
     const childPath = child.pathText;
     if (!childPath || !PATH_PATTERN.test(childPath)) {
       continue;
     }
-
-    const childDepth = parsePathSegments(childPath).length;
     const newLabel = toBase36Label(nextIndex++);
     const newPrefix = parentPath ? `${parentPath}.${newLabel}` : newLabel;
+    await renameSubtree(tx, chatId, childPath, newPrefix);
+  }
+}
 
-    await tx.$executeRaw(
-      PrismaRuntime.sql`
-        UPDATE "Message"
-        SET "path" = text2ltree(${newPrefix}) || subpath("path", ${childDepth}),
-            "path_text" = ltree2text(text2ltree(${newPrefix}) || subpath("path", ${childDepth}))
-        WHERE "chatId" = ${chatId}::uuid
-          AND "path" <@ ${childPath}::ltree
-      `
-    );
+async function reindexChildren(
+  tx: Prisma.TransactionClient,
+  chatId: string,
+  parentPath: string | null
+) {
+  const children = await getDirectChildrenPaths(tx, chatId, parentPath);
+  for (let index = 0; index < children.length; index++) {
+    const currentPath = children[index];
+    const newLabel = toBase36Label(index);
+    const desiredPath = parentPath ? `${parentPath}.${newLabel}` : newLabel;
+    if (currentPath === desiredPath) {
+      continue;
+    }
+    await renameSubtree(tx, chatId, currentPath, desiredPath);
   }
 }
 
@@ -616,10 +694,12 @@ export async function deleteMessageById({
   chatId,
   messageId,
   userId,
+  mode,
 }: {
   chatId: string;
   messageId: string;
   userId: string;
+  mode: MessageDeletionMode;
 }) {
   try {
     return await prisma.$transaction(async (tx) => {
@@ -663,9 +743,77 @@ export async function deleteMessageById({
         );
       }
 
-      await reattachDescendantsAfterDeletion(tx, chatId, targetPath);
+      const parentPath = getParentPathFromText(targetPath);
+      const parentKey = parentPath ?? ROOT_KEY;
+      const parentsToReindex = new Set<string>();
+      const deletedIds = new Set<string>();
 
-      await tx.message.delete({ where: { id: messageId } });
+      const addParentForReindex = (path: string | null) => {
+        parentsToReindex.add(path ?? ROOT_KEY);
+      };
+
+      switch (mode) {
+        case 'version': {
+          const removed = await deleteSubtrees(tx, chatId, [targetPath]);
+          removed.forEach((id) => deletedIds.add(id));
+          addParentForReindex(parentPath);
+          break;
+        }
+        case 'message-with-following': {
+          const stagePaths = await getDirectChildrenPaths(
+            tx,
+            chatId,
+            parentPath
+          );
+          const uniquePaths = stagePaths.length ? stagePaths : [targetPath];
+          const removed = await deleteSubtrees(tx, chatId, uniquePaths);
+          removed.forEach((id) => deletedIds.add(id));
+          addParentForReindex(parentPath);
+          break;
+        }
+        case 'message-only': {
+          const siblingPaths = await getDirectChildrenPaths(
+            tx,
+            chatId,
+            parentPath
+          );
+          const siblingsToDelete = siblingPaths.filter(
+            (path) => path !== targetPath
+          );
+          if (siblingsToDelete.length) {
+            const removedSiblings = await deleteSubtrees(
+              tx,
+              chatId,
+              siblingsToDelete
+            );
+            removedSiblings.forEach((id) => deletedIds.add(id));
+          }
+
+          await promoteChildrenToParent(tx, chatId, targetPath, parentPath);
+
+          const removedTarget = await tx.$queryRaw<Array<{ id: string }>>(
+            PrismaRuntime.sql`
+              DELETE FROM "Message"
+              WHERE "id" = ${messageId}::uuid
+              RETURNING "id"
+            `
+          );
+          removedTarget.forEach((row) => deletedIds.add(row.id));
+
+          addParentForReindex(parentPath);
+          break;
+        }
+        default:
+          throw new ChatSDKError(
+            'bad_request:database',
+            'Unsupported message deletion mode'
+          );
+      }
+
+      for (const key of parentsToReindex) {
+        const parent = key === ROOT_KEY ? null : key;
+        await reindexChildren(tx, chatId, parent);
+      }
 
       const remainingMessages = await tx.message.count({
         where: { chatId },
@@ -683,14 +831,12 @@ export async function deleteMessageById({
         select: { headMessageId: true },
       });
 
-      if (chat?.headMessageId === messageId) {
+      if (chat?.headMessageId && deletedIds.has(chat.headMessageId)) {
         const messages = await tx.message.findMany({
           where: { chatId },
           orderBy: { createdAt: 'desc' },
         });
-        const newHead = messages.find(
-          (m) => m.id !== messageId && !m.pathText?.startsWith(targetPath)
-        );
+        const newHead = messages.find((m) => !deletedIds.has(m.id));
         await tx.chat.update({
           where: { id: chatId },
           data: { headMessageId: newHead?.id ?? null },
@@ -711,10 +857,12 @@ export async function deleteMessagesByIds({
   chatId,
   messageIds,
   userId,
+  mode,
 }: {
   chatId: string;
   messageIds: string[];
   userId: string;
+  mode: MessageDeletionMode;
 }) {
   if (!messageIds.length) {
     return { deleted: 0 as const, chatDeleted: false as const } as const;
@@ -783,6 +931,12 @@ export async function deleteMessagesByIds({
         });
 
       let deletedCount = 0;
+      const parentsToReindex = new Set<string>();
+      const deletedIds = new Set<string>();
+
+      const addParentForReindex = (path: string | null) => {
+        parentsToReindex.add(path ?? ROOT_KEY);
+      };
 
       for (const entry of orderedMessages) {
         const current = await tx.message.findUnique({
@@ -790,21 +944,93 @@ export async function deleteMessagesByIds({
           select: { pathText: true },
         });
 
-        if (!current) {
-          continue;
-        }
-
-        const currentPath = current.pathText;
-        if (!currentPath || !PATH_PATTERN.test(currentPath)) {
+        const pathText = current?.pathText ?? null;
+        if (!pathText || !PATH_PATTERN.test(pathText)) {
+          if (!current) {
+            continue;
+          }
           throw new ChatSDKError(
             'bad_request:database',
             'Message path missing or invalid'
           );
         }
 
-        await reattachDescendantsAfterDeletion(tx, chatId, currentPath);
-        await tx.message.delete({ where: { id: entry.id } });
-        deletedCount += 1;
+        const currentPath = pathText;
+        const parentPath = getParentPathFromText(currentPath);
+
+        switch (mode) {
+          case 'version': {
+            const removed = await deleteSubtrees(tx, chatId, [currentPath]);
+            if (!removed.length) {
+              continue;
+            }
+            removed.forEach((id) => deletedIds.add(id));
+            deletedCount += 1;
+            addParentForReindex(parentPath);
+            break;
+          }
+          case 'message-with-following': {
+            const stagePaths = await getDirectChildrenPaths(
+              tx,
+              chatId,
+              parentPath
+            );
+            const uniquePaths = stagePaths.length ? stagePaths : [currentPath];
+            const removed = await deleteSubtrees(tx, chatId, uniquePaths);
+            if (!removed.length) {
+              continue;
+            }
+            removed.forEach((id) => deletedIds.add(id));
+            deletedCount += 1;
+            addParentForReindex(parentPath);
+            break;
+          }
+          case 'message-only': {
+            const siblingPaths = await getDirectChildrenPaths(
+              tx,
+              chatId,
+              parentPath
+            );
+            const siblingsToDelete = siblingPaths.filter(
+              (path) => path !== currentPath
+            );
+            if (siblingsToDelete.length) {
+              const removedSiblings = await deleteSubtrees(
+                tx,
+                chatId,
+                siblingsToDelete
+              );
+              removedSiblings.forEach((id) => deletedIds.add(id));
+            }
+
+            await promoteChildrenToParent(tx, chatId, currentPath, parentPath);
+
+            const removedTarget = await tx.$queryRaw<Array<{ id: string }>>(
+              PrismaRuntime.sql`
+                DELETE FROM "Message"
+                WHERE "id" = ${entry.id}::uuid
+                RETURNING "id"
+              `
+            );
+            if (!removedTarget.length) {
+              continue;
+            }
+            removedTarget.forEach((row) => deletedIds.add(row.id));
+            deletedCount += 1;
+            addParentForReindex(parentPath);
+            break;
+          }
+          default:
+            throw new ChatSDKError(
+              'bad_request:database',
+              'Unsupported message deletion mode'
+            );
+        }
+      }
+
+      for (const key of parentsToReindex) {
+        const parent = key === ROOT_KEY ? null : key;
+        await reindexChildren(tx, chatId, parent);
       }
 
       const remainingMessages = await tx.message.count({
@@ -822,16 +1048,12 @@ export async function deleteMessagesByIds({
         select: { headMessageId: true },
       });
 
-      if (
-        chat?.headMessageId &&
-        uniqueMessageIds.includes(chat.headMessageId)
-      ) {
+      if (chat?.headMessageId && deletedIds.has(chat.headMessageId)) {
         const remaining = await tx.message.findMany({
           where: { chatId },
           orderBy: { createdAt: 'desc' },
         });
-        const deletedSet = new Set(uniqueMessageIds);
-        const newHead = remaining.find((m) => !deletedSet.has(m.id));
+        const newHead = remaining.find((m) => !deletedIds.has(m.id));
         await tx.chat.update({
           where: { id: chatId },
           data: { headMessageId: newHead?.id ?? null },

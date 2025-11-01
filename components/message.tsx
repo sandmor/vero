@@ -3,6 +3,7 @@ import equal from 'fast-deep-equal';
 import { motion } from 'framer-motion';
 import { Fragment, memo, useState } from 'react';
 import type { ChatMessage } from '@/lib/types';
+import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { cn, sanitizeText } from '@/lib/utils';
 import { useDataStream } from './data-stream-provider';
 import { MessageContent } from './elements/message';
@@ -36,7 +37,6 @@ const PurePreviewMessage = ({
   onRegenerateAssistant,
   disableRegenerate,
   onDeleteMessage,
-  onDeleteMessageCascade,
   onToggleSelectMessage,
   onNavigate,
   isSelected,
@@ -52,9 +52,9 @@ const PurePreviewMessage = ({
   requiresScrollPadding: boolean;
   onRegenerateAssistant?: (assistantMessageId: string) => void;
   disableRegenerate?: boolean;
-  onDeleteMessage?: (messageId: string) => Promise<{ chatDeleted: boolean }>;
-  onDeleteMessageCascade?: (
-    messageId: string
+  onDeleteMessage?: (
+    messageId: string,
+    mode: MessageDeletionMode
   ) => Promise<{ chatDeleted: boolean }>;
   onToggleSelectMessage?: (messageId: string) => void;
   onNavigate?: (direction: 'next' | 'prev') => void;
@@ -288,7 +288,6 @@ const PurePreviewMessage = ({
               onRegenerate={onRegenerateAssistant}
               disableRegenerate={disableRegenerate}
               onDelete={onDeleteMessage}
-              onDeleteCascade={onDeleteMessageCascade}
               onToggleSelect={onToggleSelectMessage}
               isSelected={Boolean(isSelected)}
               isSelectionMode={Boolean(isSelectionMode)}

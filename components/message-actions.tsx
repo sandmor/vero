@@ -1,8 +1,9 @@
 import { memo, useCallback, useState } from 'react';
 import { toast } from 'sonner';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useCopyToClipboard } from 'usehooks-ts';
 import type { ChatMessage } from '@/lib/types';
+import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { cn } from '@/lib/utils';
 import { Action, Actions } from './elements/actions';
 import { Copy, GitBranchPlus, Pencil, RotateCcw, Trash2 } from 'lucide-react';
@@ -30,7 +31,6 @@ export function PureMessageActions({
   modelBadge,
   siblingsBadge,
   onDelete,
-  onDeleteCascade,
   onToggleSelect,
   isSelected,
   isSelectionMode,
@@ -44,19 +44,20 @@ export function PureMessageActions({
   disableRegenerate?: boolean;
   modelBadge?: React.ReactNode;
   siblingsBadge?: React.ReactNode;
-  onDelete?: (messageId: string) => Promise<{ chatDeleted: boolean }>;
-  onDeleteCascade?: (messageId: string) => Promise<{ chatDeleted: boolean }>;
+  onDelete?: (
+    messageId: string,
+    mode: MessageDeletionMode
+  ) => Promise<{ chatDeleted: boolean }>;
   onToggleSelect?: (messageId: string) => void;
   isSelected?: boolean;
   isSelectionMode?: boolean;
   onFork?: (messageId: string) => void;
 }) {
-  const queryClient = useQueryClient();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const [_, copyToClipboard] = useCopyToClipboard();
 
-  type DeleteMode = 'single' | 'cascade';
+  type DeleteMode = MessageDeletionMode;
 
   const deleteMutation = useMutation<
     { chatDeleted: boolean },
@@ -64,19 +65,10 @@ export function PureMessageActions({
     { mode: DeleteMode }
   >({
     mutationFn: async ({ mode }) => {
-      if (mode === 'single') {
-        if (!onDelete) {
-          throw new ChatSDKError('bad_request:api');
-        }
-        const result = await onDelete(message.id);
-        return result ?? { chatDeleted: false };
-      }
-
-      if (!onDeleteCascade) {
+      if (!onDelete) {
         throw new ChatSDKError('bad_request:api');
       }
-
-      const result = await onDeleteCascade(message.id);
+      const result = await onDelete(message.id, mode);
       return result ?? { chatDeleted: false };
     },
     onError: (error) => {
@@ -87,11 +79,16 @@ export function PureMessageActions({
       toast.error('Failed to delete message.');
     },
     onSuccess: (data, variables) => {
-      const successDescription = data?.chatDeleted
-        ? 'Chat deleted.'
-        : variables.mode === 'cascade'
-          ? 'Messages deleted.'
-          : 'Message deleted.';
+      let successDescription = 'Message deleted.';
+      if (data?.chatDeleted) {
+        successDescription = 'Chat deleted.';
+      } else if (variables.mode === 'message-with-following') {
+        successDescription = 'Message and following deleted.';
+      } else if (variables.mode === 'message-only') {
+        successDescription = 'Message deleted; following preserved.';
+      } else if (variables.mode === 'version') {
+        successDescription = 'Version branch deleted.';
+      }
       toast.success(successDescription);
       setIsDeleteDialogOpen(false);
     },
@@ -147,6 +144,35 @@ export function PureMessageActions({
       return null;
     }
 
+    const deleteOptions: Array<{
+      mode: DeleteMode;
+      label: string;
+      description: string;
+      variant: 'secondary' | 'destructive';
+    }> = [
+      {
+        mode: 'version',
+        label: 'Delete version & branch',
+        description:
+          'Remove this message version along with any descendants in its branch.',
+        variant: 'secondary',
+      },
+      {
+        mode: 'message-only',
+        label: 'Delete message (keep following)',
+        description:
+          'Keep downstream messages by lifting them up to the previous step.',
+        variant: 'secondary',
+      },
+      {
+        mode: 'message-with-following',
+        label: 'Delete message & following',
+        description:
+          'Remove this message plus all alternate versions and later messages.',
+        variant: 'destructive',
+      },
+    ];
+
     return (
       <AlertDialog
         open={isDeleteDialogOpen}
@@ -164,37 +190,47 @@ export function PureMessageActions({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete message?</AlertDialogTitle>
             <AlertDialogDescription>
-              Choose whether to delete only this message or remove it along with
-              every following message in the thread.
+              Choose how this deletion should affect alternate versions and
+              downstream messages in the current branch.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 sm:flex-row">
+          <div className="mt-2 flex flex-col gap-3">
+            {deleteOptions.map((option) => (
+              <AlertDialogAction
+                key={option.mode}
+                className={cn(
+                  buttonVariants({ variant: option.variant }),
+                  'flex h-auto w-full flex-col items-start justify-start gap-1 rounded-xl border px-4 py-3 text-left text-sm leading-relaxed whitespace-normal break-words transition-colors',
+                  option.variant === 'secondary'
+                    ? 'border-border/60 bg-muted/40 hover:bg-muted/60 dark:bg-muted/20 dark:hover:bg-muted/40'
+                    : 'border-destructive/50 bg-destructive/90 text-destructive-foreground hover:bg-destructive'
+                )}
+                disabled={deleteMutation.isPending}
+                onClick={(event) => {
+                  event.preventDefault();
+                  handleDelete(option.mode);
+                }}
+              >
+                <span className="font-medium leading-tight">
+                  {option.label}
+                </span>
+                <span
+                  className={cn(
+                    'text-xs leading-snug',
+                    option.variant === 'destructive'
+                      ? 'text-destructive-foreground/90'
+                      : 'text-muted-foreground'
+                  )}
+                >
+                  {option.description}
+                </span>
+              </AlertDialogAction>
+            ))}
+          </div>
+          <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction
-              className={cn(buttonVariants({ variant: 'secondary' }))}
-              disabled={deleteMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                handleDelete('single');
-              }}
-            >
-              Delete only this
-            </AlertDialogAction>
-            <AlertDialogAction
-              className={cn(buttonVariants({ variant: 'destructive' }))}
-              disabled={deleteMutation.isPending || !onDeleteCascade}
-              onClick={(event) => {
-                event.preventDefault();
-                if (!onDeleteCascade) {
-                  return;
-                }
-                handleDelete('cascade');
-              }}
-            >
-              Delete this & following
-            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -263,9 +299,6 @@ export const MessageActions = memo(
   PureMessageActions,
   (prevProps, nextProps) => {
     if (prevProps.onDelete !== nextProps.onDelete) {
-      return false;
-    }
-    if (prevProps.onDeleteCascade !== nextProps.onDeleteCascade) {
       return false;
     }
     if (prevProps.onToggleSelect !== nextProps.onToggleSelect) {

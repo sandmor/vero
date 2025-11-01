@@ -81,7 +81,6 @@ describe('Chat', () => {
     expect(Array.from(messages.selectedMessageIds)).toEqual([]);
     ensureFunctions(messages, [
       'onDeleteMessage',
-      'onDeleteMessageCascade',
       'onToggleSelectMessage',
       'onRegenerateAssistant',
       'onNavigate',
@@ -103,7 +102,6 @@ describe('Chat', () => {
     expect(Array.from(artifact.selectedMessageIds)).toEqual([]);
     ensureFunctions(artifact, [
       'onDeleteMessage',
-      'onDeleteMessageCascade',
       'onToggleSelectMessage',
       'sendMessage',
       'setAttachments',

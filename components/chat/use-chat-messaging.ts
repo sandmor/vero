@@ -25,6 +25,7 @@ import {
   updateHeadMessage,
 } from '@/app/(chat)/actions';
 import type React from 'react';
+import type { MessageDeletionMode } from '@/lib/message-deletion';
 
 export type SelectionApi = {
   getSelectedIds: () => string[];
@@ -254,18 +255,17 @@ export function useChatMessaging({
   }, [clearSelection, queryClient, router, setMessages]);
 
   const handleDeleteMessage = useCallback(
-    async (messageId: string) => {
-      let previousMessages: ChatMessage[] = [];
+    async (messageId: string, mode: MessageDeletionMode) => {
+      if (isReadonly) {
+        return { chatDeleted: false } as const;
+      }
+
       const previousSelection = [...getSelectedIds()];
-      setMessages((current) => {
-        previousMessages = [...current];
-        return current.filter((message) => message.id !== messageId);
-      });
       removeFromSelection([messageId]);
 
       try {
         const response = await fetchWithErrorHandlers(
-          `/api/chat/${chatId}/messages/${messageId}`,
+          `/api/chat/${chatId}/messages/${messageId}?mode=${encodeURIComponent(mode)}`,
           {
             method: 'DELETE',
           }
@@ -279,9 +279,19 @@ export function useChatMessaging({
           return { chatDeleted: true } as const;
         }
 
+        await refreshMessageTree();
+
+        const currentMessages = messagesRef.current;
+        const remainingIds = new Set(
+          currentMessages.map((message) => message.id)
+        );
+        const filteredSelection = previousSelection.filter((id) =>
+          remainingIds.has(id)
+        );
+        assignSelection(filteredSelection);
+
         return { chatDeleted: false } as const;
       } catch (error) {
-        setMessages(previousMessages);
         assignSelection(previousSelection);
         throw error;
       }
@@ -291,42 +301,25 @@ export function useChatMessaging({
       chatId,
       getSelectedIds,
       handleChatDeleted,
+      isReadonly,
+      refreshMessageTree,
       removeFromSelection,
-      setMessages,
     ]
   );
 
-  const handleDeleteMessageCascade = useCallback(
-    async (messageId: string) => {
-      if (isReadonly) {
-        return { chatDeleted: false } as const;
-      }
+  const handleDeleteSelected = useCallback(
+    async (mode: MessageDeletionMode) => {
+      if (isReadonly) return;
+      const ids = getSelectedIds();
+      if (!ids.length) return;
 
-      const currentMessages = messagesRef.current;
-      const startIndex = currentMessages.findIndex(
-        (message) => message.id === messageId
-      );
-
-      if (startIndex === -1) {
-        return { chatDeleted: false } as const;
-      }
-
-      const idsToDelete = currentMessages
-        .slice(startIndex)
-        .map((message) => message.id);
-
-      if (idsToDelete.length <= 1) {
-        return handleDeleteMessage(messageId);
-      }
-
+      setIsBulkDeleting(true);
       let previousMessages: ChatMessage[] = [];
-      const previousSelection = [...getSelectedIds()];
-
+      const previousSelection = [...ids];
       setMessages((current) => {
         previousMessages = [...current];
-        return current.filter((message) => !idsToDelete.includes(message.id));
+        return current.filter((message) => !ids.includes(message.id));
       });
-      removeFromSelection(idsToDelete);
 
       try {
         const response = await fetchWithErrorHandlers(
@@ -334,90 +327,54 @@ export function useChatMessaging({
           {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messageIds: idsToDelete }),
+            body: JSON.stringify({ messageIds: ids, mode }),
           }
         );
+
         const payload = await response.json().catch(() => null);
         const chatDeleted = Boolean(payload?.chatDeleted);
 
         if (chatDeleted || messagesRef.current.length === 0) {
+          toast({ type: 'success', description: 'Chat deleted.' });
           handleChatDeleted();
-          return { chatDeleted: true } as const;
+          return;
         }
 
-        return { chatDeleted: false } as const;
+        await refreshMessageTree();
+        clearSelection();
+
+        let successDescription = 'Messages deleted.';
+        if (mode === 'message-with-following') {
+          successDescription = 'Messages and following deleted.';
+        } else if (mode === 'message-only') {
+          successDescription = 'Messages deleted; following preserved.';
+        } else if (mode === 'version') {
+          successDescription = 'Message versions deleted.';
+        }
+        toast({ type: 'success', description: successDescription });
       } catch (error) {
         setMessages(previousMessages);
         assignSelection(previousSelection);
-        throw error;
+        if (error instanceof ChatSDKError) {
+          toast({ type: 'error', description: error.message });
+        } else {
+          toast({ type: 'error', description: 'Failed to delete messages.' });
+        }
+      } finally {
+        setIsBulkDeleting(false);
       }
     },
     [
       assignSelection,
       chatId,
+      clearSelection,
       getSelectedIds,
       handleChatDeleted,
-      handleDeleteMessage,
       isReadonly,
-      removeFromSelection,
+      refreshMessageTree,
       setMessages,
     ]
   );
-
-  const handleDeleteSelected = useCallback(async () => {
-    if (isReadonly) return;
-    const ids = getSelectedIds();
-    if (!ids.length) return;
-
-    setIsBulkDeleting(true);
-    let previousMessages: ChatMessage[] = [];
-    const previousSelection = [...ids];
-    setMessages((current) => {
-      previousMessages = [...current];
-      return current.filter((message) => !ids.includes(message.id));
-    });
-
-    try {
-      const response = await fetchWithErrorHandlers(
-        `/api/chat/${chatId}/messages`,
-        {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messageIds: ids }),
-        }
-      );
-
-      const payload = await response.json().catch(() => null);
-      const chatDeleted = Boolean(payload?.chatDeleted);
-
-      clearSelection();
-
-      if (chatDeleted || messagesRef.current.length === 0) {
-        toast({ type: 'success', description: 'Chat deleted.' });
-        handleChatDeleted();
-      } else {
-        toast({ type: 'success', description: 'Messages deleted.' });
-      }
-    } catch (error) {
-      setMessages(previousMessages);
-      assignSelection(previousSelection);
-      if (error instanceof ChatSDKError) {
-        toast({ type: 'error', description: error.message });
-      } else {
-        toast({ type: 'error', description: 'Failed to delete messages.' });
-      }
-    } finally {
-      setIsBulkDeleting(false);
-    }
-  }, [
-    assignSelection,
-    chatId,
-    clearSelection,
-    getSelectedIds,
-    handleChatDeleted,
-    isReadonly,
-    setMessages,
-  ]);
 
   const handleForkMessage = useCallback(
     async (messageId: string) => {
@@ -912,7 +869,6 @@ export function useChatMessaging({
     chatError,
     clearChatError,
     handleDeleteMessage,
-    handleDeleteMessageCascade,
     handleDeleteSelected,
     handleForkMessage,
     handleEditMessage,
