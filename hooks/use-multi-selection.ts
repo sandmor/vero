@@ -1,8 +1,16 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type TouchEvent as ReactTouchEvent,
+} from 'react';
 
 export type MultiSelectionOptions = {
   /** Delay in milliseconds before a long press toggles selection mode. */
   longPressDelay?: number;
+  /** Movement threshold in pixels before a long press is canceled. */
+  longPressMoveThreshold?: number;
 };
 
 export type MultiSelectionResult<T extends string> = {
@@ -38,16 +46,28 @@ export type MultiSelectionResult<T extends string> = {
   handlePressStart: (id: T, onInitiated?: () => void) => void;
   /** Clears any pending long-press timer without altering selection state. */
   handlePressEnd: () => void;
+  /** Handles touch start events, enabling movement tracking. */
+  handleTouchStart: (
+    id: T,
+    event: ReactTouchEvent<HTMLElement>,
+    onInitiated?: () => void
+  ) => void;
+  /** Handles touch move events; returns true when long press was canceled. */
+  handleTouchMove: (event: ReactTouchEvent<HTMLElement>) => boolean;
+  /** Handles touch end/cancel events; returns true when long press was canceled. */
+  handleTouchEnd: () => boolean;
 };
 
 export function useMultiSelection<T extends string>(
   options: MultiSelectionOptions = {}
 ): MultiSelectionResult<T> {
-  const { longPressDelay = 500 } = options;
+  const { longPressDelay = 500, longPressMoveThreshold = 8 } = options;
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedSet, setSelectedSet] = useState<Set<T>>(new Set());
   const lastSelectedRef = useRef<T | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPointRef = useRef<{ x: number; y: number } | null>(null);
+  const touchMovementCanceledRef = useRef(false);
 
   const startSelectionMode = useCallback(() => {
     setIsSelectionMode(true);
@@ -152,6 +172,47 @@ export function useMultiSelection<T extends string>(
     }
   }, []);
 
+  const handleTouchStart = useCallback(
+    (id: T, event: ReactTouchEvent<HTMLElement>, onInitiated?: () => void) => {
+      if (isSelectionMode) return;
+      const touch = event.touches[0];
+      touchStartPointRef.current = touch
+        ? { x: touch.clientX, y: touch.clientY }
+        : null;
+      touchMovementCanceledRef.current = false;
+      handlePressStart(id, onInitiated);
+    },
+    [handlePressStart, isSelectionMode]
+  );
+
+  const handleTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLElement>) => {
+      if (isSelectionMode) return false;
+      if (touchMovementCanceledRef.current) return true;
+      const touch = event.touches[0];
+      const start = touchStartPointRef.current;
+      if (!touch || !start) return false;
+      const deltaX = Math.abs(touch.clientX - start.x);
+      const deltaY = Math.abs(touch.clientY - start.y);
+      if (deltaX > longPressMoveThreshold || deltaY > longPressMoveThreshold) {
+        touchMovementCanceledRef.current = true;
+        touchStartPointRef.current = null;
+        handlePressEnd();
+        return true;
+      }
+      return false;
+    },
+    [handlePressEnd, isSelectionMode, longPressMoveThreshold]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    const wasCanceled = touchMovementCanceledRef.current;
+    touchStartPointRef.current = null;
+    touchMovementCanceledRef.current = false;
+    handlePressEnd();
+    return wasCanceled;
+  }, [handlePressEnd]);
+
   const selectedIds = useMemo(() => Array.from(selectedSet), [selectedSet]);
   const selectedCount = selectedIds.length;
 
@@ -169,5 +230,8 @@ export function useMultiSelection<T extends string>(
     toggleSelectionRange,
     handlePressStart,
     handlePressEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
   };
 }

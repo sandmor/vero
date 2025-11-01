@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useParams, useRouter } from 'next/navigation';
 type SidebarUser = { id?: string; email?: string | null };
 import { useCallback, useMemo, useState } from 'react';
+import type { TouchEvent as ReactTouchEvent } from 'react';
 import { toast } from 'sonner';
 import {
   useInfiniteQuery,
@@ -61,6 +62,13 @@ type SelectionProps = {
   toggleSelectionRange: (id: string, orderedIds: readonly string[]) => void;
   handlePressStart: (id: string, onInitiated?: () => void) => void;
   handlePressEnd: () => void;
+  handleTouchStart: (
+    id: string,
+    event: ReactTouchEvent<HTMLElement>,
+    onInitiated?: () => void
+  ) => void;
+  handleTouchMove: (event: ReactTouchEvent<HTMLElement>) => boolean;
+  handleTouchEnd: () => boolean;
 };
 
 const PAGE_SIZE = 20;
@@ -155,6 +163,9 @@ export function SidebarHistory({
     setSelection,
     handlePressStart,
     handlePressEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
   } = selection;
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
@@ -498,6 +509,9 @@ export function SidebarHistory({
                               onRangeToggle: handleRangeSelection,
                               onPressStart: handlePressStart,
                               onPressEnd: handlePressEnd,
+                              onTouchStart: handleTouchStart,
+                              onTouchMove: handleTouchMove,
+                              onTouchEnd: handleTouchEnd,
                             }}
                           />
                         ))}
@@ -526,6 +540,9 @@ export function SidebarHistory({
                               onRangeToggle: handleRangeSelection,
                               onPressStart: handlePressStart,
                               onPressEnd: handlePressEnd,
+                              onTouchStart: handleTouchStart,
+                              onTouchMove: handleTouchMove,
+                              onTouchEnd: handleTouchEnd,
                             }}
                           />
                         ))}
@@ -554,6 +571,9 @@ export function SidebarHistory({
                               onRangeToggle: handleRangeSelection,
                               onPressStart: handlePressStart,
                               onPressEnd: handlePressEnd,
+                              onTouchStart: handleTouchStart,
+                              onTouchMove: handleTouchMove,
+                              onTouchEnd: handleTouchEnd,
                             }}
                           />
                         ))}
@@ -582,6 +602,9 @@ export function SidebarHistory({
                               onRangeToggle: handleRangeSelection,
                               onPressStart: handlePressStart,
                               onPressEnd: handlePressEnd,
+                              onTouchStart: handleTouchStart,
+                              onTouchMove: handleTouchMove,
+                              onTouchEnd: handleTouchEnd,
                             }}
                           />
                         ))}
@@ -610,6 +633,9 @@ export function SidebarHistory({
                               onRangeToggle: handleRangeSelection,
                               onPressStart: handlePressStart,
                               onPressEnd: handlePressEnd,
+                              onTouchStart: handleTouchStart,
+                              onTouchMove: handleTouchMove,
+                              onTouchEnd: handleTouchEnd,
                             }}
                           />
                         ))}

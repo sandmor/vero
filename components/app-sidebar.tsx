@@ -36,6 +36,9 @@ export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
     setSelection,
     handlePressStart,
     handlePressEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
   } = useMultiSelection<string>();
 
   return (
@@ -111,6 +114,9 @@ export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
             setSelection,
             handlePressStart,
             handlePressEnd,
+            handleTouchStart,
+            handleTouchMove,
+            handleTouchEnd,
           }}
         />
       </SidebarContent>

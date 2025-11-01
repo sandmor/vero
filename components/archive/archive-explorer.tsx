@@ -76,6 +76,9 @@ export function ArchiveExplorer() {
     toggleSelectionRange,
     handlePressStart,
     handlePressEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
   } = useMultiSelection<string>();
   const [isDeletingMultiple, setIsDeletingMultiple] = useState(false);
 
@@ -571,8 +574,11 @@ export function ArchiveExplorer() {
             isSelectionMode={isSelectionMode}
             selectedSlugs={selectedSlugs}
             onToggleSelection={toggleSelection}
-            onLongPressStart={handlePressStart}
-            onLongPressEnd={handlePressEnd}
+            onPressStart={handlePressStart}
+            onPressEnd={handlePressEnd}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             onShiftClick={handleShiftClick}
             archiveData={archiveData}
           />

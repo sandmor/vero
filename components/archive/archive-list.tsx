@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef } from 'react';
+import type { TouchEvent as ReactTouchEvent } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,8 +17,11 @@ export function ArchiveList({
   selectedSlugs = new Set<string>(),
 
   onToggleSelection,
-  onLongPressStart,
-  onLongPressEnd,
+  onPressStart,
+  onPressEnd,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
   onShiftClick,
   archiveData,
 }: {
@@ -28,10 +32,16 @@ export function ArchiveList({
   isSelectionMode?: boolean;
   selectedSlugs?: ReadonlySet<string>;
   onToggleSelection?: (slug: string) => void;
-  onLongPressStart?: (slug: string, onInitiated?: () => void) => void;
-  onLongPressEnd?: () => void;
+  onPressStart?: (slug: string, onInitiated?: () => void) => void;
+  onPressEnd?: () => void;
+  onTouchStart?: (
+    slug: string,
+    event: ReactTouchEvent<HTMLButtonElement>,
+    onInitiated?: () => void
+  ) => void;
+  onTouchMove?: (event: ReactTouchEvent<HTMLButtonElement>) => boolean;
+  onTouchEnd?: () => boolean;
   onShiftClick?: (slug: string) => void;
-  onLongPressInitiated?: () => void;
   archiveData?: any;
 }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
@@ -92,35 +102,67 @@ export function ArchiveList({
                   onSelect(e.slug);
                 }
               }}
-              onTouchStart={() => {
-                if (!isSelectionMode && onLongPressStart) {
+              onTouchStart={(event) => {
+                if (!isSelectionMode && onTouchStart) {
                   longPressInitiatedRef.current = false;
-                  onLongPressStart(e.slug, () => {
+                  onTouchStart(e.slug, event, () => {
                     longPressInitiatedRef.current = true;
                   });
                 }
               }}
+              onTouchMove={(event) => {
+                if (
+                  isSelectionMode ||
+                  longPressInitiatedRef.current ||
+                  !onTouchMove
+                ) {
+                  return;
+                }
+                const canceled = onTouchMove(event);
+                if (canceled) {
+                  longPressInitiatedRef.current = false;
+                }
+              }}
               onTouchEnd={() => {
-                if (!isSelectionMode && onLongPressEnd) {
-                  onLongPressEnd();
+                if (isSelectionMode) return;
+                let canceled = false;
+                if (onTouchEnd) {
+                  canceled = onTouchEnd();
+                } else if (onPressEnd) {
+                  onPressEnd();
+                }
+                if (canceled) {
+                  longPressInitiatedRef.current = false;
+                }
+              }}
+              onTouchCancel={() => {
+                if (isSelectionMode) return;
+                let canceled = false;
+                if (onTouchEnd) {
+                  canceled = onTouchEnd();
+                } else if (onPressEnd) {
+                  onPressEnd();
+                }
+                if (canceled) {
+                  longPressInitiatedRef.current = false;
                 }
               }}
               onMouseDown={() => {
-                if (!isSelectionMode && onLongPressStart) {
+                if (!isSelectionMode && onPressStart) {
                   longPressInitiatedRef.current = false;
-                  onLongPressStart(e.slug, () => {
+                  onPressStart(e.slug, () => {
                     longPressInitiatedRef.current = true;
                   });
                 }
               }}
               onMouseUp={() => {
-                if (!isSelectionMode && onLongPressEnd) {
-                  onLongPressEnd();
+                if (!isSelectionMode && onPressEnd) {
+                  onPressEnd();
                 }
               }}
               onMouseLeave={() => {
-                if (!isSelectionMode && onLongPressEnd) {
-                  onLongPressEnd();
+                if (!isSelectionMode && onPressEnd) {
+                  onPressEnd();
                 }
               }}
               className={cn(

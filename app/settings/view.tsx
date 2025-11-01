@@ -1,5 +1,12 @@
 'use client';
-import { useState, useEffect } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { motion } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArchiveExplorer } from '@/components/archive/archive-explorer';
@@ -13,11 +20,19 @@ export default function SettingsView({
 }: {
   defaultTab: 'archive' | 'agents' | 'admin';
   isAdmin: boolean;
-  adminContent?: React.ReactNode;
+  adminContent?: ReactNode;
 }) {
   const router = useRouter();
   const search = useSearchParams();
   const [tab, setTab] = useState<'archive' | 'agents' | 'admin'>(defaultTab);
+  const tabHeightsRef = useRef<
+    Partial<Record<'archive' | 'agents' | 'admin', number>>
+  >({});
+  const activeTabRef = useRef<'archive' | 'agents' | 'admin'>(defaultTab);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const observedNodeRef = useRef<HTMLDivElement | null>(null);
+  const baselineHeightRef = useRef<number>(0);
+  const [activeTabHeight, setActiveTabHeight] = useState<number | null>(null);
 
   // Keep URL in sync (avoid full page reload; just push shallow)
   useEffect(() => {
@@ -28,6 +43,117 @@ export default function SettingsView({
       router.replace(url.pathname + '?' + url.searchParams.toString());
     }
   }, [tab]);
+
+  useEffect(() => {
+    activeTabRef.current = tab;
+    const storedHeight = tabHeightsRef.current[tab];
+    if (typeof storedHeight === 'number') {
+      setActiveTabHeight(storedHeight);
+      return;
+    }
+    if (baselineHeightRef.current > 0) {
+      tabHeightsRef.current[tab] = baselineHeightRef.current;
+      setActiveTabHeight(baselineHeightRef.current);
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    return () => {
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
+      observedNodeRef.current = null;
+    };
+  }, []);
+
+  const registerActiveContent = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (observedNodeRef.current === node) {
+        return;
+      }
+
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
+
+      if (!node) {
+        observedNodeRef.current = null;
+        return;
+      }
+
+      observedNodeRef.current = node;
+
+      const parentElement = node.parentElement as HTMLElement | null;
+      const parentHeight = parentElement?.getBoundingClientRect().height ?? 0;
+      if (parentHeight > 0) {
+        baselineHeightRef.current = parentHeight;
+      }
+
+      if (
+        typeof window === 'undefined' ||
+        typeof ResizeObserver === 'undefined'
+      ) {
+        return;
+      }
+
+      const updateHeight = (height: number) => {
+        const baseline = baselineHeightRef.current || height;
+        const nextHeight = baseline;
+        const previous = tabHeightsRef.current[activeTabRef.current];
+        if (
+          typeof previous === 'number' &&
+          Math.abs(previous - nextHeight) < 0.5
+        ) {
+          if (activeTabHeight === null) {
+            setActiveTabHeight(nextHeight);
+          }
+          return;
+        }
+        tabHeightsRef.current[activeTabRef.current] = nextHeight;
+        setActiveTabHeight(nextHeight);
+      };
+
+      const initialHeight = node.getBoundingClientRect().height;
+      if (initialHeight > 0) {
+        updateHeight(initialHeight);
+      }
+
+      const observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        const height = Array.isArray(entry.borderBoxSize)
+          ? (entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height)
+          : // @ts-expect-error Support browsers exposing blockSize directly
+            (entry.borderBoxSize?.blockSize ?? entry.contentRect.height);
+        const parentRect = (
+          observedNodeRef.current?.parentElement as HTMLElement | null
+        )?.getBoundingClientRect();
+        if (parentRect?.height) {
+          baselineHeightRef.current = parentRect.height;
+        }
+        updateHeight(height);
+      });
+
+      observer.observe(node);
+      resizeObserverRef.current = observer;
+    },
+    [activeTabHeight]
+  );
+
+  const contentRegionStyle = activeTabHeight
+    ? ({
+        '--settings-tab-height': `${Math.ceil(activeTabHeight)}px`,
+      } as CSSProperties)
+    : undefined;
+
+  const activeContentStyle: CSSProperties = activeTabHeight
+    ? {
+        minHeight: 'var(--settings-tab-height)',
+        height: '100%',
+      }
+    : { height: '100%' };
 
   return (
     <Tabs
@@ -50,7 +176,10 @@ export default function SettingsView({
           )}
         </TabsList>
       </div>
-      <div className="flex-1 min-h-0 overflow-hidden pt-2">
+      <div
+        className="flex-1 min-h-0 overflow-hidden pt-2"
+        style={contentRegionStyle}
+      >
         <TabsContent
           value="archive"
           className="flex h-full min-h-0 flex-col overflow-hidden"
@@ -62,6 +191,8 @@ export default function SettingsView({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
               className="flex-1 min-h-0 overflow-hidden"
+              ref={registerActiveContent}
+              style={activeContentStyle}
             >
               <ArchiveExplorer />
             </motion.div>
@@ -78,6 +209,8 @@ export default function SettingsView({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
               className="flex-1 min-h-0 overflow-hidden"
+              ref={registerActiveContent}
+              style={activeContentStyle}
             >
               <AgentsManagement />
             </motion.div>
@@ -95,6 +228,8 @@ export default function SettingsView({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
                 className="flex-1"
+                ref={registerActiveContent}
+                style={activeContentStyle}
               >
                 {adminContent}
               </motion.div>

@@ -1,5 +1,10 @@
 import Link from 'next/link';
-import { memo, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  memo,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+  type TouchEvent as ReactTouchEvent,
+} from 'react';
 import { motion } from 'framer-motion';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import type { Chat } from '@/lib/db/schema';
@@ -37,6 +42,13 @@ export type ChatItemSelectionProps = {
   onRangeToggle?: (chatId: string) => void;
   onPressStart?: (chatId: string, onInitiated?: () => void) => void;
   onPressEnd?: () => void;
+  onTouchStart?: (
+    chatId: string,
+    event: ReactTouchEvent<HTMLAnchorElement>,
+    onInitiated?: () => void
+  ) => void;
+  onTouchMove?: (event: ReactTouchEvent<HTMLAnchorElement>) => boolean;
+  onTouchEnd?: () => boolean;
 };
 
 const PureChatItem = ({
@@ -93,6 +105,32 @@ const PureChatItem = ({
     }
   };
 
+  const handleTouchStart = (event: ReactTouchEvent<HTMLAnchorElement>) => {
+    if (!selection?.onTouchStart || isSelectionMode) return;
+    selection.onTouchStart(chat.id, event, () => {
+      longPressActivatedRef.current = true;
+    });
+  };
+
+  const handleTouchMove = (event: ReactTouchEvent<HTMLAnchorElement>) => {
+    if (!selection?.onTouchMove || isSelectionMode) return;
+    const canceled = selection.onTouchMove(event);
+    if (canceled) {
+      longPressActivatedRef.current = false;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!selection?.onTouchEnd) {
+      handlePressEnd();
+      return;
+    }
+    const canceled = selection.onTouchEnd();
+    if (canceled) {
+      longPressActivatedRef.current = false;
+    }
+  };
+
   const linkClassName = cn(
     'flex min-w-0 flex-1 items-center gap-2',
     isSelectionMode && 'pr-1'
@@ -114,11 +152,10 @@ const PureChatItem = ({
           onMouseDown={handlePressStart}
           onMouseUp={handlePressEnd}
           onMouseLeave={handlePressEnd}
-          onTouchStart={() => {
-            handlePressStart();
-          }}
-          onTouchEnd={handlePressEnd}
-          onTouchCancel={handlePressEnd}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
           className={linkClassName}
         >
           {isSelectionMode && (
