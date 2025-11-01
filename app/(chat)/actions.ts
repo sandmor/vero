@@ -5,12 +5,7 @@ import { cookies } from 'next/headers';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { getLanguageModel } from '@/lib/ai/providers';
 import { TITLE_GENERATION_MODEL } from '@/lib/ai/models';
-import {
-  deleteMessagesByChatIdAfterTimestamp,
-  getMessageById,
-  forkChat,
-  updateChatVisiblityById,
-} from '@/lib/db/queries';
+import { forkChat, updateChatVisiblityById } from '@/lib/db/queries';
 import { getAppSession } from '@/lib/auth/session';
 import z from 'zod';
 
@@ -56,15 +51,6 @@ export async function generateTitleFromChatHistory({
   });
 
   return object.title;
-}
-
-export async function deleteTrailingMessages({ id }: { id: string }) {
-  const [message] = await getMessageById({ id });
-
-  await deleteMessagesByChatIdAfterTimestamp({
-    chatId: message.chatId,
-    timestamp: message.createdAt,
-  });
 }
 
 export async function updateChatVisibility({
