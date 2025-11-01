@@ -11,6 +11,7 @@
     "vitest": "vitest",
     "vitest:ui": "vitest --ui",
     "vitest:run": "vitest run",
+    "test:e2e": "playwright test",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev --name init",
     "db:studio": "prisma studio",

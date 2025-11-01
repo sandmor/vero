@@ -7,6 +7,15 @@ export type AppSession = {
 };
 
 export async function getAppSession(): Promise<AppSession | null> {
+  if (process.env.APP_E2E === '1') {
+    return {
+      user: {
+        id: 'e2e-user',
+        type: 'guest',
+        email: 'playwright@example.com',
+      },
+    };
+  }
   // If Clerk environment variables are not present (e.g. local CI/test), skip auth() and fall back to guest logic.
   const hasClerkEnv =
     !!process.env.CLERK_SECRET_KEY &&

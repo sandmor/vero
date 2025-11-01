@@ -137,7 +137,11 @@ const PureChatItem = ({
   );
 
   return (
-    <SidebarMenuItem data-selected={isSelected && isSelectionMode}>
+    <SidebarMenuItem
+      data-chat-id={chat.id}
+      data-selected={isSelected && isSelectionMode}
+      data-testid="sidebar-history-item"
+    >
       <SidebarMenuButton
         asChild
         isActive={isSelectionMode ? isSelected : isActive}

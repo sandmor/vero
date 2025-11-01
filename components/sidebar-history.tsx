@@ -321,8 +321,11 @@ export function SidebarHistory({
   if (!user) {
     return (
       <SidebarGroup>
-        <SidebarGroupContent>
-          <div className="flex w-full flex-row items-center justify-center gap-2 px-2 text-sm text-zinc-500">
+        <SidebarGroupContent data-testid="sidebar-history-scroll-container">
+          <div
+            className="flex w-full flex-row items-center justify-center gap-2 px-2 text-sm text-zinc-500"
+            data-testid="sidebar-login-prompt"
+          >
             Login to save and revisit previous chats!
           </div>
         </SidebarGroupContent>
@@ -647,6 +650,8 @@ export function SidebarHistory({
           </SidebarMenu>
 
           <motion.div
+            className="h-px w-full"
+            data-testid="sidebar-history-scroll-sentinel"
             onViewportEnter={() => {
               if (!isFetchingNextPage && !hasReachedEnd) {
                 fetchNextPage();

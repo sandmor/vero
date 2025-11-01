@@ -27,6 +27,8 @@ import {
 import type React from 'react';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
 
+const IS_E2E = process.env.NEXT_PUBLIC_E2E === '1';
+
 export type SelectionApi = {
   getSelectedIds: () => string[];
   removeFromSelection: (ids: string[]) => void;
@@ -222,6 +224,9 @@ export function useChatMessaging({
   );
 
   const refreshMessageTree = useCallback(async () => {
+    if (IS_E2E) {
+      return;
+    }
     if (treeSyncRef.current) {
       return treeSyncRef.current;
     }

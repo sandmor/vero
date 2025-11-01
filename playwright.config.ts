@@ -101,6 +101,10 @@ export default defineConfig({
   webServer: {
     // Use bun to run the package.json dev script. "bun dev" would try to execute a file named dev.
     command: 'bun run dev',
+    env: {
+      APP_E2E: '1',
+      NEXT_PUBLIC_E2E: '1',
+    },
     // Hit the lightweight /ping endpoint (handled in middleware) for a fast 200 readiness check.
     url: `${baseURL}/ping`,
     timeout: 120 * 1000,

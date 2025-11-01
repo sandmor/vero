@@ -63,6 +63,7 @@ export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
                   <TooltipTrigger asChild>
                     <Button
                       className="h-8 p-1 md:h-fit md:p-2"
+                      data-testid="sidebar-select-mode-button"
                       onClick={startSelectionMode}
                       type="button"
                       variant="ghost"
@@ -79,6 +80,7 @@ export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
                 <TooltipTrigger asChild>
                   <Button
                     className="h-8 p-1 md:h-fit md:p-2"
+                    data-testid="sidebar-new-chat-button"
                     onClick={() => {
                       setOpenMobile(false);
                       router.push('/');

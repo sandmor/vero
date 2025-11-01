@@ -16,6 +16,24 @@ import {
 import { getAppSession } from '@/lib/auth/session';
 import z from 'zod';
 
+const IS_E2E = process.env.APP_E2E === '1';
+const E2E_SESSION = {
+  user: {
+    id: 'e2e-user',
+    type: 'guest' as const,
+    email: 'playwright@example.com',
+  },
+};
+
+async function requireSession() {
+  if (IS_E2E) {
+    return E2E_SESSION;
+  }
+  const session = await getAppSession();
+  if (!session?.user) throw new Error('Unauthorized');
+  return session;
+}
+
 export async function saveChatModelAsCookie(model: string) {
   const cookieStore = await cookies();
   cookieStore.set('chat-model', model);
@@ -67,6 +85,9 @@ export async function updateChatVisibility({
   chatId: string;
   visibility: VisibilityType;
 }) {
+  if (IS_E2E) {
+    return;
+  }
   await updateChatVisiblityById({ chatId, visibility });
 }
 
@@ -79,8 +100,11 @@ export async function updateHeadMessage({
   messageId: string;
   expectedHeadId?: string | null;
 }) {
-  const session = await getAppSession();
-  if (!session?.user) throw new Error('Unauthorized');
+  if (IS_E2E) {
+    return;
+  }
+
+  const session = await requireSession();
 
   await updateHeadMessageByChatId({
     chatId,
@@ -101,8 +125,16 @@ export async function forkChatAction({
   mode: 'regenerate' | 'edit' | 'clone';
   editedText?: string;
 }) {
-  const session = await getAppSession();
-  if (!session?.user) throw new Error('Unauthorized');
+  if (IS_E2E) {
+    return {
+      newChatId: `${sourceChatId}-fork`,
+      insertedEditedMessageId:
+        mode === 'edit' ? `${pivotMessageId}-edited` : undefined,
+      previousUserText: mode === 'regenerate' ? 'mocked-user-text' : undefined,
+    };
+  }
+
+  const session = await requireSession();
   const result = await forkChat({
     sourceChatId,
     pivotMessageId,
@@ -122,8 +154,14 @@ export async function branchMessageAction({
   messageId: string;
   editedText: string;
 }) {
-  const session = await getAppSession();
-  if (!session?.user) throw new Error('Unauthorized');
+  if (IS_E2E) {
+    return {
+      newMessageId: `${messageId}-edited`,
+      previousHeadId: null,
+    } as const;
+  }
+
+  const session = await requireSession();
 
   return branchMessageWithEdit({
     chatId,
@@ -134,8 +172,11 @@ export async function branchMessageAction({
 }
 
 export async function getMessageTreeAction({ chatId }: { chatId: string }) {
-  const session = await getAppSession();
-  if (!session?.user) throw new Error('Unauthorized');
+  if (IS_E2E) {
+    throw new Error('E2E mode bypasses server message tree');
+  }
+
+  const session = await requireSession();
 
   const chat = await getChatById({ id: chatId });
   if (!chat) throw new Error('Chat not found');
