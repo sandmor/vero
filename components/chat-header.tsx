@@ -10,10 +10,11 @@ import { ChatPinnedArchive } from './chat-pinned-archive';
 import { useSidebar } from './ui/sidebar';
 import { VisibilitySelector, type VisibilityType } from './visibility-selector';
 import { ChatToolSelector } from './chat-tool-selector';
-import { ChatAgentSelector, type AgentPreset } from './chat-agent-selector';
+import { ChatAgentSelector } from './chat-agent-selector';
 import { motion } from 'framer-motion';
 import type { ChatModelCapabilitiesSummary } from '@/lib/ai/models';
 import type { ChatToolId } from '@/lib/ai/tool-ids';
+import type { AgentPreset } from '@/types/agent';
 
 function PureChatHeader({
   chatId,

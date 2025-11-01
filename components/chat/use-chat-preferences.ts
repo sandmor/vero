@@ -15,7 +15,7 @@ import { fetchWithErrorHandlers, isValidUUID } from '@/lib/utils';
 import type { ChatModelOption } from '@/lib/ai/models';
 import type { ChatToolId } from '@/lib/ai/tool-ids';
 import type { ChatSettings } from '@/lib/db/schema';
-import type { AgentPreset } from '../chat-agent-selector';
+import type { AgentPreset } from '@/types/agent';
 
 export type UseChatPreferencesArgs = {
   chatId: string;

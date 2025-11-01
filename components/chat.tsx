@@ -21,7 +21,7 @@ import { Messages } from './messages';
 import { MultimodalInput } from './multimodal-input';
 import { toast } from './toast';
 import type { VisibilityType } from './visibility-selector';
-import type { AgentPreset } from './chat-agent-selector';
+import type { AgentPreset } from '@/types/agent';
 import { Button, buttonVariants } from './ui/button';
 import {
   AlertDialog,

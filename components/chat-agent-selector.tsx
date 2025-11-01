@@ -1,22 +1,18 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
+import { cn, isValidUUID } from '@/lib/utils';
 import { useAgents } from '@/hooks/use-agents';
-import type { Agent } from '@/lib/db/schema';
 import { Badge } from '@/components/ui/badge';
 import { Check, Loader, Sparkles, User } from 'lucide-react';
-
-export type AgentPreset = Pick<
-  Agent,
-  'id' | 'name' | 'description' | 'settings'
->;
+import { useSearchParams } from 'next/navigation';
+import type { AgentPreset } from '@/types/agent';
 
 interface ChatAgentSelectorProps {
   selectedAgentId?: string;
@@ -38,6 +34,7 @@ export function ChatAgentSelector({
 }: ChatAgentSelectorProps) {
   const [open, setOpen] = useState(false);
   const { data, isLoading, error } = useAgents();
+  const searchParams = useSearchParams();
 
   const agents = useMemo<AgentPreset[]>(
     () =>
@@ -62,38 +59,94 @@ export function ChatAgentSelector({
   const [isApplying, setIsApplying] = useState(false);
   const buttonDisabled = !canModify || isApplying;
   const syncedAgentRef = useRef<string | null>(null);
+  const handledAgentParamRef = useRef<string | null>(null);
 
   const handleOpenChange = (next: boolean) => {
     if (!canModify) return;
     setOpen(next);
   };
 
-  const chooseAgent = async (agent: AgentPreset | null) => {
-    if (!onSelectAgent) return;
-    const result = onSelectAgent(agent, { userInitiated: true });
-    // If caller returned a promise, await it and show spinner
-    if (result && typeof (result as Promise<void>).then === 'function') {
+  const applyAgent = useCallback(
+    async (
+      agent: AgentPreset | null,
+      options: { userInitiated: boolean }
+    ): Promise<boolean> => {
+      if (!onSelectAgent) return false;
+      let success = true;
       try {
-        setIsApplying(true);
-        await result;
-        // mark synced only after successful apply
-        syncedAgentRef.current = agent ? agent.id : null;
-      } catch (e) {
-        // swallow here; caller is expected to show errors
-      } finally {
+        const result = onSelectAgent(agent, {
+          userInitiated: options.userInitiated,
+        });
+        if (result && typeof (result as Promise<void>).then === 'function') {
+          try {
+            setIsApplying(true);
+            await result;
+            syncedAgentRef.current = agent ? agent.id : null;
+          } finally {
+            setIsApplying(false);
+          }
+        } else {
+          syncedAgentRef.current = agent ? agent.id : null;
+        }
+      } catch (error) {
+        success = false;
         setIsApplying(false);
       }
-    } else {
-      // synchronous handler
-      syncedAgentRef.current = agent ? agent.id : null;
+      return success;
+    },
+    [onSelectAgent]
+  );
+
+  const chooseAgent = async (agent: AgentPreset | null) => {
+    if (!canModify) return;
+    const success = await applyAgent(agent, { userInitiated: true });
+    if (success) {
+      setOpen(false);
     }
-    setOpen(false);
   };
 
   useEffect(() => {
     // Sync ref when selectedAgentId changes from parent
     syncedAgentRef.current = selectedAgentId ?? null;
   }, [selectedAgentId]);
+
+  useEffect(() => {
+    if (!canModify) return;
+    if (!searchParams) return;
+
+    const paramValue = searchParams.get('agentId');
+    if (!paramValue) {
+      handledAgentParamRef.current = null;
+      return;
+    }
+
+    if (handledAgentParamRef.current === paramValue) {
+      return;
+    }
+
+    if (!isValidUUID(paramValue)) {
+      handledAgentParamRef.current = paramValue;
+      return;
+    }
+
+    if (selectedAgentId === paramValue) {
+      handledAgentParamRef.current = paramValue;
+      return;
+    }
+
+    if (isLoading) {
+      return;
+    }
+
+    const targetAgent = agents.find((agent) => agent.id === paramValue);
+    if (!targetAgent) {
+      handledAgentParamRef.current = paramValue;
+      return;
+    }
+
+    handledAgentParamRef.current = paramValue;
+    void applyAgent(targetAgent, { userInitiated: false });
+  }, [agents, applyAgent, canModify, isLoading, searchParams, selectedAgentId]);
 
   return (
     <Popover
