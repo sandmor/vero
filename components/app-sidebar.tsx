@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-type AppSidebarUser = { id?: string; email?: string | null };
 import { CheckSquare, Plus } from 'lucide-react';
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
@@ -17,10 +16,13 @@ import {
 } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { useMultiSelection } from '@/hooks/use-multi-selection';
+import { useAppSession } from '@/hooks/use-app-session';
 
-export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
+export function AppSidebar() {
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
+  const { data, isLoading, isError } = useAppSession();
+  const sessionUser = !isError ? data?.session?.user : undefined;
 
   const {
     isSelectionMode,
@@ -102,7 +104,7 @@ export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
       </SidebarHeader>
       <SidebarContent>
         <SidebarHistory
-          user={user}
+          user={sessionUser}
           selection={{
             isSelectionMode,
             selectedSet,
@@ -122,7 +124,9 @@ export function AppSidebar({ user }: { user: AppSidebarUser | undefined }) {
           }}
         />
       </SidebarContent>
-      <SidebarFooter>{user && <SidebarUserNav user={user} />}</SidebarFooter>
+      <SidebarFooter>
+        <SidebarUserNav isLoading={isLoading} user={sessionUser} />
+      </SidebarFooter>
     </Sidebar>
   );
 }

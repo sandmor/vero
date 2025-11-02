@@ -31,6 +31,20 @@ const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
+function readSidebarCookie(): boolean | undefined {
+  if (typeof document === "undefined") return undefined;
+  const prefix = `${SIDEBAR_COOKIE_NAME}=`;
+  const entry = document.cookie
+    .split(";")
+    .map((row) => row.trim())
+    .find((row) => row.startsWith(prefix));
+  if (!entry) return undefined;
+  const value = entry.slice(prefix.length);
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
 type SidebarContextProps = {
   state: "expanded" | "collapsed";
   open: boolean;
@@ -62,7 +76,7 @@ const SidebarProvider = React.forwardRef<
 >(
   (
     {
-      defaultOpen = true,
+  defaultOpen = false,
       open: openProp,
       onOpenChange: setOpenProp,
       className,
@@ -79,20 +93,44 @@ const SidebarProvider = React.forwardRef<
     // We use openProp and setOpenProp for control from outside the component.
     const [_open, _setOpen] = React.useState(defaultOpen);
     const open = openProp ?? _open;
+    const openRef = React.useRef(open);
+    React.useEffect(() => {
+      openRef.current = open;
+    }, [open]);
+
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
-        const openState = typeof value === "function" ? value(open) : value;
+        const nextState =
+          typeof value === "function" ? value(openRef.current) : value;
+
         if (setOpenProp) {
-          setOpenProp(openState);
+          setOpenProp(nextState);
         } else {
-          _setOpen(openState);
+          _setOpen(nextState);
         }
 
-        // This sets the cookie to keep the sidebar state.
-        document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+        if (typeof document !== "undefined") {
+          document.cookie = `${SIDEBAR_COOKIE_NAME}=${nextState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+        }
       },
-      [setOpenProp, open]
+      [setOpenProp]
     );
+
+    React.useEffect(() => {
+      if (openProp !== undefined) return;
+      const stored = readSidebarCookie();
+      if (stored === undefined || stored === openRef.current) return;
+      const raf = requestAnimationFrame(() => {
+        _setOpen(stored);
+      });
+      return () => cancelAnimationFrame(raf);
+    }, [openProp]);
+
+    React.useEffect(() => {
+      if (openProp === undefined) return;
+      if (typeof document === "undefined") return;
+      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openProp}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+    }, [openProp]);
 
     // Helper to toggle the sidebar.
     const toggleSidebar = React.useCallback(() => {

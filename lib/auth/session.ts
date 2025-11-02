@@ -1,10 +1,7 @@
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db/prisma';
 import { readGuestSession } from './guest';
-
-export type AppSession = {
-  user: { id: string; type: 'guest' | 'regular'; email?: string | null };
-};
+import type { AppSession } from './types';
 
 export async function getAppSession(): Promise<AppSession | null> {
   if (process.env.APP_E2E === '1') {
@@ -86,3 +83,5 @@ export async function getAppSession(): Promise<AppSession | null> {
 
   return null;
 }
+
+export type { AppSession } from './types';

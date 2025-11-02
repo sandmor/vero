@@ -3,7 +3,7 @@
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useParams, useRouter } from 'next/navigation';
-type SidebarUser = { id?: string; email?: string | null };
+import type { SessionUser } from '@/lib/auth/types';
 import { useCallback, useMemo, useState } from 'react';
 import type { TouchEvent as ReactTouchEvent } from 'react';
 import { toast } from 'sonner';
@@ -116,7 +116,7 @@ export function SidebarHistory({
   user,
   selection,
 }: {
-  user: SidebarUser | undefined;
+  user: SessionUser | undefined;
   selection: SelectionProps;
 }) {
   const { setOpenMobile } = useSidebar();
