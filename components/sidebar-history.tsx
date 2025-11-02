@@ -114,9 +114,11 @@ function buildPageUrl(cursor: string | undefined) {
 export function SidebarHistory({
   user,
   selection,
+  sessionStatus,
 }: {
   user: SessionUser | undefined;
   selection: SelectionProps;
+  sessionStatus: 'loading' | 'authenticated' | 'unauthenticated';
 }) {
   const { setOpenMobile } = useSidebar();
   const { id } = useParams();
@@ -381,6 +383,22 @@ export function SidebarHistory({
     });
   }, [selectedIds, queryClient, currentChatId, router, clearSelectionMode]);
 
+  if (sessionStatus === 'loading') {
+    return (
+      <SidebarGroup>
+        <SidebarGroupContent data-testid="sidebar-history-scroll-container">
+          <div
+            className="flex w-full flex-row items-center justify-center gap-2 px-2 text-sm text-zinc-500"
+            data-testid="sidebar-loading-prompt"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading chat history...
+          </div>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    );
+  }
+
   if (!user) {
     return (
       <SidebarGroup>
@@ -389,7 +407,7 @@ export function SidebarHistory({
             className="flex w-full flex-row items-center justify-center gap-2 px-2 text-sm text-zinc-500"
             data-testid="sidebar-login-prompt"
           >
-            Login to save and revisit previous chats!
+            Sign in to save your chats and access them from any device.
           </div>
         </SidebarGroupContent>
       </SidebarGroup>
@@ -446,24 +464,6 @@ export function SidebarHistory({
           setShowDeleteDialog(true);
         }}
       />
-
-      {(cacheStatus === 'initializing' || cacheStatus === 'error') && (
-        <div
-          className={cn(
-            'px-4 py-2 text-xs',
-            cacheStatus === 'error'
-              ? 'text-destructive'
-              : 'text-muted-foreground'
-          )}
-        >
-          {cacheStatus === 'error'
-            ? 'Local cache is unavailable; showing live server data.'
-            : 'Syncing your chat cache for faster loads…'}
-          {cacheStatus === 'error' && cacheError
-            ? ` (${cacheError.message})`
-            : ''}
-        </div>
-      )}
 
       <SidebarGroup>
         <SidebarGroupContent>
