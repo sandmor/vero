@@ -3,7 +3,7 @@ import { ChatSDKError } from '@/lib/errors';
 import { getAppSession } from '@/lib/auth/session';
 import { getTierForUserType } from '@/lib/ai/tiers';
 import { resolveChatModelOptions } from '@/lib/ai/models.server';
-import { DEFAULT_CHAT_MODEL, isModelIdAllowed } from '@/lib/ai/models';
+import { isModelIdAllowed } from '@/lib/ai/models';
 import {
   normalizeModelId,
   normalizeReasoningEffort,
@@ -12,20 +12,12 @@ import { generateUUID } from '@/lib/utils';
 import { getChatById, getMessagesByChatId } from '@/lib/db/queries';
 import type { ChatSettings } from '@/lib/db/schema';
 import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
-
-function buildInitialSettings(
-  base: ChatSettings | null,
-  reasoningEffort?: 'low' | 'medium' | 'high' | null
-): ChatSettings | null {
-  if (!base && !reasoningEffort) return null;
-  const settings: ChatSettings = { ...(base ?? {}) };
-  if (reasoningEffort) {
-    settings.reasoningEffort = reasoningEffort;
-  } else {
-    delete settings.reasoningEffort;
-  }
-  return Object.keys(settings).length > 0 ? settings : null;
-}
+import {
+  buildInitialSettings,
+  resolveInitialModel,
+  resolveInitialReasoningEffort,
+} from '@/lib/chat/bootstrap-helpers';
+import { serializeChat } from '@/lib/chat/serialization';
 
 export async function GET(request: Request) {
   const session = await getAppSession();
@@ -60,21 +52,12 @@ export async function GET(request: Request) {
     );
     const cookieCandidate = modelIdFromCookie?.value;
 
-    const candidateOrder = [
+    const initialModel = resolveInitialModel({
+      allowedModelIds: tier.modelIds,
       chatSettingsModel,
       agentSettingsModel,
       cookieCandidate,
-      DEFAULT_CHAT_MODEL,
-    ];
-
-    let initialModel = candidateOrder.find(
-      (candidate): candidate is string =>
-        !!candidate && isModelIdAllowed(candidate, tier.modelIds)
-    );
-
-    if (!initialModel) {
-      initialModel = tier.modelIds[0] ?? DEFAULT_CHAT_MODEL;
-    }
+    });
 
     const chatSettingsReasoning = normalizeReasoningEffort(
       chat.settings?.reasoningEffort
@@ -85,11 +68,11 @@ export async function GET(request: Request) {
     const cookieReasoningEffort = normalizeReasoningEffort(
       reasoningEffortFromCookie?.value
     );
-    const initialReasoningEffort =
-      chatSettingsReasoning ??
-      agentSettingsReasoning ??
-      cookieReasoningEffort ??
-      undefined;
+    const initialReasoningEffort = resolveInitialReasoningEffort({
+      chatSettingsReasoning,
+      agentSettingsReasoning,
+      cookieReasoning: cookieReasoningEffort,
+    });
 
     const initialSettings = buildInitialSettings(
       chat.settings,
@@ -117,6 +100,7 @@ export async function GET(request: Request) {
       initialMessageTree: messageTree,
       initialLastContext: chat.lastContext ?? null,
       shouldSetLastChatUrl: false,
+      prefetchedChat: serializeChat(chat),
     };
 
     return Response.json(response, { status: 200 });
@@ -128,16 +112,12 @@ export async function GET(request: Request) {
   );
   const initialReasoningEffort = cookieReasoningEffort ?? undefined;
 
-  const candidateOrder = [cookieCandidate, DEFAULT_CHAT_MODEL];
-
-  let initialModel = candidateOrder.find(
-    (candidate): candidate is string =>
-      !!candidate && isModelIdAllowed(candidate, tier.modelIds)
-  );
-
-  if (!initialModel) {
-    initialModel = tier.modelIds[0] ?? DEFAULT_CHAT_MODEL;
-  }
+  const initialModel = resolveInitialModel({
+    allowedModelIds: tier.modelIds,
+    chatSettingsModel: null,
+    agentSettingsModel: null,
+    cookieCandidate,
+  });
 
   const initialSettings = buildInitialSettings(null, initialReasoningEffort);
 

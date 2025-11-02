@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, Search, X } from 'lucide-react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
@@ -24,6 +24,8 @@ import {
 import type { Chat } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
 import { ChatItem } from './sidebar-history-item';
+import { useEncryptedCache } from '@/components/encrypted-cache-provider';
+import { deserializeChat } from '@/lib/chat/serialization';
 
 type SearchResults = {
   chats: Chat[];
@@ -77,6 +79,32 @@ export function ChatSearch({
   const { setOpenMobile } = useSidebar();
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
+  const {
+    cachedChats,
+    ready: isCacheReady,
+    refreshCache,
+    status: cacheStatus,
+    error: cacheError,
+  } = useEncryptedCache();
+  const cachedChatEntities = useMemo(
+    () => cachedChats.map((entry) => deserializeChat(entry.data.chat)),
+    [cachedChats]
+  );
+  const cachedMatches = useMemo(() => {
+    if (!isCacheReady) return [] as Chat[];
+    if (!debouncedQuery) return [] as Chat[];
+    const normalized = debouncedQuery.toLowerCase();
+    return cachedChatEntities
+      .filter((chat) => chat.title.toLowerCase().includes(normalized))
+      .slice(0, COMPACT_LIMIT);
+  }, [cachedChatEntities, debouncedQuery, isCacheReady]);
+  const cacheSyncRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isCacheReady) {
+      cacheSyncRef.current = null;
+    }
+  }, [isCacheReady]);
 
   // Debounce search input
   useEffect(() => {
@@ -152,6 +180,61 @@ export function ChatSearch({
   const isDialogFetching = isDialogOpen && (isFetchingNextPage || isRefetching);
   const isDialogError = isDialogOpen && (isInfiniteError || isError);
 
+  useEffect(() => {
+    if (!debouncedQuery) {
+      cacheSyncRef.current = null;
+    }
+  }, [debouncedQuery]);
+
+  useEffect(() => {
+    if (!isCacheReady) return;
+    if (!debouncedQuery) return;
+    if (!fullResults?.chats?.length) return;
+
+    const cachedIds = new Set(cachedChatEntities.map((chat) => chat.id));
+    const hasMissing = fullResults.chats.some(
+      (chat) => !cachedIds.has(chat.id)
+    );
+    if (hasMissing) {
+      const signature = `${debouncedQuery}-compact-${fullResults.chats
+        .map((chat) => chat.id)
+        .join(',')}`;
+      if (cacheSyncRef.current !== signature) {
+        cacheSyncRef.current = signature;
+        void refreshCache();
+      }
+    }
+  }, [
+    isCacheReady,
+    debouncedQuery,
+    fullResults,
+    cachedChatEntities,
+    refreshCache,
+  ]);
+
+  useEffect(() => {
+    if (!isCacheReady) return;
+    if (!debouncedQuery) return;
+    if (!dialogChats.length) return;
+    const cachedIds = new Set(cachedChatEntities.map((chat) => chat.id));
+    const hasMissing = dialogChats.some((chat) => !cachedIds.has(chat.id));
+    if (hasMissing) {
+      const signature = `${debouncedQuery}-infinite-${dialogChats
+        .map((chat) => chat.id)
+        .join(',')}`;
+      if (cacheSyncRef.current !== signature) {
+        cacheSyncRef.current = signature;
+        void refreshCache();
+      }
+    }
+  }, [
+    isCacheReady,
+    debouncedQuery,
+    dialogChats,
+    cachedChatEntities,
+    refreshCache,
+  ]);
+
   const handleClear = useCallback(() => {
     setSearchQuery('');
     setDebouncedQuery('');
@@ -159,9 +242,16 @@ export function ChatSearch({
   }, []);
 
   const showResults = debouncedQuery.length > 0;
-  const compactResults = fullResults?.chats ?? [];
+  const combinedCompactResults = useMemo(() => {
+    const map = new Map<string, Chat>();
+    cachedMatches.forEach((chat) => map.set(chat.id, chat));
+    (fullResults?.chats ?? []).forEach((chat) => map.set(chat.id, chat));
+    return Array.from(map.values()).slice(0, COMPACT_LIMIT);
+  }, [cachedMatches, fullResults]);
+
+  const compactResults = combinedCompactResults;
   const hasResults = compactResults.length > 0;
-  const totalResults = fullResults?.total ?? 0;
+  const totalResults = fullResults?.total ?? compactResults.length;
   const showViewAll = hasResults && totalResults > compactResults.length;
 
   return (
@@ -199,6 +289,19 @@ export function ChatSearch({
               </Button>
             )}
           </motion.div>
+
+          {cacheStatus === 'initializing' && (
+            <div className="rounded-md border border-border/40 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Syncing cache for faster search results…
+            </div>
+          )}
+
+          {cacheStatus === 'error' && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              Local cache unavailable
+              {cacheError ? `: ${cacheError.message}` : ''}.
+            </div>
+          )}
 
           <AnimatePresence initial={false}>
             {showResults && (

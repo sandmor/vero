@@ -2,8 +2,6 @@ import { Suspense } from 'react';
 import { ChatComposerClient } from '@/components/chat/chat-composer.client';
 import { DataStreamHandler } from '@/components/data-stream-handler';
 
-export const dynamic = 'force-static';
-
 function ChatFallback() {
   return (
     <div className="flex h-dvh items-center justify-center bg-background">
@@ -12,11 +10,16 @@ function ChatFallback() {
   );
 }
 
-export default function Page({ params }: { params: { id: string } }) {
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
   return (
     <>
       <Suspense fallback={<ChatFallback />}>
-        <ChatComposerClient chatId={params.id} />
+        <ChatComposerClient chatId={id} />
       </Suspense>
       <DataStreamHandler />
     </>

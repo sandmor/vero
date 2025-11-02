@@ -3,6 +3,7 @@ import type { ChatModelOption } from '@/lib/ai/models';
 import type { ChatSettings, MessageTreeResult } from '@/lib/db/schema';
 import type { AppUsage } from '@/lib/usage';
 import type { AgentPreset } from '@/types/agent';
+import type { SerializedChat } from '@/lib/cache/types';
 
 interface ChatBootstrapCommon {
   chatId: string;
@@ -30,6 +31,7 @@ export type ExistingChatBootstrap = ChatBootstrapCommon & {
   agentId?: string | null;
   initialMessageTree: MessageTreeResult;
   initialLastContext?: AppUsage | null;
+  prefetchedChat?: SerializedChat;
 };
 
 export type ChatBootstrapResponse = NewChatBootstrap | ExistingChatBootstrap;

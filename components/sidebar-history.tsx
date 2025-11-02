@@ -4,7 +4,7 @@ import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useParams, useRouter } from 'next/navigation';
 import type { SessionUser } from '@/lib/auth/types';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TouchEvent as ReactTouchEvent } from 'react';
 import { toast } from 'sonner';
 import {
@@ -35,6 +35,10 @@ import type { Chat } from '@/lib/db/schema';
 import { CheckSquare, Loader, Loader2, Trash2 } from 'lucide-react';
 import { ChatItem } from './sidebar-history-item';
 import { ChatSearch } from './chat-search';
+import { useEncryptedCache } from '@/components/encrypted-cache-provider';
+import type { ChatHistory } from '@/types/chat-history';
+import { deserializeChat } from '@/lib/chat/serialization';
+import { cn } from '@/lib/utils';
 
 type GroupedChats = {
   today: Chat[];
@@ -42,11 +46,6 @@ type GroupedChats = {
   lastWeek: Chat[];
   lastMonth: Chat[];
   older: Chat[];
-};
-
-export type ChatHistory = {
-  chats: Chat[];
-  hasMore: boolean;
 };
 
 type SelectionProps = {
@@ -124,6 +123,19 @@ export function SidebarHistory({
   const currentChatId = Array.isArray(id) ? id[0] : (id as string | undefined);
 
   const queryClient = useQueryClient();
+  const {
+    refreshCache,
+    cachedChats,
+    metadata: cacheMetadata,
+    ready: isCacheReady,
+    status: cacheStatus,
+    error: cacheError,
+  } = useEncryptedCache();
+  const hasHydratedFromCacheRef = useRef(false);
+  const cachedChatEntities = useMemo(
+    () => cachedChats.map((entry) => deserializeChat(entry.data.chat)),
+    [cachedChats]
+  );
 
   const {
     data: paginatedChatHistories,
@@ -135,9 +147,28 @@ export function SidebarHistory({
     queryKey: ['chat', 'history'],
     queryFn: async ({ pageParam }) => {
       const url = buildPageUrl(pageParam as string | undefined);
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch chat history');
-      return res.json();
+      const payload = (await res.json()) as ChatHistory;
+
+      if (!pageParam && isCacheReady) {
+        if (cachedChatEntities.length && payload.chats.length) {
+          const firstMismatch = payload.chats.find((serverChat) => {
+            const cached = cachedChatEntities.find(
+              (item) => item.id === serverChat.id
+            );
+            if (!cached) return true;
+            const cachedTimestamp = new Date(cached.createdAt).getTime();
+            const serverTimestamp = new Date(serverChat.createdAt).getTime();
+            return cachedTimestamp !== serverTimestamp;
+          });
+          if (firstMismatch) {
+            void refreshCache();
+          }
+        }
+      }
+
+      return payload;
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => {
@@ -175,6 +206,38 @@ export function SidebarHistory({
 
   const hasEmptyChatHistory =
     pages.length > 0 ? pages.every((p) => p.chats.length === 0) : false;
+
+  useEffect(() => {
+    if (!isCacheReady) {
+      hasHydratedFromCacheRef.current = false;
+      return;
+    }
+    if (hasHydratedFromCacheRef.current) return;
+    if (!cachedChatEntities.length) return;
+
+    const existing = queryClient.getQueryData<InfiniteData<ChatHistory>>([
+      'chat',
+      'history',
+    ]);
+
+    const cachedChatList = cachedChatEntities;
+
+    if (!existing || existing.pages.every((page) => page.chats.length === 0)) {
+      const hasMore =
+        cacheMetadata?.cacheCompletionMarker.hasOlderChats ?? false;
+      queryClient.setQueryData<InfiniteData<ChatHistory>>(['chat', 'history'], {
+        pageParams: [undefined],
+        pages: [
+          {
+            chats: cachedChatList,
+            hasMore,
+          },
+        ],
+      });
+    }
+
+    hasHydratedFromCacheRef.current = true;
+  }, [cachedChatEntities, cacheMetadata, isCacheReady, queryClient]);
 
   const allChats = useMemo(() => pages.flatMap((page) => page.chats), [pages]);
   const allChatIds = useMemo(() => allChats.map((chat) => chat.id), [allChats]);
@@ -383,6 +446,24 @@ export function SidebarHistory({
           setShowDeleteDialog(true);
         }}
       />
+
+      {(cacheStatus === 'initializing' || cacheStatus === 'error') && (
+        <div
+          className={cn(
+            'px-4 py-2 text-xs',
+            cacheStatus === 'error'
+              ? 'text-destructive'
+              : 'text-muted-foreground'
+          )}
+        >
+          {cacheStatus === 'error'
+            ? 'Local cache is unavailable; showing live server data.'
+            : 'Syncing your chat cache for faster loads…'}
+          {cacheStatus === 'error' && cacheError
+            ? ` (${cacheError.message})`
+            : ''}
+        </div>
+      )}
 
       <SidebarGroup>
         <SidebarGroupContent>

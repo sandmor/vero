@@ -4,6 +4,7 @@ Advanced multimodal AI chat application built with Next.js 15 (App Router), Reac
 
 <p align="center">
   <a href="#features"><strong>Features</strong></a> ·
+  <a href="#client-side-caching"><strong>Caching</strong></a> ·
   <a href="#artifacts"><strong>Artifacts</strong></a> ·
   <a href="#archive"><strong>Archive</strong></a> ·
   <a href="#models"><strong>Models</strong></a> ·
@@ -24,6 +25,7 @@ Advanced multimodal AI chat application built with Next.js 15 (App Router), Reac
 - **Auto-Resume**: Recent context & pinned archive memory automatically reattached on reload
 - **Token Bucket Rate Limiting**: Per-tier configurable capacity/refill stored in `Tier` + per-user runtime state in `UserRateLimit`
 - **Guest & Auth Modes**: Seamless anonymous upgrade path without losing context
+- **Encrypted Client-Side Caching**: Securely caches chat history and data on the client using IndexedDB and the Web Crypto API. This provides a significant performance boost and enables a near-instant experience when revisiting chats.
 
 ### Advanced AI Integration
 
@@ -67,6 +69,23 @@ Operational management interface (in progress / evolving):
 - **Tier Management**: Adjust model allow lists + bucket config (backed by `Tier` rows, with fallbacks if missing)
 - **Model Capabilities**: View persisted model capability matrix & usage (referenced by tiers)
 - **Housekeeping Tasks**: Planned actions (sync OpenRouter models, prune unused capabilities)
+
+## Client-Side Caching
+
+To enhance performance and provide a more fluid user experience, Virid Chat implements an encrypted client-side caching mechanism.
+
+### Key Features
+
+- **Fast Initial Load**: Chat history and messages are loaded from a local IndexedDB cache, making navigation between chats nearly instantaneous.
+- **Cache Encryption**: All cached data is encrypted using AES-GCM via the Web Crypto API. The encryption key is derived from a server-side secret and a stable user session identifier, ensuring that each user's data is secure and private.
+- **Cache Synchronization**: The client-side cache is kept in sync with the server. The application intelligently refreshes the cache in the background to ensure data consistency.
+- **Optimistic Updates**: The UI updates optimistically when new messages are sent or chats are created, providing a responsive feel.
+
+### Implementation Details
+
+- **Storage**: [Dexie.js](https://dexie.org/) is used as a wrapper around IndexedDB for convenient and robust database operations.
+- **Encryption**: The Web Crypto API is used for all cryptographic operations, ensuring a high level of security.
+- **State Management**: The cache is managed through a React Context provider (`EncryptedCacheProvider`) and a custom hook (`useEncryptedCache`), which integrates seamlessly with `react-query`.
 
 ## Artifacts
 
@@ -125,7 +144,7 @@ The archive provides tools for AI assistants to:
 - **Explorer View**: Browse and search archive entries
 - **Detail View**: Read and edit individual entries
 - **Link Visualization**: See relationships between entries
-- **Bulk Operations**: Import/export and batch management
+  -- **Bulk Operations**: Import/export and batch management
 
 ## Models
 
@@ -224,6 +243,7 @@ Administrative interface for system management:
 - ProseMirror + CodeMirror + Shiki (artifact editors)
 - `sonner` (toasts), `lucide-react` (icons), `framer-motion` (animation)
 - `diff-match-patch` + custom diff view components
+- `dexie`: A wrapper for IndexedDB.
 
 ## Running locally
 
@@ -258,12 +278,13 @@ Create `.env.local` (loaded by Next.js) and ensure `DATABASE_URL` is present whe
 
 #### Essential
 
-| Variable                   | Purpose                                      |
-| -------------------------- | -------------------------------------------- |
-| `AUTH_SECRET`              | Guest session encryption key                 |
-| `NEXT_PUBLIC_APP_BASE_URL` | Base URL for metadata / OAuth redirects      |
-| `DATABASE_URL`             | PostgreSQL connection string                 |
-| `OPENROUTER_API_KEY`       | OpenRouter API key (model catalog + routing) |
+| Variable                   | Purpose                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| `AUTH_SECRET`              | Guest session encryption key                                                               |
+| `NEXT_PUBLIC_APP_BASE_URL` | Base URL for metadata / OAuth redirects                                                    |
+| `DATABASE_URL`             | PostgreSQL connection string                                                               |
+| `OPENROUTER_API_KEY`       | OpenRouter API key (model catalog + routing)                                               |
+| `CACHE_ENCRYPTION_SECRET`  | A 32-byte, base64-encoded secret used to derive encryption keys for the client-side cache. |
 
 #### Authentication (Clerk)
 
