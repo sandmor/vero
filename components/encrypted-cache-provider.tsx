@@ -24,6 +24,7 @@ import { deserializeChat } from '@/lib/chat/serialization';
 
 const CACHE_METADATA_KEY = 'cache-metadata';
 const CACHE_CHAT_LIMIT = 50;
+const CACHE_METADATA_VERSION = 1;
 
 const manager = getEncryptedCacheManager();
 
@@ -78,10 +79,7 @@ function shouldRefreshFromServer(
   metadata: CacheMetadataPayload | null
 ): boolean {
   if (!metadata) return true;
-  const generatedAt = Date.parse(metadata.generatedAt);
-  if (Number.isNaN(generatedAt)) return true;
-  const AGE_MS = Date.now() - generatedAt;
-  return AGE_MS > 2 * 60_000; // refresh if older than 2 minutes
+  return metadata.version !== CACHE_METADATA_VERSION;
 }
 
 function primeChatHistoryQuery(

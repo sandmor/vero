@@ -1,5 +1,4 @@
-import '@testing-library/jest-dom';
-import { beforeAll, vi } from 'vitest';
+import { beforeAll, mock } from 'bun:test';
 import { JSDOM } from 'jsdom';
 
 // Set up JSDOM
@@ -13,10 +12,10 @@ global.navigator = dom.window.navigator;
 
 // Polyfill missing browser APIs used by client components during tests
 const noop = () => {};
-const testWindow = globalThis.window as any;
+const windowWithAny = globalThis.window as any;
 
-if (!('matchMedia' in testWindow)) {
-  testWindow.matchMedia = (query: string) => ({
+if (!('matchMedia' in windowWithAny)) {
+  windowWithAny.matchMedia = (query: string) => ({
     matches: false,
     media: query,
     onchange: null,
@@ -34,17 +33,17 @@ class ResizeObserverStub {
   disconnect() {}
 }
 
-if (!('ResizeObserver' in testWindow)) {
-  (testWindow as any).ResizeObserver = ResizeObserverStub;
-  (global as any).ResizeObserver = ResizeObserverStub;
+if (!('ResizeObserver' in windowWithAny)) {
+  (windowWithAny as any).ResizeObserver = ResizeObserverStub;
+  (globalThis as any).ResizeObserver = ResizeObserverStub;
 }
 
 if (typeof getComputedStyle === 'undefined') {
-  (global as any).getComputedStyle =
-    testWindow.getComputedStyle.bind(testWindow);
+  (globalThis as any).getComputedStyle =
+    windowWithAny.getComputedStyle.bind(windowWithAny);
 }
 
-class StorageEventPolyfill extends (testWindow.Event as typeof Event) {
+class StorageEventPolyfill extends (windowWithAny.Event as typeof Event) {
   key: string | null;
   newValue: string | null;
   oldValue: string | null;
@@ -60,11 +59,11 @@ class StorageEventPolyfill extends (testWindow.Event as typeof Event) {
     this.url = init.url ?? '';
   }
 }
-(testWindow as any).StorageEvent = StorageEventPolyfill;
+(windowWithAny as any).StorageEvent = StorageEventPolyfill;
 (globalThis as any).StorageEvent = StorageEventPolyfill;
 
 if (!(globalThis as any).DocumentFragment) {
-  (globalThis as any).DocumentFragment = testWindow.DocumentFragment;
+  (globalThis as any).DocumentFragment = windowWithAny.DocumentFragment;
 }
 
 class MutationObserverStub {
@@ -75,11 +74,11 @@ class MutationObserverStub {
     return [];
   }
 }
-(testWindow as any).MutationObserver = MutationObserverStub;
+(windowWithAny as any).MutationObserver = MutationObserverStub;
 (globalThis as any).MutationObserver = MutationObserverStub;
 
 // Mock Clerk authentication
-vi.mock('@clerk/nextjs', () => ({
+mock.module('@clerk/nextjs', () => ({
   auth: () => ({
     userId: 'test-user-id',
   }),
@@ -90,7 +89,7 @@ vi.mock('@clerk/nextjs', () => ({
 }));
 
 // Mock environment variables
-vi.mock('@/lib/constants', () => ({
+mock.module('@/lib/constants', () => ({
   isProductionEnvironment: false,
   isDevelopmentEnvironment: false,
   isTestEnvironment: true,
@@ -99,53 +98,22 @@ vi.mock('@/lib/constants', () => ({
   adminUserId: 'admin-user-id',
 }));
 
-const isBunRuntime = Boolean(process?.versions?.bun);
-
 const chatActionsMock = {
-  saveChatModelAsCookie: vi.fn(),
-  saveReasoningEffortAsCookie: vi.fn(),
-  updateChatVisibility: vi.fn(),
-  updateHeadMessage: vi.fn(),
-  deleteTrailingMessages: vi.fn(),
-  generateTitleFromChatHistory: vi.fn(),
-  forkChatAction: vi.fn(),
-  branchMessageAction: vi.fn(),
-  getMessageTreeAction: vi
-    .fn()
-    .mockResolvedValue({ tree: [], nodes: [], branch: [] }),
+  saveChatModelAsCookie: () => {},
+  saveReasoningEffortAsCookie: () => {},
+  updateChatVisibility: () => {},
+  updateHeadMessage: () => {},
+  deleteTrailingMessages: () => {},
+  generateTitleFromChatHistory: () => {},
+  forkChatAction: () => {},
+  branchMessageAction: () => {},
+  getMessageTreeAction: async () => ({ tree: [], nodes: [], branch: [] }),
 };
 
-vi.mock('@/app/(chat)/actions', () => chatActionsMock);
-
-if (isBunRuntime) {
-  const bunTest = (await import('bun:test')) as unknown as {
-    mock: {
-      module: (id: string, factory: () => Promise<unknown> | unknown) => void;
-    };
-  };
-  bunTest.mock.module(
-    'next/navigation',
-    () => import('./mocks/next-navigation')
-  );
-  bunTest.mock.module(
-    'next/navigation.js',
-    () => import('./mocks/next-navigation')
-  );
-  bunTest.mock.module('server-only', () => ({}));
-} else {
-  // Mock Next.js router for Vitest runs
-  vi.mock('next/navigation', () => ({
-    useRouter: () => ({
-      push: vi.fn(),
-      replace: vi.fn(),
-      back: vi.fn(),
-    }),
-    useSearchParams: () => new URLSearchParams(),
-    usePathname: () => '/',
-  }));
-  // Mock server-only to prevent import errors in client components during testing
-  vi.mock('server-only', () => ({}));
-}
+mock.module('@/app/(chat)/actions', () => chatActionsMock);
+mock.module('next/navigation', () => import('./mocks/next-navigation'));
+mock.module('next/navigation.js', () => import('./mocks/next-navigation'));
+mock.module('server-only', () => ({}));
 
 // Global test setup
 beforeAll(() => {

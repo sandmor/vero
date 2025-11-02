@@ -12,7 +12,6 @@ import type { ChatMessage, CustomUIDataTypes } from '@/lib/types';
 import type { MessageTreeResult, MessageTreeNode } from '@/lib/db/schema';
 import type { AppUsage } from '@/lib/usage';
 import {
-  buildBranchFromNode,
   convertToUIMessages,
   fetchWithErrorHandlers,
   generateUUID,
@@ -59,6 +58,164 @@ type BranchSwitchState = {
   error: unknown;
 };
 
+const toTimestamp = (value: Date | string | number | null | undefined) => {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const findNodeInSubtree = (
+  root: MessageTreeNode,
+  targetId: string
+): MessageTreeNode | null => {
+  const stack: MessageTreeNode[] = [root];
+  while (stack.length) {
+    const current = stack.pop()!;
+    if (current.id === targetId) {
+      return current;
+    }
+    if (current.children.length) {
+      for (const child of current.children) {
+        stack.push(child);
+      }
+    }
+  }
+  return null;
+};
+
+const findLatestLeaf = (root: MessageTreeNode): MessageTreeNode => {
+  let bestLeaf = root;
+  let bestTimestamp = toTimestamp(root.createdAt);
+  const stack: MessageTreeNode[] = [root];
+
+  while (stack.length) {
+    const current = stack.pop()!;
+    if (current.children.length === 0) {
+      const currentTimestamp = toTimestamp(current.createdAt);
+      if (
+        currentTimestamp > bestTimestamp ||
+        (currentTimestamp === bestTimestamp && current.depth >= bestLeaf.depth)
+      ) {
+        bestLeaf = current;
+        bestTimestamp = currentTimestamp;
+      }
+      continue;
+    }
+
+    for (const child of current.children) {
+      stack.push(child);
+    }
+  }
+
+  return bestLeaf;
+};
+
+const buildBranchToRoot = (
+  leaf: MessageTreeNode,
+  nodesByPath: Map<string, MessageTreeNode>
+): MessageTreeNode[] => {
+  const branch: MessageTreeNode[] = [];
+  const visited = new Set<string>();
+  let cursor: MessageTreeNode | undefined = leaf;
+
+  while (cursor && !visited.has(cursor.id)) {
+    branch.push(cursor);
+    visited.add(cursor.id);
+
+    if (!cursor.parentPath) {
+      break;
+    }
+
+    const parent = nodesByPath.get(cursor.parentPath);
+    if (!parent) {
+      break;
+    }
+    cursor = parent;
+  }
+
+  branch.reverse();
+  return branch;
+};
+
+export type BranchSwitchCalculationArgs = {
+  tree: MessageTreeResult;
+  messageId: string;
+  direction: 'next' | 'prev';
+  preferredHeadId?: string | null;
+};
+
+export type BranchSwitchCalculationResult = {
+  branchNodes: MessageTreeNode[];
+  headNode: MessageTreeNode;
+};
+
+export function calculateBranchSwitch({
+  tree,
+  messageId,
+  direction,
+  preferredHeadId,
+}: BranchSwitchCalculationArgs): BranchSwitchCalculationResult | null {
+  if (!tree) {
+    return null;
+  }
+
+  const nodesById = new Map<string, MessageTreeNode>();
+  const nodesByPath = new Map<string, MessageTreeNode>();
+
+  for (const node of tree.nodes) {
+    nodesById.set(node.id, node);
+    if (node.pathText) {
+      nodesByPath.set(node.pathText, node);
+    }
+  }
+
+  const currentNode = nodesById.get(messageId);
+  if (!currentNode) {
+    return null;
+  }
+
+  const parent = currentNode.parentPath
+    ? nodesByPath.get(currentNode.parentPath)
+    : null;
+
+  const siblings = parent ? parent.children : tree.tree;
+  if (!siblings || siblings.length < 2) {
+    return null;
+  }
+
+  const currentIndex = siblings.findIndex((child) => child.id === messageId);
+  if (currentIndex === -1) {
+    return null;
+  }
+
+  const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+  if (nextIndex < 0 || nextIndex >= siblings.length) {
+    return null;
+  }
+
+  const targetNode = siblings[nextIndex];
+
+  const preferredLeaf = preferredHeadId
+    ? findNodeInSubtree(targetNode, preferredHeadId)
+    : null;
+
+  const leafNode = preferredLeaf ?? findLatestLeaf(targetNode);
+  if (!leafNode.pathText) {
+    return null;
+  }
+
+  const branchNodes = buildBranchToRoot(leafNode, nodesByPath);
+  if (!branchNodes.length) {
+    return null;
+  }
+
+  return {
+    branchNodes,
+    headNode: leafNode,
+  };
+}
+
 export function useChatMessaging({
   chatId,
   initialMessageTree,
@@ -91,6 +248,7 @@ export function useChatMessaging({
     initialMessageTree?.branch.at(-1)?.id ?? null
   );
   const requestedHeadIdRef = useRef<string | null>(currentHeadIdRef.current);
+  const persistedHeadIdRef = useRef<string | null>(currentHeadIdRef.current);
   const treeSyncRef = useRef<Promise<void> | null>(null);
 
   const [pendingRegenerationId, setPendingRegenerationId] = useState<
@@ -212,6 +370,7 @@ export function useChatMessaging({
       const headId = tree.branch.at(-1)?.id ?? null;
       currentHeadIdRef.current = headId;
       requestedHeadIdRef.current = headId;
+      persistedHeadIdRef.current = headId;
 
       setMessages((current) => {
         const next = convertToUIMessages(tree.branch);
@@ -256,6 +415,9 @@ export function useChatMessaging({
     chatDeletedRef.current = true;
     clearSelection();
     setMessages([]);
+    currentHeadIdRef.current = null;
+    requestedHeadIdRef.current = null;
+    persistedHeadIdRef.current = null;
     router.replace('/chat');
     queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
   }, [clearSelection, queryClient, router, setMessages]);
@@ -749,86 +911,48 @@ export function useChatMessaging({
       const tree = currentMessageTreeRef.current;
       if (!tree) return;
 
-      const findParent = (
-        nodes: MessageTreeNode[],
-        id: string
-      ): MessageTreeNode | null => {
-        for (const node of nodes) {
-          if (node.children.some((child) => child.id === id)) {
-            return node;
-          }
-        }
-        return null;
-      };
+      const readiness = ensureBranchReady();
+      if (readiness) {
+        readiness.catch(() => undefined);
+      }
 
-      const parent = findParent(tree.branch, messageId);
-      if (!parent || !parent.children?.length) return;
+      const preferredHeadId =
+        requestedHeadIdRef.current ?? currentHeadIdRef.current ?? null;
 
-      const currentIndex = parent.children.findIndex(
-        (child) => child.id === messageId
-      );
-      if (currentIndex === -1) return;
+      const calculation = calculateBranchSwitch({
+        tree,
+        messageId,
+        direction,
+        preferredHeadId,
+      });
 
-      const newIndex =
-        direction === 'next' ? currentIndex + 1 : currentIndex - 1;
-      if (newIndex < 0 || newIndex >= parent.children.length) return;
+      if (!calculation) {
+        return;
+      }
 
-      const newSiblingNode = parent.children[newIndex];
-      const newBranchMessages = buildBranchFromNode(newSiblingNode);
-      if (!newBranchMessages.length) return;
+      const { branchNodes, headNode } = calculation;
+      const nextMessages = convertToUIMessages(branchNodes);
+      if (!nextMessages.length) {
+        return;
+      }
 
-      const switchIndex = messagesRef.current.findIndex(
-        (msg) => msg.id === messageId
-      );
-      if (switchIndex === -1) return;
-
-      const previousHeadId = currentHeadIdRef.current ?? null;
-
-      const previousMessages = [...messagesRef.current];
-      const previousBranch = [...tree.branch];
-
-      const nextMessages = [
-        ...previousMessages.slice(0, switchIndex),
-        ...newBranchMessages,
-      ];
-      setMessages(nextMessages);
-
-      const newHeadMessage = newBranchMessages.at(-1);
+      const newHeadMessage = nextMessages.at(-1);
       if (!newHeadMessage) {
         return;
       }
 
-      currentHeadIdRef.current = newHeadMessage.id;
-      requestedHeadIdRef.current = newHeadMessage.id;
+      const previousMessages = [...messagesRef.current];
+      const previousBranch = [...tree.branch];
+      const previousHeadId = currentHeadIdRef.current ?? null;
+      const previousPersistedHeadId = persistedHeadIdRef.current;
 
-      const nodesByPath = new Map<string, MessageTreeNode>();
-      for (const node of tree.nodes) {
-        if (node.pathText) {
-          nodesByPath.set(node.pathText, node);
-        }
-      }
-
-      let leafNode: MessageTreeNode | undefined = newSiblingNode;
-      while (leafNode.children.length) {
-        leafNode = leafNode.children[leafNode.children.length - 1];
-      }
-
-      if (leafNode) {
-        const updatedBranchNodes: MessageTreeNode[] = [];
-        let cursor: MessageTreeNode | undefined = leafNode;
-        while (cursor) {
-          updatedBranchNodes.push(cursor);
-          if (!cursor.parentPath) break;
-          cursor = cursor.parentPath
-            ? (nodesByPath.get(cursor.parentPath) ?? undefined)
-            : undefined;
-        }
-        updatedBranchNodes.reverse();
-        currentMessageTreeRef.current = {
-          ...tree,
-          branch: updatedBranchNodes,
-        };
-      }
+      setMessages(nextMessages);
+      currentHeadIdRef.current = headNode.id;
+      requestedHeadIdRef.current = headNode.id;
+      currentMessageTreeRef.current = {
+        ...tree,
+        branch: branchNodes,
+      };
 
       const attemptId = Symbol('branch-switch');
       let rolledBack = false;
@@ -842,42 +966,55 @@ export function useChatMessaging({
         };
         currentHeadIdRef.current = previousHeadId;
         requestedHeadIdRef.current = previousHeadId;
+        persistedHeadIdRef.current = previousPersistedHeadId;
       };
+      // Persist head updates sequentially so rapid navigation does not race older head states.
+      const previousAttempt = branchSwitchRef.current;
+      const basePromise = previousAttempt
+        ? previousAttempt.promise.catch(() => undefined)
+        : Promise.resolve();
 
-      const persistPromise = persistHeadMessageAsync({
-        messageId: newHeadMessage.id,
-        expectedHeadId: previousHeadId,
-      })
+      const managedPromise = basePromise
+        .then(() =>
+          persistHeadMessageAsync({
+            messageId: newHeadMessage.id,
+            expectedHeadId: persistedHeadIdRef.current,
+          })
+        )
         .then(() => {
-          if (requestedHeadIdRef.current !== newHeadMessage.id) {
-            return;
-          }
+          persistedHeadIdRef.current = headNode.id;
 
           if (branchSwitchRef.current?.id === attemptId) {
             branchSwitchRef.current = {
               id: attemptId,
-              targetHeadId: newHeadMessage.id,
+              targetHeadId: headNode.id,
               status: 'success',
               promise: Promise.resolve(),
               error: null,
             };
           }
-          refreshMessageTree();
+
+          return refreshMessageTree();
         })
         .catch((error) => {
           if (branchSwitchRef.current?.id === attemptId) {
             rollback();
-            console.warn('Failed to persist head message', error);
             branchSwitchRef.current = {
               id: attemptId,
-              targetHeadId: newHeadMessage.id,
+              targetHeadId: headNode.id,
               status: 'error',
               promise: Promise.resolve(),
               error,
             };
           }
-          refreshMessageTree();
-          return Promise.reject(error);
+
+          const refreshPromise = refreshMessageTree();
+          if (refreshPromise) {
+            return refreshPromise.then(() => {
+              throw error;
+            });
+          }
+          throw error;
         })
         .finally(() => {
           if (
@@ -890,13 +1027,18 @@ export function useChatMessaging({
 
       branchSwitchRef.current = {
         id: attemptId,
-        targetHeadId: newHeadMessage.id,
+        targetHeadId: headNode.id,
         status: 'pending',
-        promise: persistPromise.catch(() => undefined),
+        promise: managedPromise,
         error: null,
       };
     },
-    [persistHeadMessageAsync, refreshMessageTree, setMessages]
+    [
+      ensureBranchReady,
+      persistHeadMessageAsync,
+      refreshMessageTree,
+      setMessages,
+    ]
   );
 
   useEffect(() => {
