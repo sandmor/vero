@@ -102,3 +102,96 @@ test('renders existing timeline content and shows thinking state for new message
   });
   await expect(userMessages.last()).toContainText('Add a follow-up insight.');
 });
+
+test('editing a user message resubmits the conversation and shows pending reply', async ({
+  page,
+}) => {
+  const baseTime = new Date('2024-02-01T08:00:00Z');
+  const originalUser: any = {
+    id: 'msg-user-original',
+    chatId: 'chat-e2e',
+    role: 'user',
+    parts: [{ type: 'text', text: 'Draft a project kickoff email.' }],
+    attachments: [],
+    createdAt: baseTime,
+    updatedAt: baseTime,
+    parentId: null,
+    model: null,
+    pathText: '0',
+    parentPath: null,
+    depth: 0,
+    siblingsCount: 1,
+    siblingIndex: 0,
+    children: [],
+  };
+
+  const assistantReply: any = {
+    id: 'msg-assistant-followup',
+    chatId: 'chat-e2e',
+    role: 'assistant',
+    parts: [
+      {
+        type: 'text',
+        text: 'Here is a rough kickoff email outline.',
+      },
+    ],
+    attachments: [],
+    createdAt: new Date(baseTime.getTime() + 90_000),
+    updatedAt: new Date(baseTime.getTime() + 90_000),
+    parentId: 'msg-user-original',
+    model: 'openrouter:text',
+    pathText: '0.0',
+    parentPath: '0',
+    depth: 1,
+    siblingsCount: 1,
+    siblingIndex: 0,
+    children: [],
+  };
+
+  originalUser.children = [assistantReply];
+
+  const initialMessageTree = {
+    tree: [originalUser],
+    nodes: [originalUser, assistantReply],
+    branch: [originalUser, assistantReply],
+  };
+
+  await openChat(page, {
+    bootstrap: {
+      kind: 'existing',
+      initialMessageTree,
+    },
+  });
+
+  await page.getByRole('button', { name: 'Edit' }).first().click();
+
+  const editor = page.getByTestId('message-editor');
+  await editor.fill('Could you prepare a kickoff call agenda instead?');
+  await page.getByTestId('message-editor-send-button').click();
+
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => window.__testMocks?.chatRequests.length ?? 0);
+    })
+    .toBeGreaterThanOrEqual(1);
+
+  const latestRequestBody = await page.evaluate(() => {
+    return window.__testMocks?.chatRequests.at(-1)?.body ?? '';
+  });
+
+  expect(latestRequestBody).toContain(
+    'Could you prepare a kickoff call agenda instead?'
+  );
+  expect(latestRequestBody).toContain('msg-user-original-edited');
+  expect(latestRequestBody).not.toContain('regenerateMessageId');
+
+  const latestUserMessage = page.locator('[data-testid="message-user"]').last();
+  await expect(latestUserMessage).toContainText(
+    'Could you prepare a kickoff call agenda instead?'
+  );
+
+  await page.waitForSelector('[data-testid="message-assistant-loading"]', {
+    state: 'attached',
+    timeout: 10_000,
+  });
+});

@@ -18,6 +18,7 @@ import {
   generateUUID,
   getTextFromMessage,
 } from '@/lib/utils';
+import { buildEditedUserMessageParts } from '@/lib/message-editing';
 import type { VisibilityType } from '../visibility-selector';
 import {
   branchMessageAction,
@@ -616,6 +617,62 @@ export function useChatMessaging({
         return;
       }
 
+      if (targetMessage.role === 'user') {
+        const previousMessages = [...currentMessages];
+        const previousTree = currentMessageTreeRef.current;
+        const previousHeadId = currentHeadIdRef.current;
+        const previousRequestedHeadId = requestedHeadIdRef.current;
+        const previousSelection = getSelectedIds();
+
+        const trailing = previousMessages.slice(targetIndex);
+        if (trailing.length > 0) {
+          removeFromSelection(trailing.map((message) => message.id));
+        }
+
+        setMessages(previousMessages.slice(0, targetIndex));
+
+        try {
+          const { newMessageId } = await branchMessageAction({
+            chatId,
+            messageId,
+            editedText: trimmed,
+          });
+
+          currentHeadIdRef.current = newMessageId;
+          requestedHeadIdRef.current = newMessageId;
+          currentMessageTreeRef.current = undefined;
+
+          const nextParts = buildEditedUserMessageParts(targetMessage, trimmed);
+
+          await sendMessageWithBranchGuard({
+            id: newMessageId,
+            role: 'user',
+            parts: nextParts,
+          });
+
+          toast({ type: 'success', description: 'Message updated.' });
+
+          await refreshMessageTree();
+          queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
+        } catch (error) {
+          setMessages(previousMessages);
+          assignSelection(previousSelection);
+          currentMessageTreeRef.current = previousTree;
+          currentHeadIdRef.current = previousHeadId;
+          requestedHeadIdRef.current = previousRequestedHeadId;
+
+          if (error instanceof ChatSDKError) {
+            toast({ type: 'error', description: error.message });
+          } else {
+            toast({ type: 'error', description: 'Failed to update message.' });
+          }
+
+          throw error;
+        }
+
+        return;
+      }
+
       const previousMessages = [...currentMessages];
       const previousTree = currentMessageTreeRef.current;
       const previousHeadId = currentHeadIdRef.current;
@@ -674,11 +731,15 @@ export function useChatMessaging({
       }
     },
     [
+      assignSelection,
       chatId,
       ensureBranchReady,
+      getSelectedIds,
       isReadonly,
       queryClient,
       refreshMessageTree,
+      removeFromSelection,
+      sendMessageWithBranchGuard,
       setMessages,
     ]
   );
