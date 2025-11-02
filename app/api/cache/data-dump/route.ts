@@ -7,7 +7,7 @@ import {
   normalizeModelId,
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
-import { getMessagesByChatId, getChatsByUserId } from '@/lib/db/queries';
+import { getChatsByUserId } from '@/lib/db/queries';
 import type { ChatSettings, Chat } from '@/lib/db/schema';
 import type { AgentPreset } from '@/types/agent';
 import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
     limit: requestedLimit,
     startingAfter: null,
     endingBefore: null,
+    includeMessageTree: true,
   });
 
   const cacheEntries: Array<{
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
   }> = [];
 
   for (const chat of chats) {
-    const messageTree = await getMessagesByChatId({ id: chat.id });
+    const messageTree = chat.messageTree || { tree: [], nodes: [], branch: [] };
 
     const chatSettingsModel = normalizeModelId(chat.settings?.modelId);
     const agentSettingsModel = normalizeModelId(

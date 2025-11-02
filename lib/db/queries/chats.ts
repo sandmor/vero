@@ -2,7 +2,13 @@ import { Prisma as PrismaRuntime } from '../../../generated/prisma-client';
 import type { Prisma } from '../../../generated/prisma-client';
 import { prisma } from '../prisma';
 import { ChatSDKError } from '../../errors';
-import type { Chat, ChatSettings, MessageTreeNode } from '../schema';
+import type {
+  Chat,
+  ChatSettings,
+  DBMessage,
+  MessageTreeNode,
+  MessageTreeResult,
+} from '../schema';
 import type { AppUsage } from '../../usage';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { generateUUID } from '../../utils';
@@ -11,6 +17,7 @@ import {
   saveMessages,
   getMessagesByChatId,
   type SaveMessageInput,
+  buildMessageTree,
 } from './messages';
 
 export async function saveChat({
@@ -99,113 +106,96 @@ export async function deleteChatsByIds({
 export async function getChatsByUserId({
   id,
   limit,
-  startingAfter,
-  endingBefore,
+  startingAfter = null, // chat id to load newer than (optional)
+  endingBefore = null, // chat id to load older than (optional)
+  includeMessageTree = false,
 }: {
   id: string;
   limit: number;
-  startingAfter: string | null;
-  endingBefore: string | null;
-}) {
-  try {
-    const extendedLimit = limit + 1;
-
-    let filteredChats: Chat[] = [];
-
-    if (startingAfter) {
-      const selectedChat = await prisma.chat.findUnique({
-        where: { id: startingAfter },
-      });
-
-      if (!selectedChat) {
-        throw new ChatSDKError(
-          'not_found:database',
-          `Chat with id ${startingAfter} not found`
-        );
-      }
-      const rows = await prisma.chat.findMany({
-        where: { userId: id, createdAt: { gt: selectedChat.createdAt } },
-        orderBy: { createdAt: 'desc' },
-        take: extendedLimit,
-        include: { agent: true },
-      });
-      filteredChats = rows.map((c) => ({
-        id: c.id,
-        createdAt: c.createdAt,
-        title: c.title,
-        userId: c.userId,
-        visibility: c.visibility as Chat['visibility'],
-        lastContext: c.lastContext as unknown as Chat['lastContext'],
-        parentChatId: c.parentChatId ?? null,
-        forkedFromMessageId: c.forkedFromMessageId ?? null,
-        forkDepth: c.forkedFromMessageId ?? 0,
-        settings: (c.settings as ChatSettings) ?? null,
-        agent: c.agent ?? null,
-      })) as unknown as Chat[];
-    } else if (endingBefore) {
-      const selectedChat = await prisma.chat.findUnique({
-        where: { id: endingBefore },
-      });
-
-      if (!selectedChat) {
-        throw new ChatSDKError(
-          'not_found:database',
-          `Chat with id ${endingBefore} not found`
-        );
-      }
-      const rows = await prisma.chat.findMany({
-        where: { userId: id, createdAt: { lt: selectedChat.createdAt } },
-        orderBy: { createdAt: 'desc' },
-        take: extendedLimit,
-        include: { agent: true },
-      });
-      filteredChats = rows.map((c) => ({
-        id: c.id,
-        createdAt: c.createdAt,
-        title: c.title,
-        userId: c.userId,
-        visibility: c.visibility as Chat['visibility'],
-        lastContext: c.lastContext as unknown as Chat['lastContext'],
-        parentChatId: c.parentChatId ?? null,
-        forkedFromMessageId: c.forkedFromMessageId ?? null,
-        forkDepth: c.forkDepth ?? 0,
-        settings: (c.settings as ChatSettings) ?? null,
-        agent: c.agent ?? null,
-      })) as unknown as Chat[];
-    } else {
-      const rows = await prisma.chat.findMany({
-        where: { userId: id },
-        orderBy: { createdAt: 'desc' },
-        take: extendedLimit,
-        include: { agent: true },
-      });
-      filteredChats = rows.map((c) => ({
-        id: c.id,
-        createdAt: c.createdAt,
-        title: c.title,
-        userId: c.userId,
-        visibility: c.visibility as Chat['visibility'],
-        lastContext: c.lastContext as unknown as Chat['lastContext'],
-        parentChatId: c.parentChatId ?? null,
-        forkedFromMessageId: c.forkedFromMessageId ?? null,
-        forkDepth: c.forkDepth ?? 0,
-        settings: (c.settings as ChatSettings) ?? null,
-        agent: c.agent ?? null,
-      })) as unknown as Chat[];
-    }
-
-    const hasMore = filteredChats.length > limit;
-
-    return {
-      chats: hasMore ? filteredChats.slice(0, limit) : filteredChats,
-      hasMore,
-    };
-  } catch (_error) {
+  startingAfter?: string | null;
+  endingBefore?: string | null;
+  includeMessageTree?: boolean;
+}): Promise<{
+  chats: (Chat & { messageTree?: MessageTreeResult | null })[];
+  hasMore: boolean;
+}> {
+  if (startingAfter && endingBefore) {
     throw new ChatSDKError(
       'bad_request:database',
-      'Failed to get chats by user id'
+      'Provide only one of startingAfter or endingBefore'
     );
   }
+
+  const extendedLimit = limit + 1;
+  const orderBy: Prisma.ChatOrderByWithRelationInput[] = [
+    { createdAt: 'desc' },
+    { id: 'desc' }, // tie-breaker, keeps paging deterministic
+  ];
+
+  const include: Prisma.ChatInclude = { agent: true };
+  if (includeMessageTree) {
+    // We fetch messages only to build the tree, not to return raw messages.
+    include.messages = { orderBy: { pathText: 'asc' } };
+  }
+
+  // Build a single Prisma query with cursor-based pagination (no anchor fetch)
+  const args: Prisma.ChatFindManyArgs = {
+    where: { userId: id },
+    orderBy,
+    include,
+    take: extendedLimit,
+  };
+
+  if (startingAfter) {
+    // Load newer than this chat (previous page in a descending list)
+    args.cursor = { id: startingAfter };
+    args.skip = 1; // exclude the cursor row
+    args.take = -extendedLimit; // rows before the cursor in the current order (i.e., newer)
+  } else if (endingBefore) {
+    // Load older than this chat (next page in a descending list)
+    args.cursor = { id: endingBefore };
+    args.skip = 1; // exclude the cursor row
+    args.take = extendedLimit; // rows after the cursor in the current order (i.e., older)
+  }
+
+  const rows = await prisma.chat.findMany(args);
+
+  // Ensure final output is in descending order (covers the negative-take branch)
+  rows.sort((a, b) => {
+    const t = b.createdAt.getTime() - a.createdAt.getTime();
+    if (t !== 0) return t;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+  });
+
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+  const chats = pageRows.map((c) => {
+    const messageTree =
+      includeMessageTree && Array.isArray((c as any).messages)
+        ? buildMessageTree(
+            (c as any).messages as DBMessage[],
+            c.headMessageId ?? undefined
+          )
+        : null;
+
+    return {
+      id: c.id,
+      createdAt: c.createdAt,
+      title: c.title,
+      userId: c.userId,
+      visibility: c.visibility as Chat['visibility'],
+      lastContext: c.lastContext as unknown as Chat['lastContext'],
+      parentChatId: c.parentChatId ?? null,
+      forkedFromMessageId: c.forkedFromMessageId ?? null,
+      forkDepth: (c as any).forkDepth ?? 0,
+      settings: (c.settings as ChatSettings) ?? null,
+      agent: (c as any).agent ?? null,
+      ...(includeMessageTree ? { messageTree } : {}),
+    } as Chat & { messageTree?: MessageTreeResult | null };
+  });
+
+  return { chats, hasMore };
 }
 
 export async function searchChats({

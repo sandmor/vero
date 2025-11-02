@@ -35,7 +35,7 @@ function parseLabelIndex(label: string): number {
   return Number.isNaN(parsed) ? -1 : parsed;
 }
 
-function buildMessageTree(
+export function buildMessageTree(
   messages: DBMessage[],
   headMessageId?: string | null
 ): MessageTreeResult {
