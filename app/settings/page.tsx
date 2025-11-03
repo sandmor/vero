@@ -61,9 +61,11 @@ export default async function SettingsPage({
   const defaultTab =
     tabParam === 'admin' && adminAllowed
       ? 'admin'
-      : tabParam === 'agents'
-        ? 'agents'
-        : 'archive';
+      : tabParam === 'api-keys'
+        ? 'api-keys'
+        : tabParam === 'agents'
+          ? 'agents'
+          : 'archive';
   const dehydrated =
     defaultTab === 'archive'
       ? await prefetchArchive()

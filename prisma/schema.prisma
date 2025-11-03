@@ -16,8 +16,9 @@ datasource db {
 // Only include providers we integrate with directly (e.g., openai, google, openrouter, etc.)
 // Id is the canonical slug for the provider ("openai", "google", "openrouter").
 model Provider {
-  id     String @id @db.VarChar(64)
-  apiKey String @db.Text
+  id         String       @id @db.VarChar(64)
+  apiKey     String       @db.Text
+  UserApiKey UserApiKey[]
 
   @@map("Provider")
 }
@@ -44,8 +45,27 @@ model User {
   pinnedArchiveEntries ChatPinnedArchiveEntry[]
   rateLimit            UserRateLimit?
   agents               Agent[]
+  UserApiKey           UserApiKey[]
 
   @@map("User")
+}
+
+// User Bring Your Own Keys (BYOK) - stores API keys per user per provider
+model UserApiKey {
+  userId     String   @db.VarChar(191)
+  providerId String   @db.VarChar(64)
+  apiKey     String   @db.Text
+  modelIds   String[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, providerId])
+  @@index([userId])
+  @@index([providerId])
+  @@map("UserApiKey")
 }
 
 // Per-user token bucket runtime state for rate limiting
