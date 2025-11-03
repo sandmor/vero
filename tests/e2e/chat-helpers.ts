@@ -138,8 +138,8 @@ export async function configureChatMocks(
           for (const [key, value] of body.entries()) {
             if (typeof value === 'string') {
               entries.push(`${key}=${value}`);
-            } else if (value && typeof value.name === 'string') {
-              entries.push(`${key}=${value.name}`);
+            } else if (value && typeof (value as any).name === 'string') {
+              entries.push(`${key}=${(value as any).name}`);
             }
           }
           return entries.join('&');
@@ -190,7 +190,7 @@ export async function configureChatMocks(
 
       window.__testMocks = state;
 
-      window.fetch = async (input: any, init: any = {}) => {
+      (window as any).fetch = async (input: any, init: any = {}) => {
         const method = (init?.method ?? 'GET').toUpperCase();
         const targetUrl =
           typeof input === 'string'

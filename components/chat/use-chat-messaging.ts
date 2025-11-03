@@ -298,7 +298,7 @@ export function useChatMessaging({
     generateId: generateUUID,
     transport: new DefaultChatTransport({
       api: '/api/chat',
-      fetch: fetchWithErrorHandlers,
+      fetch: fetchWithErrorHandlers as typeof fetch,
       prepareSendMessagesRequest(request) {
         const stagedPins = stagedPinnedSlugsRef.current;
         const stagedTools = stagedAllowedToolsRef.current;
