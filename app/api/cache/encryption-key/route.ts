@@ -2,13 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { hkdfSync } from 'crypto';
 
-import { enforceCacheRateLimit } from '@/lib/cache/rate-limit';
-
 const KEY_LENGTH_BYTES = 32;
 const HKDF_DIGEST = 'sha256';
 const HKDF_INFO = Buffer.from('virid-cache-encryption', 'utf8');
-const RATE_LIMIT_LIMIT = 10;
-const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -97,29 +93,6 @@ export async function POST(_request: NextRequest) {
 
   if (!userId || !stableId) {
     return unauthorizedResponse();
-  }
-
-  const rateResult = enforceCacheRateLimit({
-    key: `cache-key:${userId}`,
-    limit: RATE_LIMIT_LIMIT,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  });
-
-  if (!rateResult.allowed) {
-    const retryAfterSeconds = Math.max(
-      Math.ceil((rateResult.resetAt - Date.now()) / 1_000),
-      1
-    );
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again later.' },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(retryAfterSeconds),
-          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-        },
-      }
-    );
   }
 
   try {

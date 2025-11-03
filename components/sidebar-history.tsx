@@ -130,8 +130,6 @@ export function SidebarHistory({
     cachedChats,
     metadata: cacheMetadata,
     ready: isCacheReady,
-    status: cacheStatus,
-    error: cacheError,
   } = useEncryptedCache();
   const hasHydratedFromCacheRef = useRef(false);
   const cachedChatEntities = useMemo(

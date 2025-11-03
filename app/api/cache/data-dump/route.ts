@@ -25,8 +25,9 @@ import { serializeChat } from '@/lib/chat/serialization';
 
 const DEFAULT_CHAT_LIMIT = 50;
 const MAX_CHAT_LIMIT = 200;
-const RATE_LIMIT_LIMIT = 4;
-const RATE_LIMIT_WINDOW_MS = 60_000;
+const isDevEnvironment = process.env.NODE_ENV !== 'production';
+const RATE_LIMIT_LIMIT = isDevEnvironment ? 20 : 2;
+const RATE_LIMIT_WINDOW_MS = isDevEnvironment ? 5 * 60_000 : 24 * 60 * 60_000;
 
 function mapAgentToPreset(agent: Chat['agent']): AgentPreset | null {
   if (!agent) return null;

@@ -18,14 +18,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { useMultiSelection } from '@/hooks/use-multi-selection';
 import { useAppSession } from '@/hooks/use-app-session';
 
-import { useEncryptedCache } from '@/components/encrypted-cache-provider';
-import { cn } from '@/lib/utils';
-
 export function AppSidebar() {
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
   const { data, isLoading, isError, status: queryStatus } = useAppSession();
-  const { status: cacheStatus, error: cacheError } = useEncryptedCache();
 
   let sessionStatus: 'loading' | 'authenticated' | 'unauthenticated';
   if (queryStatus === 'pending') {
@@ -140,23 +136,6 @@ export function AppSidebar() {
         />
       </SidebarContent>
       <SidebarFooter>
-        {(cacheStatus === 'initializing' || cacheStatus === 'error') && (
-          <div
-            className={cn(
-              'px-4 py-2 text-xs',
-              cacheStatus === 'error'
-                ? 'text-destructive'
-                : 'text-muted-foreground'
-            )}
-          >
-            {cacheStatus === 'error'
-              ? 'Local cache is unavailable; showing live server data.'
-              : 'Syncing your chat cache for faster loads…'}
-            {cacheStatus === 'error' && cacheError
-              ? ` (${cacheError.message})`
-              : ''}
-          </div>
-        )}
         <SidebarUserNav isLoading={isLoading} user={sessionUser} />
       </SidebarFooter>
     </Sidebar>
