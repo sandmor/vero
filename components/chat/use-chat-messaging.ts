@@ -250,6 +250,8 @@ export function useChatMessaging({
   const requestedHeadIdRef = useRef<string | null>(currentHeadIdRef.current);
   const persistedHeadIdRef = useRef<string | null>(currentHeadIdRef.current);
   const treeSyncRef = useRef<Promise<void> | null>(null);
+  const deferredTreeRef = useRef<MessageTreeResult | null>(null);
+  const pendingPostStreamSyncRef = useRef(false);
 
   const [pendingRegenerationId, setPendingRegenerationId] = useState<
     string | null
@@ -364,9 +366,76 @@ export function useChatMessaging({
     messagesRef.current = messages;
   }, [messages]);
 
-  const updateTreeSnapshot = useCallback(
+  useEffect(() => {
+    const duplicateIds = new Set<string>();
+    const idCounts = new Map<string, number>();
+
+    for (const message of messages) {
+      if (message.role !== 'user') {
+        continue;
+      }
+
+      const count = (idCounts.get(message.id) ?? 0) + 1;
+      idCounts.set(message.id, count);
+      if (count > 1) {
+        duplicateIds.add(message.id);
+      }
+    }
+
+    if (duplicateIds.size === 0) {
+      return;
+    }
+
+    const preserved = new Set<string>();
+    const deduped: ChatMessage[] = [];
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (!duplicateIds.has(message.id)) {
+        deduped.push(message);
+        continue;
+      }
+
+      if (!preserved.has(message.id)) {
+        preserved.add(message.id);
+        deduped.push(message);
+      }
+    }
+
+    deduped.reverse();
+
+    setMessages((current) => {
+      // Avoid triggering extra renders if deduped content matches current.
+      if (current.length === deduped.length) {
+        let equal = true;
+        for (let i = 0; i < current.length; i += 1) {
+          if (current[i] !== deduped[i]) {
+            equal = false;
+            break;
+          }
+        }
+        if (equal) {
+          return current;
+        }
+      }
+      return deduped;
+    });
+  }, [messages, setMessages]);
+
+  const chatStatusRef = useRef(status);
+  useEffect(() => {
+    chatStatusRef.current = status;
+  }, [status]);
+
+  const pendingRegenerationIdRef = useRef<string | null>(pendingRegenerationId);
+  useEffect(() => {
+    pendingRegenerationIdRef.current = pendingRegenerationId;
+  }, [pendingRegenerationId]);
+
+  const applyTreeSnapshot = useCallback(
     (tree: MessageTreeResult) => {
       currentMessageTreeRef.current = tree;
+
       const headId = tree.branch.at(-1)?.id ?? null;
       currentHeadIdRef.current = headId;
       requestedHeadIdRef.current = headId;
@@ -381,6 +450,40 @@ export function useChatMessaging({
       });
     },
     [setMessages]
+  );
+
+  const updateTreeSnapshot = useCallback(
+    (
+      tree: MessageTreeResult,
+      options?: {
+        allowDuringStreaming?: boolean;
+        ignoreHeadAlignment?: boolean;
+      }
+    ) => {
+      const treeHeadId = tree.branch.at(-1)?.id ?? null;
+      const desiredHeadId = requestedHeadIdRef.current;
+
+      const shouldDeferForStreaming =
+        !options?.allowDuringStreaming &&
+        (chatStatusRef.current === 'submitted' ||
+          chatStatusRef.current === 'streaming' ||
+          pendingRegenerationIdRef.current !== null);
+
+      const shouldDeferForHeadMismatch =
+        !options?.ignoreHeadAlignment &&
+        desiredHeadId !== null &&
+        treeHeadId !== null &&
+        treeHeadId !== desiredHeadId;
+
+      if (shouldDeferForStreaming || shouldDeferForHeadMismatch) {
+        deferredTreeRef.current = tree;
+        return;
+      }
+
+      deferredTreeRef.current = null;
+      applyTreeSnapshot(tree);
+    },
+    [applyTreeSnapshot]
   );
 
   const refreshMessageTree = useCallback(async () => {
@@ -406,6 +509,29 @@ export function useChatMessaging({
     treeSyncRef.current = promise;
     return promise;
   }, [chatId, updateTreeSnapshot]);
+
+  useEffect(() => {
+    if (status === 'submitted' || status === 'streaming') {
+      pendingPostStreamSyncRef.current = true;
+      return;
+    }
+
+    if (status !== 'ready') {
+      return;
+    }
+
+    if (pendingPostStreamSyncRef.current) {
+      pendingPostStreamSyncRef.current = false;
+      refreshMessageTree();
+      return;
+    }
+
+    if (pendingRegenerationId === null && deferredTreeRef.current) {
+      const pendingTree = deferredTreeRef.current;
+      deferredTreeRef.current = null;
+      updateTreeSnapshot(pendingTree, { allowDuringStreaming: true });
+    }
+  }, [status, pendingRegenerationId, refreshMessageTree, updateTreeSnapshot]);
 
   const handleChatDeleted = useCallback(() => {
     if (chatDeletedRef.current) {
@@ -786,12 +912,26 @@ export function useChatMessaging({
         const previousRequestedHeadId = requestedHeadIdRef.current;
         const previousSelection = getSelectedIds();
 
-        const trailing = previousMessages.slice(targetIndex);
-        if (trailing.length > 0) {
-          removeFromSelection(trailing.map((message) => message.id));
+        const removedSelectionIds = previousMessages
+          .slice(targetIndex)
+          .map((message) => message.id);
+        if (removedSelectionIds.length > 0) {
+          removeFromSelection(removedSelectionIds);
         }
 
-        setMessages(previousMessages.slice(0, targetIndex));
+        const editedParts = buildEditedUserMessageParts(targetMessage, trimmed);
+
+        setMessages((current) => {
+          if (!current[targetIndex]) {
+            return current;
+          }
+          const next = [...current];
+          next[targetIndex] = {
+            ...next[targetIndex],
+            parts: editedParts,
+          };
+          return next;
+        });
 
         try {
           const { newMessageId } = await branchMessageAction({
@@ -804,12 +944,59 @@ export function useChatMessaging({
           requestedHeadIdRef.current = newMessageId;
           currentMessageTreeRef.current = undefined;
 
-          const nextParts = buildEditedUserMessageParts(targetMessage, trimmed);
+          const optimisticUserMessage: ChatMessage = {
+            id: newMessageId,
+            role: 'user',
+            parts: editedParts,
+            metadata: {
+              createdAt:
+                targetMessage.metadata?.createdAt ?? new Date().toISOString(),
+              model: targetMessage.metadata?.model,
+              siblingIndex: targetMessage.metadata?.siblingIndex ?? 0,
+              siblingsCount: Math.max(
+                targetMessage.metadata?.siblingsCount ?? 1,
+                1
+              ),
+            },
+          };
+
+          setMessages([
+            ...previousMessages.slice(0, targetIndex),
+            optimisticUserMessage,
+          ]);
 
           await sendMessageWithBranchGuard({
             id: newMessageId,
             role: 'user',
-            parts: nextParts,
+            parts: editedParts,
+          });
+
+          setMessages((current) => {
+            let duplicateCount = 0;
+            for (const message of current) {
+              if (message.id === newMessageId) {
+                duplicateCount += 1;
+                if (duplicateCount > 1) {
+                  break;
+                }
+              }
+            }
+
+            if (duplicateCount < 2) {
+              return current;
+            }
+
+            let skipped = false;
+            return current.filter((message) => {
+              if (message.id !== newMessageId) {
+                return true;
+              }
+              if (!skipped) {
+                skipped = true;
+                return false;
+              }
+              return true;
+            });
           });
 
           toast({ type: 'success', description: 'Message updated.' });
@@ -846,10 +1033,14 @@ export function useChatMessaging({
         role: targetMessage.role,
         parts: [{ type: 'text', text: trimmed }],
         metadata: {
-          createdAt: new Date().toISOString(),
+          createdAt:
+            targetMessage.metadata?.createdAt ?? new Date().toISOString(),
           model: targetMessage.metadata?.model,
-          siblingIndex: 0,
-          siblingsCount: 1,
+          siblingIndex: targetMessage.metadata?.siblingIndex ?? 0,
+          siblingsCount: Math.max(
+            targetMessage.metadata?.siblingsCount ?? 1,
+            1
+          ),
         },
       };
 
@@ -908,6 +1099,15 @@ export function useChatMessaging({
 
   const handleNavigate = useCallback(
     (messageId: string, direction: 'next' | 'prev') => {
+      if (status === 'submitted' || status === 'streaming') {
+        toast({
+          type: 'error',
+          description:
+            'Finish generating the current response before switching versions.',
+        });
+        return;
+      }
+
       const tree = currentMessageTreeRef.current;
       if (!tree) return;
 
@@ -1035,6 +1235,7 @@ export function useChatMessaging({
     },
     [
       ensureBranchReady,
+      status,
       persistHeadMessageAsync,
       refreshMessageTree,
       setMessages,
