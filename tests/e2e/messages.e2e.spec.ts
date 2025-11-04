@@ -168,3 +168,215 @@ test('editing a user message replaces the timeline entry with edited content', a
     'Could you prepare a kickoff call agenda instead?'
   );
 });
+
+test('regenerating an assistant message sends a regenerate request', async ({
+  page,
+}) => {
+  const baseTime = new Date('2024-03-04T09:00:00Z');
+  const userMessage: any = {
+    id: 'msg-user-regeneration',
+    chatId: 'chat-e2e',
+    role: 'user',
+    parts: [{ type: 'text', text: 'Summarize the quarterly report.' }],
+    attachments: [],
+    createdAt: baseTime,
+    updatedAt: baseTime,
+    parentId: null,
+    model: null,
+    pathText: '_00',
+    parentPath: null,
+    depth: 0,
+    siblingsCount: 1,
+    siblingIndex: 0,
+    children: [],
+  };
+
+  const assistantResponse: any = {
+    id: 'msg-assistant-regeneration',
+    chatId: 'chat-e2e',
+    role: 'assistant',
+    parts: [
+      {
+        type: 'text',
+        text: 'Here is a concise summary of the quarterly report.',
+      },
+    ],
+    attachments: [],
+    createdAt: new Date(baseTime.getTime() + 60_000),
+    updatedAt: new Date(baseTime.getTime() + 60_000),
+    parentId: userMessage.id,
+    model: 'openrouter:text',
+    pathText: '_00._00',
+    parentPath: '_00',
+    depth: 1,
+    siblingsCount: 1,
+    siblingIndex: 0,
+    children: [],
+  };
+
+  userMessage.children = [assistantResponse];
+
+  await openChat(page, {
+    bootstrap: {
+      kind: 'existing',
+      initialMessages: [userMessage, assistantResponse],
+      headMessageId: assistantResponse.id,
+    },
+  });
+
+  const assistantMessage = page
+    .locator('[data-testid="message-assistant"]')
+    .first();
+  await expect(assistantMessage).toContainText(
+    'Here is a concise summary of the quarterly report.'
+  );
+
+  const regenerateButton = assistantMessage.getByRole('button', {
+    name: 'Regenerate',
+  });
+
+  await expect(regenerateButton).toBeEnabled();
+  await regenerateButton.click();
+
+  await expect
+    .poll(async () => {
+      const match = await page.evaluate(() => {
+        const requests = window.__testMocks?.chatRequests ?? [];
+        if (!requests.length) {
+          return false;
+        }
+        const body = requests[requests.length - 1].body;
+        return body.includes('"regenerateMessageId"');
+      });
+      return match ? 1 : 0;
+    })
+    .toBeGreaterThan(0);
+
+  const regenerateRequestBody = await page.evaluate(() => {
+    const requests = window.__testMocks?.chatRequests ?? [];
+    return requests.length ? requests[requests.length - 1].body : '';
+  });
+
+  const parsedRequest = JSON.parse(regenerateRequestBody);
+  expect(parsedRequest.regenerateMessageId).toBe(assistantResponse.id);
+  expect(JSON.stringify(parsedRequest.message ?? {})).toContain(
+    'Summarize the quarterly report.'
+  );
+});
+
+test('navigating between assistant versions updates the visible response', async ({
+  page,
+}) => {
+  const baseTime = new Date('2024-03-12T09:30:00Z');
+  const userMessage: any = {
+    id: 'msg-user-branching',
+    chatId: 'chat-e2e',
+    role: 'user',
+    parts: [
+      {
+        type: 'text',
+        text: 'Share two alternative ideas for improving onboarding.',
+      },
+    ],
+    attachments: [],
+    createdAt: baseTime,
+    updatedAt: baseTime,
+    parentId: null,
+    model: null,
+    pathText: '_00',
+    parentPath: null,
+    depth: 0,
+    siblingsCount: 1,
+    siblingIndex: 0,
+    children: [],
+  };
+
+  const assistantDraft: any = {
+    id: 'msg-assistant-branch-v1',
+    chatId: 'chat-e2e',
+    role: 'assistant',
+    parts: [
+      {
+        type: 'text',
+        text: 'Initial response outlining a structured onboarding workshop.',
+      },
+    ],
+    attachments: [],
+    createdAt: new Date(baseTime.getTime() + 60_000),
+    updatedAt: new Date(baseTime.getTime() + 60_000),
+    parentId: userMessage.id,
+    model: 'openrouter:text',
+    pathText: '_00._00',
+    parentPath: '_00',
+    depth: 1,
+    siblingsCount: 2,
+    siblingIndex: 0,
+    children: [],
+  };
+
+  const assistantRevision: any = {
+    id: 'msg-assistant-branch-v2',
+    chatId: 'chat-e2e',
+    role: 'assistant',
+    parts: [
+      {
+        type: 'text',
+        text: 'Alternative iteration focused on a mentor-led onboarding cohort.',
+      },
+    ],
+    attachments: [],
+    createdAt: new Date(baseTime.getTime() + 120_000),
+    updatedAt: new Date(baseTime.getTime() + 120_000),
+    parentId: userMessage.id,
+    model: 'openrouter:text',
+    pathText: '_00._01',
+    parentPath: '_00',
+    depth: 1,
+    siblingsCount: 2,
+    siblingIndex: 1,
+    children: [],
+  };
+
+  userMessage.children = [assistantDraft, assistantRevision];
+
+  await openChat(page, {
+    bootstrap: {
+      kind: 'existing',
+      initialMessages: [userMessage, assistantDraft, assistantRevision],
+      headMessageId: assistantRevision.id,
+    },
+  });
+
+  const assistantMessage = page
+    .locator('[data-testid="message-assistant"]')
+    .first();
+  await expect(assistantMessage).toContainText(
+    'Alternative iteration focused on a mentor-led onboarding cohort.'
+  );
+  await expect(assistantMessage.getByText('2 / 2')).toBeVisible();
+
+  const previousButton = assistantMessage.getByRole('button', {
+    name: 'View previous version',
+  });
+  await previousButton.click();
+
+  await expect(assistantMessage).toContainText(
+    'Initial response outlining a structured onboarding workshop.'
+  );
+  await expect(assistantMessage.getByText('1 / 2')).toBeVisible();
+
+  const totalChatRequests = await page.evaluate(
+    () => window.__testMocks?.chatRequests.length ?? 0
+  );
+  expect(totalChatRequests).toBe(0);
+
+  const nextButton = assistantMessage.getByRole('button', {
+    name: 'View next version',
+  });
+  await nextButton.click();
+
+  await expect(assistantMessage).toContainText(
+    'Alternative iteration focused on a mentor-led onboarding cohort.'
+  );
+  await expect(assistantMessage.getByText('2 / 2')).toBeVisible();
+});
