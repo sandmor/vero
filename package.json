@@ -53,6 +53,7 @@
     "@vercel/functions": "^3.1.4",
     "@vercel/otel": "^2.1.0",
     "ai": "5.0.87",
+    "babel-plugin-react-compiler": "^1.0.0",
     "class-variance-authority": "^0.7.1",
     "classnames": "^2.5.1",
     "clsx": "^2.1.1",
