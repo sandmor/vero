@@ -1,9 +1,10 @@
-import type { Chat, ChatSettings, MessageTreeResult } from '@/lib/db/schema';
+import type { Chat, ChatSettings, DBMessage } from '@/lib/db/schema';
 import { DEFAULT_CHAT_MODEL, isModelIdAllowed } from '@/lib/ai/models';
 import {
   normalizeModelId,
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
+import { buildMessageTree } from '@/lib/utils/message-tree';
 
 export function buildInitialSettings(
   base: ChatSettings | null,
@@ -67,16 +68,25 @@ export function resolveInitialReasoningEffort({
 
 export function computeChatLastUpdatedAt({
   chat,
-  messageTree,
+  messages,
+  headMessageId,
 }: {
   chat: Pick<Chat, 'createdAt'>;
-  messageTree: MessageTreeResult;
+  messages: DBMessage[];
+  headMessageId?: string | null;
 }): string {
-  const branch = messageTree.branch ?? [];
   const baseline = new Date(chat.createdAt).getTime();
-  const latestTimestamp = branch.reduce<number>((acc, node) => {
-    const nodeTime = new Date(node.createdAt).getTime();
-    return nodeTime > acc ? nodeTime : acc;
+  if (!messages.length) {
+    return new Date(baseline).toISOString();
+  }
+
+  const tree = buildMessageTree(messages, headMessageId ?? null);
+  const candidateNodes = tree.branch.length ? tree.branch : tree.nodes;
+  const iterable = candidateNodes.length ? candidateNodes : messages;
+
+  const latestTimestamp = iterable.reduce<number>((acc, node) => {
+    const value = new Date(node.createdAt).getTime();
+    return Number.isNaN(value) ? acc : Math.max(acc, value);
   }, baseline);
 
   return new Date(latestTimestamp).toISOString();

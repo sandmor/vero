@@ -9,7 +9,7 @@ import {
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
 import { generateUUID } from '@/lib/utils';
-import { getChatById, getMessagesByChatId } from '@/lib/db/queries';
+import { getChatById, getMessagesByChatIdRaw } from '@/lib/db/queries';
 import type { ChatSettings } from '@/lib/db/schema';
 import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
 import {
@@ -44,7 +44,9 @@ export async function GET(request: Request) {
       return new ChatSDKError('not_found:chat').toResponse();
     }
 
-    const messageTree = await getMessagesByChatId({ id: chatId });
+    const { messages, headMessageId } = await getMessagesByChatIdRaw({
+      id: chatId,
+    });
 
     const chatSettingsModel = normalizeModelId(chat.settings?.modelId);
     const agentSettingsModel = normalizeModelId(
@@ -97,7 +99,8 @@ export async function GET(request: Request) {
           }
         : null,
       agentId: chat.agent?.id ?? null,
-      initialMessageTree: messageTree,
+      initialMessages: messages,
+      headMessageId,
       initialLastContext: chat.lastContext ?? null,
       shouldSetLastChatUrl: false,
       prefetchedChat: serializeChat(chat),

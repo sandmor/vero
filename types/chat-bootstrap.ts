@@ -1,6 +1,6 @@
 import type { VisibilityType } from '@/components/visibility-selector';
 import type { ChatModelOption } from '@/lib/ai/models';
-import type { ChatSettings, MessageTreeResult } from '@/lib/db/schema';
+import type { ChatSettings, DBMessage } from '@/lib/db/schema';
 import type { AppUsage } from '@/lib/usage';
 import type { AgentPreset } from '@/types/agent';
 import type { SerializedChat } from '@/lib/cache/types';
@@ -20,7 +20,8 @@ export type NewChatBootstrap = ChatBootstrapCommon & {
   autoResume: false;
   isReadonly: false;
   agentId?: undefined;
-  initialMessageTree?: undefined;
+  initialMessages?: undefined;
+  headMessageId?: undefined;
   initialLastContext?: undefined;
 };
 
@@ -29,7 +30,8 @@ export type ExistingChatBootstrap = ChatBootstrapCommon & {
   autoResume: boolean;
   isReadonly: boolean;
   agentId?: string | null;
-  initialMessageTree: MessageTreeResult;
+  initialMessages: DBMessage[];
+  headMessageId: string | null;
   initialLastContext?: AppUsage | null;
   prefetchedChat?: SerializedChat;
 };

@@ -22,7 +22,7 @@ test('renders existing timeline content and shows thinking state for new message
     updatedAt: baseTime,
     parentId: null,
     model: null,
-    pathText: '0',
+    pathText: '_00',
     parentPath: null,
     depth: 0,
     siblingsCount: 1,
@@ -51,8 +51,8 @@ test('renders existing timeline content and shows thinking state for new message
     updatedAt: new Date(baseTime.getTime() + 60_000),
     parentId: 'msg-user-existing',
     model: 'openrouter:vision',
-    pathText: '0.0',
-    parentPath: '0',
+    pathText: '_00._00',
+    parentPath: '_00',
     depth: 1,
     siblingsCount: 1,
     siblingIndex: 0,
@@ -61,16 +61,11 @@ test('renders existing timeline content and shows thinking state for new message
 
   userMessage.children = [assistantMessage];
 
-  const initialMessageTree = {
-    tree: [userMessage],
-    nodes: [userMessage, assistantMessage],
-    branch: [userMessage, assistantMessage],
-  };
-
   await openChat(page, {
     bootstrap: {
       kind: 'existing',
-      initialMessageTree,
+      initialMessages: [userMessage, assistantMessage],
+      headMessageId: assistantMessage.id,
     },
   });
 
@@ -117,7 +112,7 @@ test('editing a user message resubmits the conversation and shows pending reply'
     updatedAt: baseTime,
     parentId: null,
     model: null,
-    pathText: '0',
+    pathText: '_00',
     parentPath: null,
     depth: 0,
     siblingsCount: 1,
@@ -140,8 +135,8 @@ test('editing a user message resubmits the conversation and shows pending reply'
     updatedAt: new Date(baseTime.getTime() + 90_000),
     parentId: 'msg-user-original',
     model: 'openrouter:text',
-    pathText: '0.0',
-    parentPath: '0',
+    pathText: '_00._00',
+    parentPath: '_00',
     depth: 1,
     siblingsCount: 1,
     siblingIndex: 0,
@@ -150,16 +145,11 @@ test('editing a user message resubmits the conversation and shows pending reply'
 
   originalUser.children = [assistantReply];
 
-  const initialMessageTree = {
-    tree: [originalUser],
-    nodes: [originalUser, assistantReply],
-    branch: [originalUser, assistantReply],
-  };
-
   await openChat(page, {
     bootstrap: {
       kind: 'existing',
-      initialMessageTree,
+      initialMessages: [originalUser, assistantReply],
+      headMessageId: assistantReply.id,
     },
   });
 

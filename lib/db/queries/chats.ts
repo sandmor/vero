@@ -1,14 +1,7 @@
-import { Prisma as PrismaRuntime } from '../../../generated/prisma-client';
 import type { Prisma } from '../../../generated/prisma-client';
 import { prisma } from '../prisma';
 import { ChatSDKError } from '../../errors';
-import type {
-  Chat,
-  ChatSettings,
-  DBMessage,
-  MessageTreeNode,
-  MessageTreeResult,
-} from '../schema';
+import type { Chat, ChatSettings, DBMessage, MessageTreeNode } from '../schema';
 import type { AppUsage } from '../../usage';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { generateUUID } from '../../utils';
@@ -17,7 +10,6 @@ import {
   saveMessages,
   getMessagesByChatId,
   type SaveMessageInput,
-  buildMessageTree,
 } from './messages';
 
 export async function saveChat({
@@ -58,6 +50,7 @@ export async function deleteChatById({ id }: { id: string }): Promise<Chat> {
       lastContext: lastContext as unknown as Chat['lastContext'],
       settings: (deleted.settings as ChatSettings) ?? null,
       agent: null,
+      headMessage: null,
     };
   } catch (_error) {
     throw new ChatSDKError(
@@ -108,15 +101,18 @@ export async function getChatsByUserId({
   limit,
   startingAfter = null, // chat id to load newer than (optional)
   endingBefore = null, // chat id to load older than (optional)
-  includeMessageTree = false,
+  includeMessages = false,
 }: {
   id: string;
   limit: number;
   startingAfter?: string | null;
   endingBefore?: string | null;
-  includeMessageTree?: boolean;
+  includeMessages?: boolean;
 }): Promise<{
-  chats: (Chat & { messageTree?: MessageTreeResult | null })[];
+  chats: (Chat & {
+    messages?: DBMessage[];
+    headMessageId: string | null;
+  })[];
   hasMore: boolean;
 }> {
   if (startingAfter && endingBefore) {
@@ -132,9 +128,8 @@ export async function getChatsByUserId({
     { id: 'desc' }, // tie-breaker, keeps paging deterministic
   ];
 
-  const include: Prisma.ChatInclude = { agent: true };
-  if (includeMessageTree) {
-    // We fetch messages only to build the tree, not to return raw messages.
+  const include: Prisma.ChatInclude = { agent: true, headMessage: true };
+  if (includeMessages) {
     include.messages = { orderBy: { pathText: 'asc' } };
   }
 
@@ -171,13 +166,10 @@ export async function getChatsByUserId({
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
   const chats = pageRows.map((c) => {
-    const messageTree =
-      includeMessageTree && Array.isArray((c as any).messages)
-        ? buildMessageTree(
-            (c as any).messages as DBMessage[],
-            c.headMessageId ?? undefined
-          )
-        : null;
+    const rawMessages =
+      includeMessages && Array.isArray((c as any).messages)
+        ? ((c as any).messages as DBMessage[])
+        : undefined;
 
     return {
       id: c.id,
@@ -191,8 +183,13 @@ export async function getChatsByUserId({
       forkDepth: (c as any).forkDepth ?? 0,
       settings: (c.settings as ChatSettings) ?? null,
       agent: (c as any).agent ?? null,
-      ...(includeMessageTree ? { messageTree } : {}),
-    } as Chat & { messageTree?: MessageTreeResult | null };
+      headMessage: (c as any).headMessage ?? null,
+      headMessageId: c.headMessageId ?? null,
+      ...(includeMessages ? { messages: rawMessages ?? [] } : {}),
+    } as Chat & {
+      messages?: DBMessage[];
+      headMessageId: string | null;
+    };
   });
 
   return { chats, hasMore };
@@ -441,6 +438,8 @@ export async function searchChats({
       settings: (result.settings as ChatSettings) ?? null,
       agentId: result.agentId ?? null,
       agent: result.agentId ? (agentMap.get(result.agentId) ?? null) : null,
+      headMessageId: null,
+      headMessage: null,
     }));
 
     return {
@@ -461,25 +460,22 @@ export async function getChatById({
   try {
     const selectedChat = await prisma.chat.findUnique({
       where: { id },
-      include: { agent: true },
+      include: { agent: true, headMessage: true },
     });
     if (!selectedChat) {
       return null;
     }
 
-    const { lastContext, visibility, settings, agent, ...rest } =
-      selectedChat as typeof selectedChat & {
-        visibility: string;
-        settings: any;
-        agent: any;
-      };
-    return {
-      ...rest,
-      visibility: visibility as Chat['visibility'],
-      lastContext: lastContext as unknown as Chat['lastContext'],
-      settings: (settings as ChatSettings) ?? null,
-      agent: agent ?? null,
-    } as Chat;
+    const normalized: Chat = {
+      ...selectedChat,
+      visibility: selectedChat.visibility as Chat['visibility'],
+      lastContext: selectedChat.lastContext as unknown as Chat['lastContext'],
+      settings: (selectedChat.settings as ChatSettings) ?? null,
+      agent: selectedChat.agent ?? null,
+      headMessage: selectedChat.headMessage ?? null,
+    };
+
+    return normalized;
   } catch (_error) {
     throw new ChatSDKError('bad_request:database', 'Failed to get chat by id');
   }

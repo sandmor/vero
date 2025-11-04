@@ -72,7 +72,8 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
 
     const lastUpdatedAt = computeChatLastUpdatedAt({
       chat: { createdAt: new Date(data.prefetchedChat.createdAt) },
-      messageTree: data.initialMessageTree,
+      messages: data.initialMessages ?? [],
+      headMessageId: data.headMessageId ?? null,
     });
 
     upsertChatRecord({
@@ -94,6 +95,8 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     allowedModels: data.allowedModels,
     initialSettings: data.initialSettings ?? null,
     initialAgent: data.initialAgent ?? null,
+    initialMessages: data.initialMessages ?? [],
+    headMessageId: data.headMessageId ?? null,
   } as const;
 
   const chatElement =
@@ -102,7 +105,6 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
         key={data.chatId}
         {...commonProps}
         agentId={data.agentId ?? undefined}
-        initialMessageTree={data.initialMessageTree}
         initialLastContext={data.initialLastContext ?? undefined}
       />
     ) : (

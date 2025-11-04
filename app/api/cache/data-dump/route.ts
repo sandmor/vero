@@ -8,7 +8,7 @@ import {
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
 import { getChatsByUserId } from '@/lib/db/queries';
-import type { ChatSettings, Chat } from '@/lib/db/schema';
+import type { ChatSettings, Chat, DBMessage } from '@/lib/db/schema';
 import type { AgentPreset } from '@/types/agent';
 import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
 import type { CacheMetadataPayload, CachedChatRecord } from '@/lib/cache/types';
@@ -20,7 +20,6 @@ import {
   resolveInitialReasoningEffort,
 } from '@/lib/chat/bootstrap-helpers';
 import { enforceCacheRateLimit } from '@/lib/cache/rate-limit';
-import type { MessageTreeResult } from '@/lib/db/schema';
 import { serializeChat } from '@/lib/chat/serialization';
 
 const DEFAULT_CHAT_LIMIT = 50;
@@ -91,18 +90,24 @@ export async function POST(request: NextRequest) {
     limit: requestedLimit,
     startingAfter: null,
     endingBefore: null,
-    includeMessageTree: true,
+    includeMessages: true,
   });
 
   const cacheEntries: Array<{
     bootstrap: ChatBootstrapResponse;
-    messageTree: MessageTreeResult;
     lastUpdatedAt: string;
     chat: ReturnType<typeof serializeChat>;
   }> = [];
 
   for (const chat of chats) {
-    const messageTree = chat.messageTree || { tree: [], nodes: [], branch: [] };
+    const { messages = [], ...chatWithoutMessages } = chat as Chat & {
+      messages?: DBMessage[];
+    };
+    const headMessageId = chat.headMessageId ?? null;
+    const chatForSerialization = {
+      ...chatWithoutMessages,
+      headMessageId,
+    } as Chat;
 
     const chatSettingsModel = normalizeModelId(chat.settings?.modelId);
     const agentSettingsModel = normalizeModelId(
@@ -145,18 +150,23 @@ export async function POST(request: NextRequest) {
       initialSettings,
       initialAgent: mapAgentToPreset(chat.agent),
       agentId: chat.agent?.id ?? null,
-      initialMessageTree: messageTree,
+      initialMessages: messages,
+      headMessageId,
       initialLastContext: chat.lastContext ?? null,
       shouldSetLastChatUrl: false,
+      prefetchedChat: serializeChat(chatForSerialization),
     };
 
-    const lastUpdatedAt = computeChatLastUpdatedAt({ chat, messageTree });
+    const lastUpdatedAt = computeChatLastUpdatedAt({
+      chat,
+      messages,
+      headMessageId,
+    });
 
     cacheEntries.push({
-      bootstrap: { ...bootstrap, prefetchedChat: serializeChat(chat) },
-      messageTree,
+      bootstrap,
       lastUpdatedAt,
-      chat: serializeChat(chat),
+      chat: serializeChat(chatForSerialization),
     });
   }
 

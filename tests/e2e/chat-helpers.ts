@@ -24,7 +24,8 @@ export type ChatBootstrapResponse = {
   autoResume: boolean;
   isReadonly: boolean;
   agentId?: string;
-  initialMessageTree?: unknown;
+  initialMessages?: unknown;
+  headMessageId?: string | null;
   initialLastContext?: unknown;
 };
 

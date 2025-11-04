@@ -11,7 +11,11 @@ import {
 import { useAutoResume } from '@/hooks/use-auto-resume';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { useMultiSelection } from '@/hooks/use-multi-selection';
-import type { ChatSettings, MessageTreeResult } from '@/lib/db/schema';
+import type {
+  ChatSettings,
+  DBMessage,
+  MessageTreeResult,
+} from '@/lib/db/schema';
 import type { Attachment, ChatMessage } from '@/lib/types';
 import type { AppUsage } from '@/lib/usage';
 import { cn, convertToUIMessages } from '@/lib/utils';
@@ -37,6 +41,7 @@ import type { ChatModelOption } from '@/lib/ai/models';
 import { useChatPreferences } from './chat/use-chat-preferences';
 import { useChatMessaging } from './chat/use-chat-messaging';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
+import { buildMessageTree } from '@/lib/utils/message-tree';
 
 const BULK_DELETE_OPTIONS: Array<{
   mode: MessageDeletionMode;
@@ -69,7 +74,8 @@ const BULK_DELETE_OPTIONS: Array<{
 
 export function Chat({
   id,
-  initialMessageTree,
+  initialMessages: initialRawMessages = [],
+  headMessageId,
   initialChatModel,
   initialVisibilityType,
   isReadonly,
@@ -81,7 +87,8 @@ export function Chat({
   initialSettings,
 }: {
   id: string;
-  initialMessageTree?: MessageTreeResult;
+  initialMessages: DBMessage[];
+  headMessageId?: string | null;
   initialChatModel: string;
   initialVisibilityType: VisibilityType;
   isReadonly: boolean;
@@ -103,10 +110,14 @@ export function Chat({
   const [input, setInput] = useState<string>('');
   const [usage, setUsage] = useState<AppUsage | undefined>(initialLastContext);
 
+  const initialTree = useMemo<MessageTreeResult>(
+    () => buildMessageTree(initialRawMessages ?? [], headMessageId ?? null),
+    [headMessageId, initialRawMessages]
+  );
+
   const initialMessages = useMemo<ChatMessage[]>(
-    () =>
-      initialMessageTree ? convertToUIMessages(initialMessageTree.branch) : [],
-    [initialMessageTree]
+    () => convertToUIMessages(initialTree.branch),
+    [initialTree]
   );
   const preferences = useChatPreferences({
     chatId: id,
@@ -169,7 +180,7 @@ export function Chat({
     isBulkDeleting,
   } = useChatMessaging({
     chatId: id,
-    initialMessageTree,
+    initialMessageTree: initialTree,
     initialMessages,
     visibilityType,
     isReadonly,
@@ -411,7 +422,7 @@ export function Chat({
                     key={option.mode}
                     className={cn(
                       buttonVariants({ variant: option.variant }),
-                      'flex h-auto w-full flex-col items-start justify-start gap-1 rounded-xl border px-4 py-3 text-left text-sm leading-relaxed whitespace-normal break-words transition-colors',
+                      'flex h-auto w-full flex-col items-start justify-start gap-1 rounded-xl border px-4 py-3 text-left text-sm leading-relaxed whitespace-normal wrap-break-word transition-colors',
                       option.variant === 'secondary'
                         ? 'border-border/60 bg-muted/40 hover:bg-muted/60 dark:bg-muted/20 dark:hover:bg-muted/40'
                         : 'border-destructive/50 bg-destructive/90 text-destructive-foreground hover:bg-destructive'

@@ -24,14 +24,17 @@ export interface ChatSettings {
   prompt?: AgentPromptConfig;
 }
 
+type PrismaChatWithRelations = Prisma.ChatGetPayload<{
+  include: { agent: true; headMessage: true };
+}>;
+
 export type Chat = Omit<
-  Prisma.ChatGetPayload<{ include: { agent: true } }>,
-  'lastContext' | 'visibility' | 'settings' | 'headMessageId'
+  PrismaChatWithRelations,
+  'lastContext' | 'visibility' | 'settings'
 > & {
   lastContext: AppUsage | null;
   visibility: VisibilityType;
   settings: ChatSettings | null;
-  headMessageId?: string | null;
 };
 export type Agent = Prisma.AgentGetPayload<{}>;
 export type Document = Omit<Prisma.DocumentGetPayload<{}>, 'kind'> & {
