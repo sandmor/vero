@@ -17,6 +17,22 @@ type ProviderClientEntry = {
 
 const providerClientCache = new Map<string, ProviderClientEntry>();
 
+function buildProviderFactory(provider: string, apiKey?: string) {
+  switch (provider) {
+    case 'openrouter':
+      return createOpenRouter({
+        apiKey: apiKey ?? '',
+        extraBody: { include_reasoning: true },
+      });
+    case 'openai':
+      return createOpenAI({ apiKey });
+    case 'google':
+      return createGoogleGenerativeAI({ apiKey });
+    default:
+      throw new Error(`Unsupported provider '${provider}'`);
+  }
+}
+
 async function getProviderClient(
   provider: string
 ): Promise<(model: string) => any> {
@@ -26,23 +42,7 @@ async function getProviderClient(
     return existing.factory;
   }
   const apiKey = await getProviderApiKey(provider); // undefined -> fallback to env inside SDK
-  let factory: (model: string) => any;
-  switch (provider) {
-    case 'openrouter':
-      factory = createOpenRouter({
-        apiKey: apiKey ?? '',
-        extraBody: { include_reasoning: true },
-      });
-      break;
-    case 'openai':
-      factory = createOpenAI({ apiKey });
-      break;
-    case 'google':
-      factory = createGoogleGenerativeAI({ apiKey });
-      break;
-    default:
-      throw new Error(`Unsupported provider '${provider}'`);
-  }
+  const factory = buildProviderFactory(provider, apiKey);
   providerClientCache.set(provider, { factory, apiKey, fetchedAt: now });
   providerVersion++; // bump version whenever any provider refreshes
   return factory;
@@ -122,6 +122,12 @@ export async function getLanguageModel(id: string) {
   model = await resolveLanguageModel(id);
   dynamicModelsCache[id] = { model, fetchedAt: now };
   return model;
+}
+
+export async function getLanguageModelWithKey(id: string, apiKey: string) {
+  const { provider, model } = parseCompositeModelId(id);
+  const factory = buildProviderFactory(provider, apiKey);
+  return factory(model);
 }
 
 export async function listLanguageModels() {

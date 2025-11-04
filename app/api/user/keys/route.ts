@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
 import { revalidatePath } from 'next/cache';
 import {
-  getUserApiKeys,
+  getUserApiKeysWithMetadata,
   upsertUserApiKey,
   deleteUserApiKey,
 } from '@/lib/queries/user-keys';
@@ -13,8 +13,18 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const keys = await getUserApiKeys(session.user.id);
-  return NextResponse.json({ keys });
+  const records = await getUserApiKeysWithMetadata(session.user.id);
+  const keys: Record<string, string> = {};
+  const userSelections: Record<string, string[]> = {};
+
+  for (const record of records) {
+    keys[record.providerId] = record.apiKey;
+    userSelections[record.providerId] = Array.isArray(record.modelIds)
+      ? record.modelIds.filter((id): id is string => typeof id === 'string')
+      : [];
+  }
+
+  return NextResponse.json({ keys, userSelections });
 }
 
 export async function POST(req: NextRequest) {
@@ -42,6 +52,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    console.log(
+      'Upserting API key for user:',
+      session.user.id,
+      providerId,
+      modelIds
+    );
     await upsertUserApiKey(session.user.id, providerId, apiKey, modelIds);
     revalidatePath('/settings');
     return NextResponse.json({ ok: true });

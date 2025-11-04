@@ -21,6 +21,7 @@ import {
 } from '@/lib/chat/bootstrap-helpers';
 import { enforceCacheRateLimit } from '@/lib/cache/rate-limit';
 import { serializeChat } from '@/lib/chat/serialization';
+import { getUserByokConfig } from '@/lib/queries/user-keys';
 
 const DEFAULT_CHAT_LIMIT = 50;
 const MAX_CHAT_LIMIT = 200;
@@ -83,7 +84,14 @@ export async function POST(request: NextRequest) {
   }
 
   const tier = await getTierForUserType(session.user.type);
-  const allowedModels = await resolveChatModelOptions(tier.modelIds);
+  const byokConfig = await getUserByokConfig(session.user.id);
+  const combinedModelIds = Array.from(
+    new Set([...tier.modelIds, ...byokConfig.modelIds])
+  );
+  const allowedModels = await resolveChatModelOptions(tier.modelIds, {
+    extraModelIds: byokConfig.modelIds,
+    highlightIds: byokConfig.modelIds,
+  });
 
   const { chats, hasMore } = await getChatsByUserId({
     id: session.user.id,
@@ -115,7 +123,7 @@ export async function POST(request: NextRequest) {
     );
 
     const initialModel = resolveInitialModel({
-      allowedModelIds: tier.modelIds,
+      allowedModelIds: combinedModelIds,
       chatSettingsModel,
       agentSettingsModel,
       cookieCandidate: null,

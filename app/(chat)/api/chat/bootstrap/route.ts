@@ -18,6 +18,7 @@ import {
   resolveInitialReasoningEffort,
 } from '@/lib/chat/bootstrap-helpers';
 import { serializeChat } from '@/lib/chat/serialization';
+import { getUserByokConfig } from '@/lib/queries/user-keys';
 
 export async function GET(request: Request) {
   const session = await getAppSession();
@@ -32,7 +33,14 @@ export async function GET(request: Request) {
   const reasoningEffortFromCookie = cookieStore.get('chat-reasoning');
 
   const tier = await getTierForUserType(session.user.type);
-  const allowedModels = await resolveChatModelOptions(tier.modelIds);
+  const byokConfig = await getUserByokConfig(session.user.id);
+  const combinedModelIds = Array.from(
+    new Set([...tier.modelIds, ...byokConfig.modelIds])
+  );
+  const allowedModels = await resolveChatModelOptions(tier.modelIds, {
+    extraModelIds: byokConfig.modelIds,
+    highlightIds: byokConfig.modelIds,
+  });
 
   if (chatId) {
     const chat = await getChatById({ id: chatId });
@@ -55,7 +63,7 @@ export async function GET(request: Request) {
     const cookieCandidate = modelIdFromCookie?.value;
 
     const initialModel = resolveInitialModel({
-      allowedModelIds: tier.modelIds,
+      allowedModelIds: combinedModelIds,
       chatSettingsModel,
       agentSettingsModel,
       cookieCandidate,
@@ -116,7 +124,7 @@ export async function GET(request: Request) {
   const initialReasoningEffort = cookieReasoningEffort ?? undefined;
 
   const initialModel = resolveInitialModel({
-    allowedModelIds: tier.modelIds,
+    allowedModelIds: combinedModelIds,
     chatSettingsModel: null,
     agentSettingsModel: null,
     cookieCandidate,
@@ -136,7 +144,7 @@ export async function GET(request: Request) {
     initialAgent: null,
     shouldSetLastChatUrl:
       !!modelIdFromCookie &&
-      isModelIdAllowed(modelIdFromCookie.value, tier.modelIds),
+      isModelIdAllowed(modelIdFromCookie.value, combinedModelIds),
   };
 
   return Response.json(response, { status: 200 });

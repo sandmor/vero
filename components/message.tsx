@@ -159,7 +159,7 @@ const PurePreviewMessage = ({
 
           {shouldShowPlaceholder ? (
             <EmptyMessagePlaceholder
-              className="min-h-[1.5rem]"
+              className="min-h-6"
               isLoading={isLoading}
             />
           ) : (
@@ -288,32 +288,41 @@ const PurePreviewMessage = ({
               onToggleSelect={onToggleSelectMessage}
               isSelected={Boolean(isSelected)}
               isSelectionMode={Boolean(isSelectionMode)}
-              modelBadge={
-                message.role === 'assistant' && message.metadata?.model ? (
-                  <span className="rounded-full bg-muted/30 px-2 py-0.5 text-sm font-medium text-muted-foreground">
-                    {(() => {
-                      const raw = message.metadata?.model as string | undefined;
-                      if (!raw) return '';
-                      // If allowedModels provided, prefer authoritative name
-                      if (allowedModels && allowedModels.length > 0) {
-                        const found = allowedModels.find((m) => m.id === raw);
-                        if (found) return found.name;
-                      }
-                      try {
-                        const d = deriveChatModel(raw);
-                        return (
-                          d?.name ?? raw.split(':').slice(1).join(':') ?? raw
-                        );
-                      } catch {
-                        const parts = raw.split(':');
-                        return parts.length > 1
-                          ? parts.slice(1).join(':')
-                          : raw;
-                      }
-                    })()}
+              modelBadge={(() => {
+                if (message.role !== 'assistant' || !message.metadata?.model) {
+                  return null;
+                }
+                const raw = message.metadata.model as string;
+                let name = '';
+                let isBYOK = false;
+                if (allowedModels && allowedModels.length > 0) {
+                  const found = allowedModels.find((m) => m.id === raw);
+                  if (found) {
+                    name = found.name;
+                    isBYOK = Boolean(found.isBYOK);
+                  }
+                }
+                if (!name) {
+                  try {
+                    const derived = deriveChatModel(raw);
+                    name =
+                      derived?.name ?? raw.split(':').slice(1).join(':') ?? raw;
+                  } catch {
+                    const parts = raw.split(':');
+                    name = parts.length > 1 ? parts.slice(1).join(':') : raw;
+                  }
+                }
+                return (
+                  <span className="flex items-center gap-2 rounded-full bg-muted/30 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    <span className="truncate">{name}</span>
+                    {isBYOK && (
+                      <span className="rounded-full border border-primary/40 bg-primary/10 px-1 text-[9px] font-semibold uppercase tracking-wide text-primary">
+                        BYOK
+                      </span>
+                    )}
                   </span>
-                ) : null
-              }
+                );
+              })()}
               siblingsBadge={siblingsPicker}
               onFork={onForkMessage}
             />

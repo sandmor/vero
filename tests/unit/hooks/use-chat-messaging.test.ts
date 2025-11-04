@@ -99,9 +99,12 @@ describe('calculateBranchSwitch', () => {
     });
 
     expect(result).not.toBeNull();
-    const branchIds = result!.branchNodes.map((node) => node.id);
+    if (!result) {
+      throw new Error('Expected a branch switch result');
+    }
+    const branchIds = result.branchNodes.map((node) => node.id);
     expect(branchIds).toEqual(['user-1', 'assistant-2', 'user-2']);
-    expect(result!.headNode.id).toBe('user-2');
+    expect(result.headNode.id).toBe('user-2');
   });
 
   it('prefers a requested head when it exists in the target subtree', () => {
@@ -196,13 +199,16 @@ describe('calculateBranchSwitch', () => {
     });
 
     expect(result).not.toBeNull();
-    const branchIds = result!.branchNodes.map((node) => node.id);
+    if (!result) {
+      throw new Error('Expected a branch switch result');
+    }
+    const branchIds = result.branchNodes.map((node) => node.id);
     expect(branchIds).toEqual([
       'user-1',
       'assistant-2',
       'user-3',
       'assistant-3',
     ]);
-    expect(result!.headNode.id).toBe('assistant-3');
+    expect(result.headNode.id).toBe('assistant-3');
   });
 });

@@ -232,7 +232,7 @@ Administrative interface for system management:
 
 - Bun (package manager + fast scripts)
 - ESLint + Prettier (configured) — (Biome mention removed; repo uses standard toolchain)
-- Playwright (E2E) harness ready (tests reside under `playwright/`)
+- Playwright (E2E) harness ready (browser specs live in `tests/e2e`)
 - OpenTelemetry instrumentation hooks (`instrumentation.ts`, `@vercel/otel`)
 - Deploy-first design for Vercel (Edge/Node hybrid)
 
@@ -325,13 +325,18 @@ If you plan to enforce tier overrides or seed model capabilities manually, inser
 
 ### Testing
 
-```bash
-# Lint (ESLint)
-bun run lint
+- `bun test` / `bun run test:unit` – Bun runner executes fast unit tests under `tests/unit` (JSDOM env, shared setup in `tests/unit/setup.ts`).
+- `bun run test:e2e` – Playwright spins up the dev server and runs Chromium tests from `tests/e2e`.
+- `bun run lint` – ESLint with the repo configuration.
+- `bunx tsc --noEmit` – Type check the Next.js app and test utilities.
 
-# Type check
-bunx tsc --noEmit
-```
+| Directory          | Runner     | Notes                                                                              |
+| ------------------ | ---------- | ---------------------------------------------------------------------------------- |
+| `tests/unit`       | Bun        | Uses `bunfig.toml` preload for mocks and DOM stubs.                                |
+| `tests/unit/mocks` | Bun        | Shared mocks consumed during unit tests.                                           |
+| `tests/e2e`        | Playwright | Browser automation; requires the dev server (managed automatically by the config). |
+
+> Tip: append `--watch` to `bun test` for watch mode, or `--headed` to `bun run test:e2e -- --headed` when debugging Playwright.
 
 ## Deployment
 

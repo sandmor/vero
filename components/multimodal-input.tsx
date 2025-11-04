@@ -35,13 +35,22 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from './elements/prompt-input';
-import { ArrowUp, ChevronDown, Cpu, Paperclip, StopCircle } from 'lucide-react';
+import {
+  ArrowUp,
+  ChevronDown,
+  Cpu,
+  Paperclip,
+  StopCircle,
+  User,
+} from 'lucide-react';
 import { LogoOpenAI, LogoGoogle, LogoOpenRouter } from './icons';
 import { PreviewAttachment } from './preview-attachment';
 import { SuggestedActions } from './suggested-actions';
 import { Button } from './ui/button';
 import type { VisibilityType } from './visibility-selector';
 import type { ChatModelOption } from '@/lib/ai/models';
+import { useUserApiKeys } from '@/hooks/use-user-api-keys';
+import { Badge } from '@/components/ui/badge';
 
 function modelSupportsAttachments(model: ChatModelOption | null | undefined) {
   if (!model?.capabilities) {
@@ -95,6 +104,7 @@ function PureMultimodalInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
+  const { getApiKeyUsageForModel } = useUserApiKeys();
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -408,7 +418,7 @@ function PureMultimodalInput({
           />{' '}
           <Context {...contextProps} />
         </div>
-        <PromptInputToolbar className="!border-top-0 border-t-0! p-0 shadow-none dark:border-0 dark:border-transparent!">
+        <PromptInputToolbar className="border-top-0! border-t-0! p-0 shadow-none dark:border-0 dark:border-transparent!">
           <PromptInputTools className="gap-0 sm:gap-0.5">
             <AttachmentsButton
               fileInputRef={fileInputRef}
@@ -420,6 +430,7 @@ function PureMultimodalInput({
               chatHasAttachments={chatHasAttachments}
               onModelChange={onModelChange}
               selectedModelId={selectedModelId}
+              getApiKeyUsageForModel={getApiKeyUsageForModel}
             />
             {onReasoningEffortChange && (
               <ReasoningEffortSelector
@@ -523,11 +534,13 @@ function PureModelSelectorCompact({
   onModelChange,
   allowedModels,
   chatHasAttachments,
+  getApiKeyUsageForModel,
 }: {
   selectedModelId: string;
   onModelChange?: (modelId: string) => void;
   allowedModels: ChatModelOption[];
   chatHasAttachments: boolean;
+  getApiKeyUsageForModel: (modelId: string) => { willUseUserKey: boolean };
 }) {
   const [optimisticModelId, setOptimisticModelId] = useState(selectedModelId);
 
@@ -591,9 +604,21 @@ function PureModelSelectorCompact({
         data-testid="model-selector"
       >
         {selectedModel && getProviderIcon(selectedModel.provider)}
-        <span className="hidden font-medium text-xs sm:block">
+        <span className="hidden text-xs font-medium sm:block">
           {selectedModel?.name}
         </span>
+        {selectedModel?.isBYOK && (
+          <Badge
+            variant="outline"
+            className="text-[9px] uppercase tracking-wide"
+          >
+            BYOK
+          </Badge>
+        )}
+        {selectedModel &&
+          getApiKeyUsageForModel(selectedModel.id).willUseUserKey && (
+            <User className="h-3 w-3 text-primary" />
+          )}
         <ChevronDown size={16} />
       </Trigger>
       <PromptInputModelSelectContent className="min-w-[280px] p-0">
@@ -629,8 +654,16 @@ function PureModelSelectorCompact({
                           : undefined
                       }
                     >
-                      <div className="truncate font-medium text-xs">
-                        {model.name}
+                      <div className="flex items-center gap-2 text-xs font-medium">
+                        <span className="truncate">{model.name}</span>
+                        {model.isBYOK && (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] uppercase tracking-wide"
+                          >
+                            BYOK
+                          </Badge>
+                        )}
                       </div>
                       <div className="mt-px truncate text-[10px] text-muted-foreground leading-tight">
                         {model.description}

@@ -8,6 +8,7 @@ import {
   syncTokenLensModels,
   syncPricingFromTokenLens,
   upsertModelCapabilities,
+  syncProviderCatalog,
 } from '@/lib/ai/model-capabilities';
 import { revalidatePath } from 'next/cache';
 
@@ -72,6 +73,15 @@ export async function POST(req: NextRequest) {
         allowCreate: body.allowCreate === true,
       });
 
+      revalidatePath('/settings');
+      return NextResponse.json(result);
+    }
+
+    if (
+      action === 'sync-provider-catalog' &&
+      typeof body.provider === 'string'
+    ) {
+      const result = await syncProviderCatalog(body.provider);
       revalidatePath('/settings');
       return NextResponse.json(result);
     }

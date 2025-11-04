@@ -22,6 +22,7 @@ export type ChatModelCapabilitiesSummary = {
 
 export type ChatModelOption = ChatModel & {
   capabilities: ChatModelCapabilitiesSummary | null;
+  isBYOK?: boolean;
 };
 
 export function buildCompositeModelId(provider: string, model: string) {

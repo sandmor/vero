@@ -1,6 +1,16 @@
 import { prisma } from '@/lib/db/prisma';
 import { SUPPORTED_PROVIDERS } from '@/lib/ai/registry';
 
+export type UserByokProviderSelection = {
+  apiKey: string;
+  modelIds: string[];
+};
+
+export type UserByokConfig = {
+  providers: Record<string, UserByokProviderSelection>;
+  modelIds: string[];
+};
+
 export type UserApiKeyRecord = {
   userId: string;
   providerId: string;
@@ -13,17 +23,11 @@ export type UserApiKeyRecord = {
 export async function getUserApiKeys(
   userId: string
 ): Promise<Record<string, string>> {
-  const userApiKeys = await prisma.userApiKey.findMany({
-    where: { userId },
-    orderBy: { providerId: 'asc' },
-  });
-
-  // Return in format: { providerId: apiKey }
+  const userApiKeys = await getUserApiKeysWithMetadata(userId);
   const keys: Record<string, string> = {};
   userApiKeys.forEach((key) => {
     keys[key.providerId] = key.apiKey;
   });
-
   return keys;
 }
 
@@ -47,6 +51,13 @@ export async function upsertUserApiKey(
   if (!Array.isArray(modelIds)) {
     throw new Error('modelIds must be an array');
   }
+
+  // Ensure the provider exists in the Provider table (required for foreign key constraint)
+  await prisma.provider.upsert({
+    where: { id: providerId },
+    create: { id: providerId, apiKey: '' }, // Empty apiKey for global provider record
+    update: {}, // No update needed, just ensure it exists
+  });
 
   // Store the key (upsert to handle both create and update)
   await prisma.userApiKey.upsert({
@@ -100,4 +111,40 @@ export async function getUserApiKeysWithMetadata(
     where: { userId },
     orderBy: { providerId: 'asc' },
   });
+}
+
+export async function getUserByokConfig(
+  userId: string
+): Promise<UserByokConfig> {
+  const records = await getUserApiKeysWithMetadata(userId);
+  const providers: Record<string, UserByokProviderSelection> = {};
+  const modelIds: string[] = [];
+
+  for (const record of records) {
+    const selectedModels = Array.isArray(record.modelIds)
+      ? record.modelIds.filter(
+          (id): id is string => typeof id === 'string' && id.length > 0
+        )
+      : [];
+
+    if (!record.apiKey || selectedModels.length === 0) {
+      continue;
+    }
+
+    providers[record.providerId] = {
+      apiKey: record.apiKey,
+      modelIds: selectedModels,
+    };
+
+    for (const id of selectedModels) {
+      modelIds.push(id);
+    }
+  }
+
+  const uniqueModelIds = Array.from(new Set(modelIds));
+
+  return {
+    providers,
+    modelIds: uniqueModelIds,
+  };
 }

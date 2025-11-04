@@ -551,6 +551,14 @@ export default function AgentEditor({
                         <span className={cn('flex-1 truncate text-center')}>
                           {model.name}
                         </span>
+                        {model.isBYOK && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] uppercase tracking-wide"
+                          >
+                            BYOK
+                          </Badge>
+                        )}
                       </div>
                     </Button>
                   </motion.div>

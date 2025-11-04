@@ -3,9 +3,9 @@ import {
   systemPrompt,
   getRequestPromptFromHints,
   getDefaultSystemPromptParts,
-} from '../prompts';
-import { renderTemplate } from '../prompt-engine';
-import type { RequestHints } from '../prompts';
+} from '@/lib/ai/prompts';
+import { renderTemplate } from '@/lib/ai/prompt-engine';
+import type { RequestHints } from '@/lib/ai/prompts';
 import {
   buildPromptPartsFromConfig,
   getAgentPromptVariableMap,

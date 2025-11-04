@@ -692,6 +692,67 @@ export async function syncPricingFromTokenLens(
   }
 }
 
+export async function syncProviderCatalog(
+  providerId: string
+): Promise<{ synced: number; errors: string[] }> {
+  if (!providerId) {
+    return { synced: 0, errors: ['provider is required'] };
+  }
+
+  if (providerId === 'openrouter') {
+    try {
+      const catalog = await fetchOpenRouterModels();
+      const modelIds = catalog.map((model) => `openrouter:${model.id}`);
+
+      if (modelIds.length === 0) {
+        return {
+          synced: 0,
+          errors: ['openrouter: catalog did not return any models'],
+        };
+      }
+
+      return syncOpenRouterModels({ modelIds, allowCreate: true });
+    } catch (error) {
+      return {
+        synced: 0,
+        errors: [
+          `openrouter: ${error instanceof Error ? error.message : 'failed to fetch catalog'}`,
+        ],
+      };
+    }
+  }
+
+  try {
+    const { fetchModels } = await import('tokenlens/fetch');
+    const providerInfo = await fetchModels(providerId);
+
+    if (!providerInfo || !providerInfo.models) {
+      return {
+        synced: 0,
+        errors: [`${providerId}: provider not found in TokenLens catalog`],
+      };
+    }
+
+    const modelKeys = Object.keys(providerInfo.models);
+    if (modelKeys.length === 0) {
+      return {
+        synced: 0,
+        errors: [`${providerId}: no models available in TokenLens catalog`],
+      };
+    }
+
+    const modelIds = modelKeys.map((key) => `${providerId}:${key}`);
+    return syncTokenLensModels({ modelIds, allowCreate: true });
+  } catch (error) {
+    return {
+      synced: 0,
+      errors: [
+        `${providerId}: ${error instanceof Error ? error.message : 'failed to fetch provider catalog'}`,
+      ],
+    };
+  }
+}
+
 /**
  * Remove models that are not referenced by any tier
  */

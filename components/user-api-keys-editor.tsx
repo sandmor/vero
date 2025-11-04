@@ -17,6 +17,7 @@ import {
 import { toast } from '@/components/toast';
 import { AnimatedButtonLabel } from '@/components/ui/animated-button';
 import { SUPPORTED_PROVIDERS, displayProviderName } from '@/lib/ai/registry';
+import { UserModelManager } from '@/components/shared/user-model-manager';
 
 type FeedbackState = 'idle' | 'saved' | 'deleted' | 'error';
 
@@ -24,6 +25,9 @@ export function UserApiKeysEditor() {
   const router = useRouter();
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [keys, setKeys] = useState<Record<string, string>>({});
+  const [selectedModels, setSelectedModels] = useState<
+    Record<string, string[]>
+  >({});
   const [feedback, setFeedback] = useState<Record<string, FeedbackState>>(
     () =>
       Object.fromEntries(
@@ -32,20 +36,29 @@ export function UserApiKeysEditor() {
   );
   const feedbackTimers = useRef<Record<string, number>>({});
 
-  // Load existing keys
+  // Load existing keys and model selections
   useEffect(() => {
-    const loadKeys = async () => {
+    const loadData = async () => {
       try {
-        const response = await fetch('/api/user/keys');
-        if (response.ok) {
-          const data = await response.json();
-          setKeys(data.keys || {});
+        const [keysResponse, modelsResponse] = await Promise.all([
+          fetch('/api/user/keys'),
+          fetch('/api/user/models'),
+        ]);
+
+        if (keysResponse.ok) {
+          const keysData = await keysResponse.json();
+          setKeys(keysData.keys || {});
+        }
+
+        if (modelsResponse.ok) {
+          const modelsData = await modelsResponse.json();
+          setSelectedModels(modelsData.userSelections || {});
         }
       } catch (error) {
-        console.error('Failed to load user keys:', error);
+        console.error('Failed to load user data:', error);
       }
     };
-    loadKeys();
+    loadData();
   }, []);
 
   useEffect(() => {
@@ -76,13 +89,14 @@ export function UserApiKeysEditor() {
       providerId: string;
       apiKey: string;
     }) => {
+      const modelIds = selectedModels[providerId] || [];
       const response = await fetch('/api/user/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           providerId,
           apiKey,
-          modelIds: [], // Empty array for now
+          modelIds,
         }),
       });
 
@@ -174,6 +188,13 @@ export function UserApiKeysEditor() {
     } catch {
       // handled via onError
     }
+  }
+
+  function handleModelSelectionChange(providerId: string, modelIds: string[]) {
+    setSelectedModels((prev) => ({
+      ...prev,
+      [providerId]: modelIds,
+    }));
   }
 
   return (
@@ -332,10 +353,32 @@ export function UserApiKeysEditor() {
                           </Button>
                         </div>
                       </div>
+                      <div className="mt-3">
+                        <UserModelManager
+                          provider={p}
+                          selectedModelIds={selectedModels[p] || []}
+                          onModelSelectionChange={(modelIds: string[]) =>
+                            handleModelSelectionChange(p, modelIds)
+                          }
+                        />
+                      </div>
+
                       <p className="mt-2 text-xs text-muted-foreground">
                         Your {displayProviderName(p)} API key is stored securely
-                        and will be used for your requests to this provider.
+                        and will only be used for the selected models.
+                        {selectedModels[p]?.length > 0 ? (
+                          <span className="block mt-1 text-primary/70">
+                            <strong>{selectedModels[p].length}</strong> model
+                            {selectedModels[p].length === 1 ? '' : 's'} selected
+                            for BYOK usage.
+                          </span>
+                        ) : (
+                          <span className="block mt-1 text-muted-foreground/70">
+                            No models selected - global key will be used.
+                          </span>
+                        )}
                       </p>
+
                       <AnimatePresence initial={false}>
                         {status === 'error' ? (
                           <motion.p

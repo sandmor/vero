@@ -16,7 +16,7 @@ import type { UserType } from '@/lib/auth/types';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { getTierForUserType } from '@/lib/ai/tiers';
 import type { ChatModel } from '@/lib/ai/models';
-import { isModelIdAllowed } from '@/lib/ai/models';
+import { isModelIdAllowed, parseCompositeModelId } from '@/lib/ai/models';
 import {
   getDefaultSystemPromptParts,
   type RequestHints,
@@ -36,7 +36,7 @@ import type { ModelCatalog } from 'tokenlens/core';
 import { fetchModels } from 'tokenlens/fetch';
 import { getUsage } from 'tokenlens/helpers';
 import { getModelCost } from '@/lib/ai/pricing';
-import { getLanguageModel } from '@/lib/ai/providers';
+import { getLanguageModel, getLanguageModelWithKey } from '@/lib/ai/providers';
 import { createDocument } from '@/lib/ai/tools/create-document';
 import { readArchive } from '@/lib/ai/tools/readArchive';
 import { writeArchive } from '@/lib/ai/tools/writeArchive';
@@ -74,6 +74,7 @@ import { getModelCapabilities } from '@/lib/ai/model-capabilities';
 import { getSettings } from '@/lib/settings';
 import { CHAT_TOOL_IDS, normalizeChatToolIds } from '@/lib/ai/tool-ids';
 import type { ChatSettings, MessageTreeNode } from '@/lib/db/schema';
+import { getUserByokConfig } from '@/lib/queries/user-keys';
 
 export const maxDuration = 300;
 
@@ -280,6 +281,7 @@ export async function POST(request: Request) {
 
     const userType: UserType = session.user.type;
     const tierPromise = getTierForUserType(userType);
+    const byokConfigPromise = getUserByokConfig(session.user.id);
 
     if (chat) {
       if (chat.userId !== session.user.id) {
@@ -386,12 +388,16 @@ export async function POST(request: Request) {
     }
 
     const {
-      modelIds: allowedModels,
+      modelIds: tierModelIds,
       bucketCapacity,
       bucketRefillAmount,
       bucketRefillIntervalSeconds,
     } = await tierPromise;
-    if (!isModelIdAllowed(selectedChatModel, allowedModels)) {
+    const byokConfig = await byokConfigPromise;
+    const combinedAllowedModels = Array.from(
+      new Set([...tierModelIds, ...byokConfig.modelIds])
+    );
+    if (!isModelIdAllowed(selectedChatModel, combinedAllowedModels)) {
       return new ChatSDKError(
         userType === 'guest' ? 'forbidden:model' : 'forbidden:model'
       ).toResponse();
@@ -455,7 +461,15 @@ export async function POST(request: Request) {
         return {};
       }
     );
-    const modelPromise = getLanguageModel(selectedChatModel);
+    const { provider: selectedProvider } =
+      parseCompositeModelId(selectedChatModel);
+    const providerByok = byokConfig.providers[selectedProvider];
+    const shouldUseByokKey = Boolean(
+      providerByok?.apiKey && providerByok.modelIds.includes(selectedChatModel)
+    );
+    const modelPromise = shouldUseByokKey
+      ? getLanguageModelWithKey(selectedChatModel, providerByok!.apiKey)
+      : getLanguageModel(selectedChatModel);
     const modelCapabilitiesPromise =
       getCachedModelCapabilities(selectedChatModel)();
 
