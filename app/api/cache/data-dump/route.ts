@@ -10,7 +10,10 @@ import {
 import { getChatsByUserId } from '@/lib/db/queries';
 import type { ChatSettings, Chat, DBMessage } from '@/lib/db/schema';
 import type { AgentPreset } from '@/types/agent';
-import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
+import type {
+  BranchSelectionSnapshot,
+  ChatBootstrapResponse,
+} from '@/types/chat-bootstrap';
 import type { CacheMetadataPayload, CachedChatRecord } from '@/lib/cache/types';
 import { ChatSDKError } from '@/lib/errors';
 import {
@@ -108,14 +111,18 @@ export async function POST(request: NextRequest) {
   }> = [];
 
   for (const chat of chats) {
-    const { messages = [], ...chatWithoutMessages } = chat as Chat & {
+    const {
+      messages = [],
+      branchState,
+      ...chatWithoutMessages
+    } = chat as Chat & {
       messages?: DBMessage[];
+      branchState?: BranchSelectionSnapshot;
     };
-    const headMessageId = chat.headMessageId ?? null;
-    const chatForSerialization = {
-      ...chatWithoutMessages,
-      headMessageId,
-    } as Chat;
+    const effectiveBranchState: BranchSelectionSnapshot = branchState ?? {
+      rootMessageIndex: chatWithoutMessages.rootMessageIndex ?? null,
+    };
+    const chatForSerialization = chatWithoutMessages as Chat;
 
     const chatSettingsModel = normalizeModelId(chat.settings?.modelId);
     const agentSettingsModel = normalizeModelId(
@@ -159,7 +166,7 @@ export async function POST(request: NextRequest) {
       initialAgent: mapAgentToPreset(chat.agent),
       agentId: chat.agent?.id ?? null,
       initialMessages: messages,
-      headMessageId,
+      initialBranchState: effectiveBranchState,
       initialLastContext: chat.lastContext ?? null,
       shouldSetLastChatUrl: false,
       prefetchedChat: serializeChat(chatForSerialization),
@@ -168,7 +175,7 @@ export async function POST(request: NextRequest) {
     const lastUpdatedAt = computeChatLastUpdatedAt({
       chat,
       messages,
-      headMessageId,
+      branchState: effectiveBranchState,
     });
 
     cacheEntries.push({

@@ -52,7 +52,7 @@ export async function GET(request: Request) {
       return new ChatSDKError('not_found:chat').toResponse();
     }
 
-    const { messages, headMessageId } = await getMessagesByChatIdRaw({
+    const { messages, rootMessageIndex } = await getMessagesByChatIdRaw({
       id: chatId,
     });
 
@@ -108,7 +108,7 @@ export async function GET(request: Request) {
         : null,
       agentId: chat.agent?.id ?? null,
       initialMessages: messages,
-      headMessageId,
+      initialBranchState: { rootMessageIndex },
       initialLastContext: chat.lastContext ?? null,
       shouldSetLastChatUrl: false,
       prefetchedChat: serializeChat(chat),
@@ -142,6 +142,7 @@ export async function GET(request: Request) {
     allowedModels,
     initialSettings,
     initialAgent: null,
+    initialBranchState: { rootMessageIndex: null },
     shouldSetLastChatUrl:
       !!modelIdFromCookie &&
       isModelIdAllowed(modelIdFromCookie.value, combinedModelIds),

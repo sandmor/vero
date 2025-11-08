@@ -11,6 +11,7 @@ import {
   getMessagesByChatId,
   type SaveMessageInput,
 } from './messages';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 
 export async function saveChat({
   id,
@@ -50,7 +51,6 @@ export async function deleteChatById({ id }: { id: string }): Promise<Chat> {
       lastContext: lastContext as unknown as Chat['lastContext'],
       settings: (deleted.settings as ChatSettings) ?? null,
       agent: null,
-      headMessage: null,
     };
   } catch (_error) {
     throw new ChatSDKError(
@@ -111,7 +111,7 @@ export async function getChatsByUserId({
 }): Promise<{
   chats: (Chat & {
     messages?: DBMessage[];
-    headMessageId: string | null;
+    branchState: BranchSelectionSnapshot;
   })[];
   hasMore: boolean;
 }> {
@@ -128,7 +128,7 @@ export async function getChatsByUserId({
     { id: 'desc' }, // tie-breaker, keeps paging deterministic
   ];
 
-  const include: Prisma.ChatInclude = { agent: true, headMessage: true };
+  const include: Prisma.ChatInclude = { agent: true };
   if (includeMessages) {
     include.messages = { orderBy: { pathText: 'asc' } };
   }
@@ -165,30 +165,35 @@ export async function getChatsByUserId({
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
-  const chats = pageRows.map((c) => {
+  type ChatWithBranchState = Chat & {
+    messages?: DBMessage[];
+    branchState: BranchSelectionSnapshot;
+  };
+
+  const chats = pageRows.map<ChatWithBranchState>((c) => {
     const rawMessages =
       includeMessages && Array.isArray((c as any).messages)
         ? ((c as any).messages as DBMessage[])
         : undefined;
 
-    return {
-      id: c.id,
-      createdAt: c.createdAt,
-      title: c.title,
-      userId: c.userId,
+    const { headMessage, ...chatWithoutHead } = c as typeof c & {
+      headMessage?: unknown;
+    };
+
+    const normalized: Chat = {
+      ...chatWithoutHead,
       visibility: c.visibility as Chat['visibility'],
       lastContext: c.lastContext as unknown as Chat['lastContext'],
-      parentChatId: c.parentChatId ?? null,
-      forkedFromMessageId: c.forkedFromMessageId ?? null,
-      forkDepth: (c as any).forkDepth ?? 0,
       settings: (c.settings as ChatSettings) ?? null,
       agent: (c as any).agent ?? null,
-      headMessage: (c as any).headMessage ?? null,
       headMessageId: c.headMessageId ?? null,
+      rootMessageIndex: c.rootMessageIndex ?? null,
+    };
+
+    return {
+      ...normalized,
+      branchState: { rootMessageIndex: normalized.rootMessageIndex ?? null },
       ...(includeMessages ? { messages: rawMessages ?? [] } : {}),
-    } as Chat & {
-      messages?: DBMessage[];
-      headMessageId: string | null;
     };
   });
 
@@ -234,6 +239,7 @@ export async function searchChats({
         forkDepth: number;
         settings: unknown;
         agentId: string | null;
+        rootMessageIndex: number | null;
         matchType: 'title' | 'message';
         rank: number;
         total: number;
@@ -252,6 +258,7 @@ export async function searchChats({
           c."forkDepth",
           c.settings,
           c."agentId",
+          c."rootMessageIndex",
           'title'::text as "matchType",
     ts_rank(to_tsvector('simple', c.title), to_tsquery('simple', ${sanitizedQuery})) as rank
         FROM "Chat" c
@@ -271,6 +278,7 @@ export async function searchChats({
           c."forkDepth",
           c.settings,
           c."agentId",
+          c."rootMessageIndex",
           'message'::text as "matchType",
           ts_rank(
             to_tsvector('simple', 
@@ -309,7 +317,7 @@ export async function searchChats({
         SELECT DISTINCT ON (id)
           id, "createdAt", title, "userId", visibility, "lastContext",
           "parentChatId", "forkedFromMessageId", "forkDepth", settings, "agentId",
-          "matchType", rank
+          "rootMessageIndex", "matchType", rank
         FROM combined_results
         ORDER BY id, 
           CASE WHEN "matchType" = 'title' THEN 1 ELSE 2 END,
@@ -331,6 +339,7 @@ export async function searchChats({
         ur."forkDepth",
         ur.settings,
         ur."agentId",
+  ur."rootMessageIndex",
         ur."matchType",
         ur.rank,
         total_count.total
@@ -358,6 +367,7 @@ export async function searchChats({
           c."forkDepth",
           c.settings,
           c."agentId",
+          c."rootMessageIndex",
           'title'::text as "matchType",
     ts_rank(to_tsvector('simple', c.title), to_tsquery('simple', ${sanitizedQuery})) as rank
         FROM "Chat" c
@@ -377,6 +387,7 @@ export async function searchChats({
           c."forkDepth",
           c.settings,
           c."agentId",
+          c."rootMessageIndex",
           'message'::text as "matchType",
           ts_rank(
             to_tsvector('simple', 
@@ -439,7 +450,7 @@ export async function searchChats({
       agentId: result.agentId ?? null,
       agent: result.agentId ? (agentMap.get(result.agentId) ?? null) : null,
       headMessageId: null,
-      headMessage: null,
+      rootMessageIndex: result.rootMessageIndex ?? null,
     }));
 
     return {
@@ -460,7 +471,7 @@ export async function getChatById({
   try {
     const selectedChat = await prisma.chat.findUnique({
       where: { id },
-      include: { agent: true, headMessage: true },
+      include: { agent: true },
     });
     if (!selectedChat) {
       return null;
@@ -472,7 +483,6 @@ export async function getChatById({
       lastContext: selectedChat.lastContext as unknown as Chat['lastContext'],
       settings: (selectedChat.settings as ChatSettings) ?? null,
       agent: selectedChat.agent ?? null,
-      headMessage: selectedChat.headMessage ?? null,
     };
 
     return normalized;

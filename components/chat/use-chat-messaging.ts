@@ -11,6 +11,7 @@ import { ChatSDKError } from '@/lib/errors';
 import type { ChatMessage, CustomUIDataTypes } from '@/lib/types';
 import type { MessageTreeResult, MessageTreeNode } from '@/lib/db/schema';
 import type { AppUsage } from '@/lib/usage';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 import {
   convertToUIMessages,
   fetchWithErrorHandlers,
@@ -22,7 +23,7 @@ import type { VisibilityType } from '../visibility-selector';
 import {
   branchMessageAction,
   forkChatAction,
-  updateHeadMessage,
+  updateBranchSelection,
 } from '@/app/(chat)/actions';
 import type React from 'react';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
@@ -50,12 +51,21 @@ export type UseChatMessagingArgs = {
   selection: SelectionApi;
 };
 
-type BranchSwitchState = {
+type BranchSelectionOperation =
+  | { kind: 'root'; rootMessageIndex: number | null }
+  | { kind: 'child'; parentId: string; selectedChildIndex: number | null };
+
+type SelectionUpdateState = {
   id: symbol;
-  targetHeadId: string;
+  operation: BranchSelectionOperation;
   status: 'pending' | 'success' | 'error';
   promise: Promise<void>;
   error: unknown;
+};
+
+export type TreeUpdateDeferOptions = {
+  allowDuringStreaming?: boolean;
+  ignoreSelectionAlignment?: boolean;
 };
 
 const toTimestamp = (value: Date | string | number | null | undefined) => {
@@ -65,97 +75,201 @@ const toTimestamp = (value: Date | string | number | null | undefined) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const findNodeInSubtree = (
-  root: MessageTreeNode,
-  targetId: string
-): MessageTreeNode | null => {
-  const stack: MessageTreeNode[] = [root];
-  while (stack.length) {
-    const current = stack.pop()!;
-    if (current.id === targetId) {
-      return current;
-    }
-    if (current.children.length) {
-      for (const child of current.children) {
-        stack.push(child);
-      }
-    }
+const pickByIndexOrLatest = (
+  siblings: MessageTreeNode[],
+  preferredIndex?: number | null
+): MessageTreeNode | undefined => {
+  if (!siblings.length) {
+    return undefined;
   }
-  return null;
-};
 
-const findLatestLeaf = (root: MessageTreeNode): MessageTreeNode => {
-  let bestLeaf = root;
-  let bestTimestamp = toTimestamp(root.createdAt);
-  const stack: MessageTreeNode[] = [root];
-
-  while (stack.length) {
-    const current = stack.pop()!;
-    if (current.children.length === 0) {
-      const currentTimestamp = toTimestamp(current.createdAt);
-      if (
-        currentTimestamp > bestTimestamp ||
-        (currentTimestamp === bestTimestamp && current.depth >= bestLeaf.depth)
-      ) {
-        bestLeaf = current;
-        bestTimestamp = currentTimestamp;
-      }
-      continue;
-    }
-
-    for (const child of current.children) {
-      stack.push(child);
+  if (
+    preferredIndex !== null &&
+    preferredIndex !== undefined &&
+    Number.isFinite(preferredIndex)
+  ) {
+    const candidate = siblings.find(
+      (node) => node.siblingIndex === preferredIndex
+    );
+    if (candidate) {
+      return candidate;
     }
   }
 
-  return bestLeaf;
+  return siblings.reduce((latest, node) => {
+    const latestTimestamp = toTimestamp(latest.createdAt);
+    const nodeTimestamp = toTimestamp(node.createdAt);
+
+    if (nodeTimestamp > latestTimestamp) {
+      return node;
+    }
+
+    if (nodeTimestamp === latestTimestamp) {
+      return node.pathText.localeCompare(latest.pathText) > 0 ? node : latest;
+    }
+
+    return latest;
+  }, siblings[0]);
 };
 
-const buildBranchToRoot = (
-  leaf: MessageTreeNode,
-  nodesByPath: Map<string, MessageTreeNode>
+const cloneSelectionSnapshot = (
+  snapshot: BranchSelectionSnapshot
+): BranchSelectionSnapshot => {
+  const selectionsEntries = snapshot.selections
+    ? Object.entries(snapshot.selections)
+    : [];
+  const selections = selectionsEntries.length
+    ? Object.fromEntries(
+        selectionsEntries.map(([messageId, index]) => [
+          messageId,
+          index ?? null,
+        ])
+      )
+    : undefined;
+
+  return {
+    rootMessageIndex: snapshot.rootMessageIndex ?? null,
+    ...(selections ? { selections } : {}),
+  };
+};
+
+const ensureSelectionMap = (
+  snapshot: BranchSelectionSnapshot
+): Record<string, number | null> => {
+  if (!snapshot.selections) {
+    snapshot.selections = {};
+  }
+  return snapshot.selections;
+};
+
+const areSelectionSnapshotsEqual = (
+  a: BranchSelectionSnapshot | null,
+  b: BranchSelectionSnapshot | null
+): boolean => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if ((a.rootMessageIndex ?? null) !== (b.rootMessageIndex ?? null)) {
+    return false;
+  }
+
+  const aSelections = a.selections ?? {};
+  const bSelections = b.selections ?? {};
+  const aKeys = Object.keys(aSelections);
+  const bKeys = Object.keys(bSelections);
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+  for (const key of aKeys) {
+    if ((aSelections[key] ?? null) !== (bSelections[key] ?? null)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+export function shouldDeferTreeUpdate({
+  chatStatus,
+  pendingRegenerationId,
+  desiredSelection,
+  treeSelection,
+  options,
+}: {
+  chatStatus: ReturnType<typeof useChat>['status'];
+  pendingRegenerationId: string | null;
+  desiredSelection: BranchSelectionSnapshot | null;
+  treeSelection: BranchSelectionSnapshot | null;
+  options?: TreeUpdateDeferOptions;
+}): boolean {
+  const allowDuringStreaming = options?.allowDuringStreaming ?? false;
+  const ignoreSelectionAlignment = options?.ignoreSelectionAlignment ?? false;
+
+  if (
+    !allowDuringStreaming &&
+    (chatStatus === 'submitted' ||
+      chatStatus === 'streaming' ||
+      pendingRegenerationId !== null)
+  ) {
+    return true;
+  }
+
+  if (
+    !ignoreSelectionAlignment &&
+    desiredSelection !== null &&
+    treeSelection !== null &&
+    !areSelectionSnapshotsEqual(desiredSelection, treeSelection)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export const buildSelectionSnapshot = (
+  tree: MessageTreeResult
+): BranchSelectionSnapshot => {
+  const selections: Record<string, number | null> = {};
+  for (const node of tree.nodes) {
+    if (node.selectedChildIndex !== undefined) {
+      selections[node.id] = node.selectedChildIndex ?? null;
+    }
+  }
+
+  const normalizedSelections = Object.keys(selections).length
+    ? selections
+    : undefined;
+
+  return {
+    rootMessageIndex: tree.rootMessageIndex ?? null,
+    ...(normalizedSelections ? { selections: normalizedSelections } : {}),
+  };
+};
+
+export const computeBranchFromSelection = (
+  tree: MessageTreeResult,
+  selection: BranchSelectionSnapshot
 ): MessageTreeNode[] => {
   const branch: MessageTreeNode[] = [];
-  const visited = new Set<string>();
-  let cursor: MessageTreeNode | undefined = leaf;
-
-  while (cursor && !visited.has(cursor.id)) {
-    branch.push(cursor);
-    visited.add(cursor.id);
-
-    if (!cursor.parentPath) {
-      break;
-    }
-
-    const parent = nodesByPath.get(cursor.parentPath);
-    if (!parent) {
-      break;
-    }
-    cursor = parent;
+  const roots = tree.tree;
+  if (!roots.length) {
+    return branch;
   }
 
-  branch.reverse();
+  const rootNode = pickByIndexOrLatest(roots, selection.rootMessageIndex);
+  let cursor = rootNode;
+
+  while (cursor) {
+    branch.push(cursor);
+    const overrides = selection.selections ?? {};
+    const preferredChildIndex = Object.prototype.hasOwnProperty.call(
+      overrides,
+      cursor.id
+    )
+      ? (overrides[cursor.id] ?? null)
+      : (cursor.selectedChildIndex ?? null);
+
+    cursor = pickByIndexOrLatest(cursor.children, preferredChildIndex);
+  }
+
   return branch;
 };
 
-export type BranchSwitchCalculationArgs = {
-  tree: MessageTreeResult;
-  messageId: string;
-  direction: 'next' | 'prev';
-  preferredHeadId?: string | null;
+export type BranchSwitchPlan = {
+  branch: MessageTreeNode[];
+  snapshot: BranchSelectionSnapshot;
+  operation: BranchSelectionOperation;
 };
 
-export type BranchSwitchCalculationResult = {
-  branchNodes: MessageTreeNode[];
-  headNode: MessageTreeNode;
-};
-
-export function calculateBranchSwitch({
+export const planBranchSwitch = ({
   tree,
+  selection,
   messageId,
   direction,
-  preferredHeadId,
-}: BranchSwitchCalculationArgs): BranchSwitchCalculationResult | null {
+}: {
+  tree: MessageTreeResult;
+  selection: BranchSelectionSnapshot;
+  messageId: string;
+  direction: 'next' | 'prev';
+}): BranchSwitchPlan | null => {
   if (!tree) {
     return null;
   }
@@ -195,26 +309,29 @@ export function calculateBranchSwitch({
   }
 
   const targetNode = siblings[nextIndex];
+  const nextSnapshot = cloneSelectionSnapshot(selection);
+  let operation: BranchSelectionOperation;
 
-  const preferredLeaf = preferredHeadId
-    ? findNodeInSubtree(targetNode, preferredHeadId)
-    : null;
+  if (!parent) {
+    operation = { kind: 'root', rootMessageIndex: targetNode.siblingIndex };
+    nextSnapshot.rootMessageIndex = targetNode.siblingIndex;
+  } else {
+    operation = {
+      kind: 'child',
+      parentId: parent.id,
+      selectedChildIndex: targetNode.siblingIndex,
+    };
+    const selections = ensureSelectionMap(nextSnapshot);
+    selections[parent.id] = targetNode.siblingIndex;
+  }
 
-  const leafNode = preferredLeaf ?? findLatestLeaf(targetNode);
-  if (!leafNode.pathText) {
+  const branch = computeBranchFromSelection(tree, nextSnapshot);
+  if (!branch.length) {
     return null;
   }
 
-  const branchNodes = buildBranchToRoot(leafNode, nodesByPath);
-  if (!branchNodes.length) {
-    return null;
-  }
-
-  return {
-    branchNodes,
-    headNode: leafNode,
-  };
-}
+  return { branch, snapshot: nextSnapshot, operation };
+};
 
 export function useChatMessaging({
   chatId,
@@ -243,12 +360,12 @@ export function useChatMessaging({
   const messagesRef = useRef<ChatMessage[]>(initialMessages);
   const chatDeletedRef = useRef(false);
   const regenerationStartedRef = useRef(false);
-  const branchSwitchRef = useRef<BranchSwitchState | null>(null);
-  const currentHeadIdRef = useRef<string | null>(
-    initialMessageTree?.branch.at(-1)?.id ?? null
+  const selectionUpdateRef = useRef<SelectionUpdateState | null>(null);
+  const selectionRef = useRef<BranchSelectionSnapshot | null>(
+    initialMessageTree
+      ? buildSelectionSnapshot(initialMessageTree)
+      : { rootMessageIndex: null }
   );
-  const requestedHeadIdRef = useRef<string | null>(currentHeadIdRef.current);
-  const persistedHeadIdRef = useRef<string | null>(currentHeadIdRef.current);
   const treeSyncRef = useRef<Promise<void> | null>(null);
   const deferredTreeRef = useRef<MessageTreeResult | null>(null);
   const pendingPostStreamSyncRef = useRef(false);
@@ -258,20 +375,27 @@ export function useChatMessaging({
   >(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  const headMessageMutation = useMutation<
+  const branchSelectionMutation = useMutation<
     void,
     ChatSDKError | Error,
-    { messageId: string; expectedHeadId: string | null }
+    {
+      operation: BranchSelectionOperation;
+      expectedSnapshot: BranchSelectionSnapshot | null;
+    }
   >({
-    mutationFn: async ({ messageId, expectedHeadId }) => {
-      await updateHeadMessage({ chatId, messageId, expectedHeadId });
+    mutationFn: async ({ operation, expectedSnapshot }) => {
+      await updateBranchSelection({
+        chatId,
+        operation,
+        expectedSnapshot: expectedSnapshot ?? undefined,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
     },
   });
 
-  const { mutateAsync: persistHeadMessageAsync } = headMessageMutation;
+  const { mutateAsync: persistBranchSelectionAsync } = branchSelectionMutation;
 
   const {
     currentModelIdRef,
@@ -435,11 +559,7 @@ export function useChatMessaging({
   const applyTreeSnapshot = useCallback(
     (tree: MessageTreeResult) => {
       currentMessageTreeRef.current = tree;
-
-      const headId = tree.branch.at(-1)?.id ?? null;
-      currentHeadIdRef.current = headId;
-      requestedHeadIdRef.current = headId;
-      persistedHeadIdRef.current = headId;
+      selectionRef.current = buildSelectionSnapshot(tree);
 
       setMessages((current) => {
         const next = convertToUIMessages(tree.branch);
@@ -457,25 +577,18 @@ export function useChatMessaging({
       tree: MessageTreeResult,
       options?: {
         allowDuringStreaming?: boolean;
-        ignoreHeadAlignment?: boolean;
+        ignoreSelectionAlignment?: boolean;
       }
     ) => {
-      const treeHeadId = tree.branch.at(-1)?.id ?? null;
-      const desiredHeadId = requestedHeadIdRef.current;
+      const shouldDefer = shouldDeferTreeUpdate({
+        chatStatus: chatStatusRef.current,
+        pendingRegenerationId: pendingRegenerationIdRef.current,
+        desiredSelection: selectionRef.current ?? null,
+        treeSelection: buildSelectionSnapshot(tree),
+        options,
+      });
 
-      const shouldDeferForStreaming =
-        !options?.allowDuringStreaming &&
-        (chatStatusRef.current === 'submitted' ||
-          chatStatusRef.current === 'streaming' ||
-          pendingRegenerationIdRef.current !== null);
-
-      const shouldDeferForHeadMismatch =
-        !options?.ignoreHeadAlignment &&
-        desiredHeadId !== null &&
-        treeHeadId !== null &&
-        treeHeadId !== desiredHeadId;
-
-      if (shouldDeferForStreaming || shouldDeferForHeadMismatch) {
+      if (shouldDefer) {
         deferredTreeRef.current = tree;
         return;
       }
@@ -541,9 +654,7 @@ export function useChatMessaging({
     chatDeletedRef.current = true;
     clearSelection();
     setMessages([]);
-    currentHeadIdRef.current = null;
-    requestedHeadIdRef.current = null;
-    persistedHeadIdRef.current = null;
+    selectionRef.current = { rootMessageIndex: null };
     router.replace('/chat');
     queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
   }, [clearSelection, queryClient, router, setMessages]);
@@ -806,7 +917,7 @@ export function useChatMessaging({
     pendingRegenerationId !== null;
 
   const ensureBranchReady = useCallback((): Promise<void> | null => {
-    const attempt = branchSwitchRef.current;
+    const attempt = selectionUpdateRef.current;
     if (!attempt) {
       return null;
     }
@@ -825,12 +936,12 @@ export function useChatMessaging({
         attempt.error instanceof Error
           ? attempt.error
           : new Error('Failed to switch message version.');
-      branchSwitchRef.current = null;
+      selectionUpdateRef.current = null;
       return Promise.reject(error);
     }
 
-    if (branchSwitchRef.current === attempt) {
-      branchSwitchRef.current = null;
+    if (selectionUpdateRef.current === attempt) {
+      selectionUpdateRef.current = null;
     }
 
     return ensureBranchReady();
@@ -905,13 +1016,15 @@ export function useChatMessaging({
         return;
       }
 
-      if (targetMessage.role === 'user') {
-        const previousMessages = [...currentMessages];
-        const previousTree = currentMessageTreeRef.current;
-        const previousHeadId = currentHeadIdRef.current;
-        const previousRequestedHeadId = requestedHeadIdRef.current;
-        const previousSelection = getSelectedIds();
+      const previousMessages = [...currentMessages];
+      const previousTree = currentMessageTreeRef.current;
+      const previousSnapshot =
+        selectionRef.current !== null
+          ? cloneSelectionSnapshot(selectionRef.current)
+          : null;
+      const previousSelectionIds = [...getSelectedIds()];
 
+      if (targetMessage.role === 'user') {
         const removedSelectionIds = previousMessages
           .slice(targetIndex)
           .map((message) => message.id);
@@ -940,10 +1053,6 @@ export function useChatMessaging({
             editedText: trimmed,
           });
 
-          currentHeadIdRef.current = newMessageId;
-          requestedHeadIdRef.current = newMessageId;
-          currentMessageTreeRef.current = undefined;
-
           const optimisticUserMessage: ChatMessage = {
             id: newMessageId,
             role: 'user',
@@ -964,6 +1073,9 @@ export function useChatMessaging({
             ...previousMessages.slice(0, targetIndex),
             optimisticUserMessage,
           ]);
+
+          selectionRef.current = null;
+          currentMessageTreeRef.current = undefined;
 
           await sendMessageWithBranchGuard({
             id: newMessageId,
@@ -1005,10 +1117,11 @@ export function useChatMessaging({
           queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
         } catch (error) {
           setMessages(previousMessages);
-          assignSelection(previousSelection);
+          assignSelection(previousSelectionIds);
           currentMessageTreeRef.current = previousTree;
-          currentHeadIdRef.current = previousHeadId;
-          requestedHeadIdRef.current = previousRequestedHeadId;
+          selectionRef.current = previousSnapshot
+            ? cloneSelectionSnapshot(previousSnapshot)
+            : null;
 
           if (error instanceof ChatSDKError) {
             toast({ type: 'error', description: error.message });
@@ -1021,11 +1134,6 @@ export function useChatMessaging({
 
         return;
       }
-
-      const previousMessages = [...currentMessages];
-      const previousTree = currentMessageTreeRef.current;
-      const previousHeadId = currentHeadIdRef.current;
-      const previousRequestedHeadId = requestedHeadIdRef.current;
 
       const optimisticId = generateUUID();
       const optimisticMessage: ChatMessage = {
@@ -1050,19 +1158,15 @@ export function useChatMessaging({
       ];
 
       setMessages(truncatedMessages);
-      currentHeadIdRef.current = optimisticId;
-      requestedHeadIdRef.current = optimisticId;
+      selectionRef.current = null;
       currentMessageTreeRef.current = undefined;
 
       try {
-        const { newMessageId } = await branchMessageAction({
+        await branchMessageAction({
           chatId,
           messageId,
           editedText: trimmed,
         });
-
-        currentHeadIdRef.current = newMessageId;
-        requestedHeadIdRef.current = newMessageId;
 
         toast({ type: 'success', description: 'Message updated.' });
 
@@ -1070,9 +1174,11 @@ export function useChatMessaging({
         queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
       } catch (error) {
         setMessages(previousMessages);
+        assignSelection(previousSelectionIds);
         currentMessageTreeRef.current = previousTree;
-        currentHeadIdRef.current = previousHeadId;
-        requestedHeadIdRef.current = previousRequestedHeadId;
+        selectionRef.current = previousSnapshot
+          ? cloneSelectionSnapshot(previousSnapshot)
+          : null;
 
         if (error instanceof ChatSDKError) {
           toast({ type: 'error', description: error.message });
@@ -1116,42 +1222,37 @@ export function useChatMessaging({
         readiness.catch(() => undefined);
       }
 
-      const preferredHeadId =
-        requestedHeadIdRef.current ?? currentHeadIdRef.current ?? null;
-
-      const calculation = calculateBranchSwitch({
+      const activeSelection =
+        selectionRef.current ??
+        ({ rootMessageIndex: null } as BranchSelectionSnapshot);
+      const plan = planBranchSwitch({
         tree,
+        selection: activeSelection,
         messageId,
         direction,
-        preferredHeadId,
       });
 
-      if (!calculation) {
+      if (!plan) {
         return;
       }
 
-      const { branchNodes, headNode } = calculation;
-      const nextMessages = convertToUIMessages(branchNodes);
+      const nextMessages = convertToUIMessages(plan.branch);
       if (!nextMessages.length) {
-        return;
-      }
-
-      const newHeadMessage = nextMessages.at(-1);
-      if (!newHeadMessage) {
         return;
       }
 
       const previousMessages = [...messagesRef.current];
       const previousBranch = [...tree.branch];
-      const previousHeadId = currentHeadIdRef.current ?? null;
-      const previousPersistedHeadId = persistedHeadIdRef.current;
+      const previousSelection =
+        selectionRef.current !== null
+          ? cloneSelectionSnapshot(selectionRef.current)
+          : null;
 
       setMessages(nextMessages);
-      currentHeadIdRef.current = headNode.id;
-      requestedHeadIdRef.current = headNode.id;
+      selectionRef.current = plan.snapshot;
       currentMessageTreeRef.current = {
         ...tree,
-        branch: branchNodes,
+        branch: plan.branch,
       };
 
       const attemptId = Symbol('branch-switch');
@@ -1164,30 +1265,28 @@ export function useChatMessaging({
           ...tree,
           branch: previousBranch,
         };
-        currentHeadIdRef.current = previousHeadId;
-        requestedHeadIdRef.current = previousHeadId;
-        persistedHeadIdRef.current = previousPersistedHeadId;
+        if (previousSelection) {
+          selectionRef.current = cloneSelectionSnapshot(previousSelection);
+        }
       };
-      // Persist head updates sequentially so rapid navigation does not race older head states.
-      const previousAttempt = branchSwitchRef.current;
+      // Persist selection updates sequentially so rapid navigation does not race older state.
+      const previousAttempt = selectionUpdateRef.current;
       const basePromise = previousAttempt
         ? previousAttempt.promise.catch(() => undefined)
         : Promise.resolve();
 
       const managedPromise = basePromise
         .then(() =>
-          persistHeadMessageAsync({
-            messageId: newHeadMessage.id,
-            expectedHeadId: persistedHeadIdRef.current,
+          persistBranchSelectionAsync({
+            operation: plan.operation,
+            expectedSnapshot: previousSelection,
           })
         )
         .then(() => {
-          persistedHeadIdRef.current = headNode.id;
-
-          if (branchSwitchRef.current?.id === attemptId) {
-            branchSwitchRef.current = {
+          if (selectionUpdateRef.current?.id === attemptId) {
+            selectionUpdateRef.current = {
               id: attemptId,
-              targetHeadId: headNode.id,
+              operation: plan.operation,
               status: 'success',
               promise: Promise.resolve(),
               error: null,
@@ -1197,11 +1296,11 @@ export function useChatMessaging({
           return refreshMessageTree();
         })
         .catch((error) => {
-          if (branchSwitchRef.current?.id === attemptId) {
+          if (selectionUpdateRef.current?.id === attemptId) {
             rollback();
-            branchSwitchRef.current = {
+            selectionUpdateRef.current = {
               id: attemptId,
-              targetHeadId: headNode.id,
+              operation: plan.operation,
               status: 'error',
               promise: Promise.resolve(),
               error,
@@ -1218,16 +1317,16 @@ export function useChatMessaging({
         })
         .finally(() => {
           if (
-            branchSwitchRef.current?.id === attemptId &&
-            branchSwitchRef.current.status !== 'error'
+            selectionUpdateRef.current?.id === attemptId &&
+            selectionUpdateRef.current.status !== 'error'
           ) {
-            branchSwitchRef.current = null;
+            selectionUpdateRef.current = null;
           }
         });
 
-      branchSwitchRef.current = {
+      selectionUpdateRef.current = {
         id: attemptId,
-        targetHeadId: headNode.id,
+        operation: plan.operation,
         status: 'pending',
         promise: managedPromise,
         error: null,
@@ -1236,7 +1335,7 @@ export function useChatMessaging({
     [
       ensureBranchReady,
       status,
-      persistHeadMessageAsync,
+      persistBranchSelectionAsync,
       refreshMessageTree,
       setMessages,
     ]

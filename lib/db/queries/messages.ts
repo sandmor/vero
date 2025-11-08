@@ -4,36 +4,18 @@ import type { Prisma } from '../../../generated/prisma-client';
 import { prisma } from '../prisma';
 import { ChatSDKError } from '../../errors';
 import type { DBMessage, MessageTreeNode, MessageTreeResult } from '../schema';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 import type { MessageDeletionMode } from '../../message-deletion';
-
-const PATH_SEGMENT_PATTERN = /^_[0-9a-z]{2}$/;
-const PATH_PATTERN = /^(_[0-9a-z]{2})(\._[0-9a-z]{2})*$/;
-const ROOT_KEY = '__root__';
-
-function parsePathSegments(path: string): string[] {
-  return path.split('.').filter(Boolean);
-}
-
-function getParentPathFromText(path: string): string | null {
-  const lastDot = path.lastIndexOf('.');
-  return lastDot === -1 ? null : path.slice(0, lastDot);
-}
-
-function getLastSegment(path: string): string {
-  const lastDot = path.lastIndexOf('.');
-  return lastDot === -1 ? path : path.slice(lastDot + 1);
-}
-
-function toBase36Label(index: number): string {
-  const normalized = index < 0 ? 0 : index;
-  return `_${normalized.toString(36).padStart(2, '0')}`;
-}
-
-function parseLabelIndex(label: string): number {
-  const normalized = label.startsWith('_') ? label.slice(1) : label;
-  const parsed = parseInt(normalized, 36);
-  return Number.isNaN(parsed) ? -1 : parsed;
-}
+import {
+  PATH_PATTERN,
+  PATH_SEGMENT_PATTERN,
+  ROOT_KEY,
+  getLastSegment,
+  getParentPath,
+  parseLabelIndex,
+  parsePathSegments,
+  toBase36Label,
+} from '@/lib/chat/message-path';
 
 function buildLtreeArraySql(
   paths: string[]
@@ -248,7 +230,7 @@ export async function saveMessages({
 
         pathById.set(row.id, pathText);
 
-        const parentPath = getParentPathFromText(pathText);
+        const parentPath = getParentPath(pathText);
         const label = getLastSegment(pathText);
         if (PATH_SEGMENT_PATTERN.test(label)) {
           const parentKey = parentPath ?? ROOT_KEY;
@@ -327,7 +309,7 @@ export async function saveMessages({
           path = parentPath ? `${parentPath}.${label}` : label;
         }
 
-        const parentPathForCache = getParentPathFromText(path);
+        const parentPathForCache = getParentPath(path);
         const labelForCache = getLastSegment(path);
         if (PATH_SEGMENT_PATTERN.test(labelForCache)) {
           const parentKey = parentPathForCache ?? ROOT_KEY;
@@ -354,29 +336,6 @@ export async function saveMessages({
           pathText: path,
         });
       }
-
-      const finalNewHead = rows.reduce(
-        (currentHead, row) => {
-          const rowTimestamp = row.createdAt.getTime();
-          if (
-            rowTimestamp > currentHead.timestamp ||
-            (rowTimestamp === currentHead.timestamp &&
-              row.path.localeCompare(currentHead.path ?? '') > 0)
-          ) {
-            return {
-              id: row.id,
-              timestamp: rowTimestamp,
-              path: row.path,
-            };
-          }
-          return currentHead;
-        },
-        {
-          id: null as string | null,
-          timestamp: -Infinity,
-          path: null as string | null,
-        }
-      );
 
       if (!rows.length) {
         return;
@@ -405,13 +364,6 @@ export async function saveMessages({
           ON CONFLICT ("id") DO NOTHING
         `
       );
-
-      if (finalNewHead.id) {
-        await tx.chat.update({
-          where: { id: chatId },
-          data: { headMessageId: finalNewHead.id },
-        });
-      }
     });
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -441,7 +393,7 @@ export async function branchMessageWithEdit({
     const [chat, pivot] = await Promise.all([
       prisma.chat.findUnique({
         where: { id: chatId },
-        select: { userId: true, headMessageId: true },
+        select: { userId: true },
       }),
       prisma.message.findUnique({
         where: { id: pivotMessageId },
@@ -475,9 +427,7 @@ export async function branchMessageWithEdit({
     }
 
     const newMessageId = randomUUID();
-    const parentPath = pivot.pathText
-      ? getParentPathFromText(pivot.pathText)
-      : null;
+    const parentPath = pivot.pathText ? getParentPath(pivot.pathText) : null;
 
     await saveMessages({
       messages: [
@@ -496,7 +446,6 @@ export async function branchMessageWithEdit({
 
     return {
       newMessageId,
-      previousHeadId: chat.headMessageId ?? null,
     } as const;
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -559,7 +508,7 @@ export async function getMessagesByChatId({
     const [chat, rows] = await Promise.all([
       prisma.chat.findUnique({
         where: { id },
-        select: { headMessageId: true },
+        select: { rootMessageIndex: true },
       }),
       prisma.message.findMany({
         where: { chatId: id },
@@ -567,7 +516,9 @@ export async function getMessagesByChatId({
       }),
     ]);
     const { buildMessageTree } = await import('../../utils/message-tree');
-    return buildMessageTree(rows as DBMessage[], chat?.headMessageId);
+    return buildMessageTree(rows as DBMessage[], {
+      rootMessageIndex: chat?.rootMessageIndex ?? null,
+    });
   } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
@@ -580,12 +531,12 @@ export async function getMessagesByChatIdRaw({
   id,
 }: {
   id: string;
-}): Promise<{ messages: DBMessage[]; headMessageId: string | null }> {
+}): Promise<{ messages: DBMessage[]; rootMessageIndex: number | null }> {
   try {
     const [chat, rows] = await Promise.all([
       prisma.chat.findUnique({
         where: { id },
-        select: { headMessageId: true },
+        select: { rootMessageIndex: true },
       }),
       prisma.message.findMany({
         where: { chatId: id },
@@ -594,7 +545,7 @@ export async function getMessagesByChatIdRaw({
     ]);
     return {
       messages: rows as DBMessage[],
-      headMessageId: chat?.headMessageId ?? null,
+      rootMessageIndex: chat?.rootMessageIndex ?? null,
     };
   } catch (_error) {
     throw new ChatSDKError(
@@ -642,6 +593,7 @@ export async function deleteMessageById({
           chat: {
             select: {
               userId: true,
+              rootMessageIndex: true,
             },
           },
         },
@@ -673,10 +625,36 @@ export async function deleteMessageById({
         );
       }
 
-      const parentPath = getParentPathFromText(targetPath);
-      const parentKey = parentPath ?? ROOT_KEY;
+      const parentPath = getParentPath(targetPath);
       const parentsToReindex = new Set<string>();
       const deletedIds = new Set<string>();
+      const impactedRootIndices = new Set<number>();
+      const impactedParentSelections = new Map<string, Set<number>>();
+
+      const trackSelectionImpact = (path: string | null) => {
+        if (!path || !PATH_PATTERN.test(path)) {
+          return;
+        }
+        const label = getLastSegment(path);
+        if (!PATH_SEGMENT_PATTERN.test(label)) {
+          return;
+        }
+        const index = parseLabelIndex(label);
+        if (index < 0) {
+          return;
+        }
+        const ancestorPath = getParentPath(path);
+        if (!ancestorPath) {
+          impactedRootIndices.add(index);
+          return;
+        }
+        const existing = impactedParentSelections.get(ancestorPath);
+        if (existing) {
+          existing.add(index);
+        } else {
+          impactedParentSelections.set(ancestorPath, new Set([index]));
+        }
+      };
 
       const addParentForReindex = (path: string | null) => {
         parentsToReindex.add(path ?? ROOT_KEY);
@@ -684,6 +662,7 @@ export async function deleteMessageById({
 
       switch (mode) {
         case 'version': {
+          trackSelectionImpact(targetPath);
           const removed = await deleteSubtrees(tx, chatId, [targetPath]);
           removed.forEach((id) => deletedIds.add(id));
           addParentForReindex(parentPath);
@@ -696,6 +675,9 @@ export async function deleteMessageById({
             parentPath
           );
           const uniquePaths = stagePaths.length ? stagePaths : [targetPath];
+          for (const path of uniquePaths) {
+            trackSelectionImpact(path);
+          }
           const removed = await deleteSubtrees(tx, chatId, uniquePaths);
           removed.forEach((id) => deletedIds.add(id));
           addParentForReindex(parentPath);
@@ -711,6 +693,9 @@ export async function deleteMessageById({
             (path) => path !== targetPath
           );
           if (siblingsToDelete.length) {
+            for (const path of siblingsToDelete) {
+              trackSelectionImpact(path);
+            }
             const removedSiblings = await deleteSubtrees(
               tx,
               chatId,
@@ -729,6 +714,7 @@ export async function deleteMessageById({
             `
           );
           removedTarget.forEach((row) => deletedIds.add(row.id));
+          trackSelectionImpact(targetPath);
 
           addParentForReindex(parentPath);
           break;
@@ -756,21 +742,51 @@ export async function deleteMessageById({
         return { messageId, chatId, chatDeleted: true } as const;
       }
 
-      const chat = await tx.chat.findUnique({
-        where: { id: chatId },
-        select: { headMessageId: true },
-      });
+      const selectedRootIndex = message.chat.rootMessageIndex ?? null;
+      const shouldClearRootSelection =
+        selectedRootIndex !== null &&
+        impactedRootIndices.has(selectedRootIndex);
 
-      if (chat?.headMessageId && deletedIds.has(chat.headMessageId)) {
-        const messages = await tx.message.findMany({
-          where: { chatId },
-          orderBy: { createdAt: 'desc' },
-        });
-        const newHead = messages.find((m) => !deletedIds.has(m.id));
+      if (shouldClearRootSelection) {
         await tx.chat.update({
           where: { id: chatId },
-          data: { headMessageId: newHead?.id ?? null },
+          data: { rootMessageIndex: null },
         });
+      }
+
+      if (impactedParentSelections.size > 0) {
+        const parentPaths = Array.from(impactedParentSelections.keys());
+        if (parentPaths.length) {
+          const parents = await tx.message.findMany({
+            where: { chatId, pathText: { in: parentPaths } },
+            select: { id: true, pathText: true, selectedChildIndex: true },
+          });
+
+          const parentIdsToClear: string[] = [];
+          for (const parent of parents) {
+            if (deletedIds.has(parent.id)) {
+              continue;
+            }
+            const parentPathText = parent.pathText;
+            if (!parentPathText) {
+              continue;
+            }
+            const affected = impactedParentSelections.get(parentPathText);
+            if (!affected || parent.selectedChildIndex === null) {
+              continue;
+            }
+            if (affected.has(parent.selectedChildIndex)) {
+              parentIdsToClear.push(parent.id);
+            }
+          }
+
+          if (parentIdsToClear.length) {
+            await tx.message.updateMany({
+              where: { id: { in: parentIdsToClear } },
+              data: { selectedChildIndex: null },
+            });
+          }
+        }
       }
 
       return { messageId, chatId, chatDeleted: false } as const;
@@ -811,6 +827,7 @@ export async function deleteMessagesByIds({
           chat: {
             select: {
               userId: true,
+              rootMessageIndex: true,
             },
           },
         },
@@ -860,9 +877,38 @@ export async function deleteMessagesByIds({
           });
         });
 
+      const selectedRootIndex = messages[0]?.chat.rootMessageIndex ?? null;
+
       let deletedCount = 0;
       const parentsToReindex = new Set<string>();
       const deletedIds = new Set<string>();
+      const impactedRootIndices = new Set<number>();
+      const impactedParentSelections = new Map<string, Set<number>>();
+
+      const trackSelectionImpact = (path: string | null) => {
+        if (!path || !PATH_PATTERN.test(path)) {
+          return;
+        }
+        const label = getLastSegment(path);
+        if (!PATH_SEGMENT_PATTERN.test(label)) {
+          return;
+        }
+        const index = parseLabelIndex(label);
+        if (index < 0) {
+          return;
+        }
+        const ancestorPath = getParentPath(path);
+        if (!ancestorPath) {
+          impactedRootIndices.add(index);
+          return;
+        }
+        const existing = impactedParentSelections.get(ancestorPath);
+        if (existing) {
+          existing.add(index);
+        } else {
+          impactedParentSelections.set(ancestorPath, new Set([index]));
+        }
+      };
 
       const addParentForReindex = (path: string | null) => {
         parentsToReindex.add(path ?? ROOT_KEY);
@@ -886,10 +932,11 @@ export async function deleteMessagesByIds({
         }
 
         const currentPath = pathText;
-        const parentPath = getParentPathFromText(currentPath);
+        const parentPath = getParentPath(currentPath);
 
         switch (mode) {
           case 'version': {
+            trackSelectionImpact(currentPath);
             const removed = await deleteSubtrees(tx, chatId, [currentPath]);
             if (!removed.length) {
               continue;
@@ -906,6 +953,9 @@ export async function deleteMessagesByIds({
               parentPath
             );
             const uniquePaths = stagePaths.length ? stagePaths : [currentPath];
+            for (const path of uniquePaths) {
+              trackSelectionImpact(path);
+            }
             const removed = await deleteSubtrees(tx, chatId, uniquePaths);
             if (!removed.length) {
               continue;
@@ -925,6 +975,9 @@ export async function deleteMessagesByIds({
               (path) => path !== currentPath
             );
             if (siblingsToDelete.length) {
+              for (const path of siblingsToDelete) {
+                trackSelectionImpact(path);
+              }
               const removedSiblings = await deleteSubtrees(
                 tx,
                 chatId,
@@ -947,6 +1000,7 @@ export async function deleteMessagesByIds({
             }
             removedTarget.forEach((row) => deletedIds.add(row.id));
             deletedCount += 1;
+            trackSelectionImpact(currentPath);
             addParentForReindex(parentPath);
             break;
           }
@@ -973,21 +1027,49 @@ export async function deleteMessagesByIds({
         return { deleted: messages.length, chatDeleted: true };
       }
 
-      const chat = await tx.chat.findUnique({
-        where: { id: chatId },
-        select: { headMessageId: true },
-      });
-
-      if (chat?.headMessageId && deletedIds.has(chat.headMessageId)) {
-        const remaining = await tx.message.findMany({
-          where: { chatId },
-          orderBy: { createdAt: 'desc' },
-        });
-        const newHead = remaining.find((m) => !deletedIds.has(m.id));
+      if (
+        selectedRootIndex !== null &&
+        impactedRootIndices.has(selectedRootIndex)
+      ) {
         await tx.chat.update({
           where: { id: chatId },
-          data: { headMessageId: newHead?.id ?? null },
+          data: { rootMessageIndex: null },
         });
+      }
+
+      if (impactedParentSelections.size > 0) {
+        const parentPaths = Array.from(impactedParentSelections.keys());
+        if (parentPaths.length) {
+          const parents = await tx.message.findMany({
+            where: { chatId, pathText: { in: parentPaths } },
+            select: { id: true, pathText: true, selectedChildIndex: true },
+          });
+
+          const parentIdsToClear: string[] = [];
+          for (const parent of parents) {
+            if (deletedIds.has(parent.id)) {
+              continue;
+            }
+            const parentPathText = parent.pathText;
+            if (!parentPathText) {
+              continue;
+            }
+            const affected = impactedParentSelections.get(parentPathText);
+            if (!affected || parent.selectedChildIndex === null) {
+              continue;
+            }
+            if (affected.has(parent.selectedChildIndex)) {
+              parentIdsToClear.push(parent.id);
+            }
+          }
+
+          if (parentIdsToClear.length) {
+            await tx.message.updateMany({
+              where: { id: { in: parentIdsToClear } },
+              data: { selectedChildIndex: null },
+            });
+          }
+        }
       }
 
       return { deleted: deletedCount, chatDeleted: false };
@@ -1000,22 +1082,24 @@ export async function deleteMessagesByIds({
   }
 }
 
-export async function updateHeadMessageByChatId({
+export async function updateBranchSelectionByChatId({
   chatId,
-  messageId,
   userId,
-  expectedHeadId,
+  operation,
+  expectedSnapshot,
 }: {
   chatId: string;
-  messageId: string;
   userId: string;
-  expectedHeadId?: string | null;
+  operation:
+    | { kind: 'root'; rootMessageIndex: number | null }
+    | { kind: 'child'; parentId: string; selectedChildIndex: number | null };
+  expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   try {
     return await prisma.$transaction(async (tx) => {
       const chat = await tx.chat.findUnique({
         where: { id: chatId },
-        select: { userId: true },
+        select: { userId: true, rootMessageIndex: true },
       });
 
       if (!chat) {
@@ -1025,62 +1109,93 @@ export async function updateHeadMessageByChatId({
       if (chat.userId !== userId) {
         throw new ChatSDKError(
           'forbidden:database',
-          'Chat ownership mismatch when updating head message'
+          'Chat ownership mismatch when updating branch selection'
         );
       }
 
-      const message = await tx.message.findUnique({
-        where: { id: messageId },
-        select: {
-          id: true,
-          chatId: true,
-          pathText: true,
-        },
+      if (operation.kind === 'root') {
+        const requestedIndex =
+          operation.rootMessageIndex !== null &&
+          operation.rootMessageIndex !== undefined
+            ? Math.max(0, Math.trunc(operation.rootMessageIndex))
+            : null;
+
+        if (
+          expectedSnapshot &&
+          expectedSnapshot.rootMessageIndex !== undefined
+        ) {
+          const expected = expectedSnapshot.rootMessageIndex ?? null;
+          const current = chat.rootMessageIndex ?? null;
+          if (expected !== current) {
+            throw new ChatSDKError(
+              'bad_request:database',
+              'Branch selection update conflict'
+            );
+          }
+        }
+
+        await tx.chat.update({
+          where: { id: chatId },
+          data: { rootMessageIndex: requestedIndex },
+        });
+
+        return { kind: 'root', rootMessageIndex: requestedIndex } as const;
+      }
+
+      const parent = await tx.message.findUnique({
+        where: { id: operation.parentId },
+        select: { chatId: true, selectedChildIndex: true },
       });
 
-      if (!message) {
-        throw new ChatSDKError('not_found:database', 'Message not found');
-      }
-
-      if (message.chatId !== chatId) {
+      if (!parent) {
         throw new ChatSDKError(
-          'bad_request:database',
-          'Message does not belong to the specified chat'
+          'not_found:database',
+          'Parent message not found'
         );
       }
 
-      const pathText = message.pathText;
-
-      if (!pathText || !PATH_PATTERN.test(pathText)) {
+      if (parent.chatId !== chatId) {
         throw new ChatSDKError(
           'bad_request:database',
-          'Message path missing or invalid'
+          'Parent message does not belong to the specified chat'
         );
       }
 
-      const headMatch =
-        expectedHeadId === undefined
-          ? {}
-          : expectedHeadId === null
-            ? { headMessageId: null }
-            : { headMessageId: expectedHeadId };
+      if (expectedSnapshot?.selections) {
+        const expected = Object.prototype.hasOwnProperty.call(
+          expectedSnapshot.selections,
+          operation.parentId
+        )
+          ? (expectedSnapshot.selections[operation.parentId] ?? null)
+          : undefined;
 
-      const updated = await tx.chat.updateMany({
-        where: {
-          id: chatId,
-          ...headMatch,
-        },
-        data: { headMessageId: messageId },
+        if (expected !== undefined) {
+          const current = parent.selectedChildIndex ?? null;
+          if (expected !== current) {
+            throw new ChatSDKError(
+              'bad_request:database',
+              'Branch selection update conflict'
+            );
+          }
+        }
+      }
+
+      const normalizedIndex =
+        operation.selectedChildIndex === null ||
+        operation.selectedChildIndex === undefined
+          ? null
+          : Math.max(0, Math.trunc(operation.selectedChildIndex));
+
+      await tx.message.update({
+        where: { id: operation.parentId },
+        data: { selectedChildIndex: normalizedIndex },
       });
 
-      if (updated.count === 0) {
-        throw new ChatSDKError(
-          'bad_request:database',
-          'Head message update conflict'
-        );
-      }
-
-      return { headMessageId: messageId } as const;
+      return {
+        kind: 'child',
+        parentId: operation.parentId,
+        selectedChildIndex: normalizedIndex,
+      } as const;
     });
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -1089,7 +1204,7 @@ export async function updateHeadMessageByChatId({
 
     throw new ChatSDKError(
       'bad_request:database',
-      'Failed to update head message'
+      'Failed to update branch selection'
     );
   }
 }

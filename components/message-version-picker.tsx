@@ -24,7 +24,7 @@ export const MessageVersionPicker = memo(function MessageVersionPicker({
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/80 px-1 py-0.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60',
+        'inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/80 px-1 py-0.5 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur supports-backdrop-filter:bg-background/60',
         className
       )}
     >
@@ -38,10 +38,7 @@ export const MessageVersionPicker = memo(function MessageVersionPicker({
       >
         <ChevronLeft className="size-4" />
       </Button>
-      <span
-        aria-live="polite"
-        className="min-w-[3.5rem] text-center leading-none"
-      >
+      <span aria-live="polite" className="min-w-14 text-center leading-none">
         {activeIndex + 1} / {total}
       </span>
       <Button

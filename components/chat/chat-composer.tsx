@@ -4,7 +4,10 @@ import { useEffect, useRef } from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { Chat } from '@/components/chat';
 import { SetLastChatUrl } from '@/components/set-last-chat-url';
-import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
+import type {
+  BranchSelectionSnapshot,
+  ChatBootstrapResponse,
+} from '@/types/chat-bootstrap';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { computeChatLastUpdatedAt } from '@/lib/chat/bootstrap-helpers';
 
@@ -66,14 +69,42 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   useEffect(() => {
     if (!chatId) return;
     if (!isCacheReady) return;
-    if (cachedBootstrap) return;
     if (data.kind !== 'existing') return;
     if (!data.prefetchedChat) return;
+
+    const cachedMessageIds =
+      cachedBootstrap?.kind === 'existing'
+        ? (cachedBootstrap.initialMessages ?? []).map((message) => message.id)
+        : [];
+    const incomingMessageIds = data.initialMessages.map(
+      (message) => message.id
+    );
+
+    const hasMessageMismatch =
+      cachedMessageIds.length !== incomingMessageIds.length ||
+      cachedMessageIds.some(
+        (messageId, index) => messageId !== incomingMessageIds[index]
+      );
+
+    const cachedRootIndex =
+      cachedBootstrap?.kind === 'existing'
+        ? (cachedBootstrap.initialBranchState.rootMessageIndex ?? null)
+        : null;
+    const incomingRootIndex = data.initialBranchState.rootMessageIndex ?? null;
+
+    const shouldPersistUpdate =
+      !cachedBootstrap ||
+      hasMessageMismatch ||
+      cachedRootIndex !== incomingRootIndex;
+
+    if (!shouldPersistUpdate) {
+      return;
+    }
 
     const lastUpdatedAt = computeChatLastUpdatedAt({
       chat: { createdAt: new Date(data.prefetchedChat.createdAt) },
       messages: data.initialMessages ?? [],
-      headMessageId: data.headMessageId ?? null,
+      branchState: data.initialBranchState,
     });
 
     upsertChatRecord({
@@ -86,6 +117,11 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     });
   }, [chatId, cachedBootstrap, data, isCacheReady, upsertChatRecord]);
 
+  const initialBranchState: BranchSelectionSnapshot =
+    data.kind === 'existing'
+      ? data.initialBranchState
+      : (data.initialBranchState ?? { rootMessageIndex: null });
+
   const commonProps = {
     id: data.chatId,
     initialChatModel: data.initialChatModel,
@@ -96,7 +132,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     initialSettings: data.initialSettings ?? null,
     initialAgent: data.initialAgent ?? null,
     initialMessages: data.initialMessages ?? [],
-    headMessageId: data.headMessageId ?? null,
+    initialBranchState,
   } as const;
 
   const chatElement =

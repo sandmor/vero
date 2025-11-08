@@ -25,7 +25,9 @@ export type ChatBootstrapResponse = {
   isReadonly: boolean;
   agentId?: string;
   initialMessages?: unknown;
-  headMessageId?: string | null;
+  initialBranchState?: {
+    rootMessageIndex: number | null;
+  };
   initialLastContext?: unknown;
 };
 
@@ -87,6 +89,7 @@ export const DEFAULT_BOOTSTRAP: ChatBootstrapResponse = {
   shouldSetLastChatUrl: false,
   autoResume: false,
   isReadonly: false,
+  initialBranchState: { rootMessageIndex: null },
 };
 
 export type ConfigureChatMocksOptions = {

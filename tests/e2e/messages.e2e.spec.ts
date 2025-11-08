@@ -65,7 +65,7 @@ test('renders existing timeline content and shows thinking state for new message
     bootstrap: {
       kind: 'existing',
       initialMessages: [userMessage, assistantMessage],
-      headMessageId: assistantMessage.id,
+      initialBranchState: { rootMessageIndex: 0 },
     },
   });
 
@@ -149,7 +149,7 @@ test('editing a user message replaces the timeline entry with edited content', a
     bootstrap: {
       kind: 'existing',
       initialMessages: [originalUser, assistantReply],
-      headMessageId: assistantReply.id,
+      initialBranchState: { rootMessageIndex: 0 },
     },
   });
 
@@ -220,7 +220,7 @@ test('regenerating an assistant message sends a regenerate request', async ({
     bootstrap: {
       kind: 'existing',
       initialMessages: [userMessage, assistantResponse],
-      headMessageId: assistantResponse.id,
+      initialBranchState: { rootMessageIndex: 0 },
     },
   });
 
@@ -343,7 +343,7 @@ test('navigating between assistant versions updates the visible response', async
     bootstrap: {
       kind: 'existing',
       initialMessages: [userMessage, assistantDraft, assistantRevision],
-      headMessageId: assistantRevision.id,
+      initialBranchState: { rootMessageIndex: 0 },
     },
   });
 

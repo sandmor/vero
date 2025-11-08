@@ -102,12 +102,17 @@ const chatActionsMock = {
   saveChatModelAsCookie: () => {},
   saveReasoningEffortAsCookie: () => {},
   updateChatVisibility: () => {},
-  updateHeadMessage: () => {},
+  updateBranchSelection: () => {},
   deleteTrailingMessages: () => {},
   generateTitleFromChatHistory: () => {},
   forkChatAction: () => {},
   branchMessageAction: () => {},
-  getMessageTreeAction: async () => ({ tree: [], nodes: [], branch: [] }),
+  getMessageTreeAction: async () => ({
+    tree: [],
+    nodes: [],
+    branch: [],
+    rootMessageIndex: null,
+  }),
 };
 
 mock.module('@/app/(chat)/actions', () => chatActionsMock);

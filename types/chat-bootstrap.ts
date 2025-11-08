@@ -15,13 +15,18 @@ interface ChatBootstrapCommon {
   shouldSetLastChatUrl: boolean;
 }
 
+export type BranchSelectionSnapshot = {
+  rootMessageIndex: number | null;
+  selections?: Record<string, number | null>;
+};
+
 export type NewChatBootstrap = ChatBootstrapCommon & {
   kind: 'new';
   autoResume: false;
   isReadonly: false;
   agentId?: undefined;
   initialMessages?: undefined;
-  headMessageId?: undefined;
+  initialBranchState?: BranchSelectionSnapshot;
   initialLastContext?: undefined;
 };
 
@@ -31,7 +36,7 @@ export type ExistingChatBootstrap = ChatBootstrapCommon & {
   isReadonly: boolean;
   agentId?: string | null;
   initialMessages: DBMessage[];
-  headMessageId: string | null;
+  initialBranchState: BranchSelectionSnapshot;
   initialLastContext?: AppUsage | null;
   prefetchedChat?: SerializedChat;
 };

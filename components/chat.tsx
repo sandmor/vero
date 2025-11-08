@@ -42,6 +42,7 @@ import { useChatPreferences } from './chat/use-chat-preferences';
 import { useChatMessaging } from './chat/use-chat-messaging';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { buildMessageTree } from '@/lib/utils/message-tree';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 
 const BULK_DELETE_OPTIONS: Array<{
   mode: MessageDeletionMode;
@@ -75,7 +76,7 @@ const BULK_DELETE_OPTIONS: Array<{
 export function Chat({
   id,
   initialMessages: initialRawMessages = [],
-  headMessageId,
+  initialBranchState,
   initialChatModel,
   initialVisibilityType,
   isReadonly,
@@ -88,7 +89,7 @@ export function Chat({
 }: {
   id: string;
   initialMessages: DBMessage[];
-  headMessageId?: string | null;
+  initialBranchState: BranchSelectionSnapshot;
   initialChatModel: string;
   initialVisibilityType: VisibilityType;
   isReadonly: boolean;
@@ -111,8 +112,11 @@ export function Chat({
   const [usage, setUsage] = useState<AppUsage | undefined>(initialLastContext);
 
   const initialTree = useMemo<MessageTreeResult>(
-    () => buildMessageTree(initialRawMessages ?? [], headMessageId ?? null),
-    [headMessageId, initialRawMessages]
+    () =>
+      buildMessageTree(initialRawMessages ?? [], {
+        rootMessageIndex: initialBranchState.rootMessageIndex ?? null,
+      }),
+    [initialBranchState.rootMessageIndex, initialRawMessages]
   );
 
   const initialMessages = useMemo<ChatMessage[]>(

@@ -5,6 +5,7 @@ import {
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
 import { buildMessageTree } from '@/lib/utils/message-tree';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 
 export function buildInitialSettings(
   base: ChatSettings | null,
@@ -69,18 +70,20 @@ export function resolveInitialReasoningEffort({
 export function computeChatLastUpdatedAt({
   chat,
   messages,
-  headMessageId,
+  branchState,
 }: {
   chat: Pick<Chat, 'createdAt'>;
   messages: DBMessage[];
-  headMessageId?: string | null;
+  branchState?: BranchSelectionSnapshot;
 }): string {
   const baseline = new Date(chat.createdAt).getTime();
   if (!messages.length) {
     return new Date(baseline).toISOString();
   }
 
-  const tree = buildMessageTree(messages, headMessageId ?? null);
+  const tree = buildMessageTree(messages, {
+    rootMessageIndex: branchState?.rootMessageIndex ?? null,
+  });
   const candidateNodes = tree.branch.length ? tree.branch : tree.nodes;
   const iterable = candidateNodes.length ? candidateNodes : messages;
 

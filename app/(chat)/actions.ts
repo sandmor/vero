@@ -3,6 +3,7 @@
 import { generateObject, type UIMessage } from 'ai';
 import { cookies } from 'next/headers';
 import type { VisibilityType } from '@/components/visibility-selector';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 import { getLanguageModel } from '@/lib/ai/providers';
 import { TITLE_GENERATION_MODEL } from '@/lib/ai/models';
 import {
@@ -10,7 +11,7 @@ import {
   getChatById,
   getMessagesByChatId,
   branchMessageWithEdit,
-  updateHeadMessageByChatId,
+  updateBranchSelectionByChatId,
   updateChatVisiblityById,
 } from '@/lib/db/queries';
 import { getAppSession } from '@/lib/auth/session';
@@ -91,14 +92,16 @@ export async function updateChatVisibility({
   await updateChatVisiblityById({ chatId, visibility });
 }
 
-export async function updateHeadMessage({
+export async function updateBranchSelection({
   chatId,
-  messageId,
-  expectedHeadId,
+  operation,
+  expectedSnapshot,
 }: {
   chatId: string;
-  messageId: string;
-  expectedHeadId?: string | null;
+  operation:
+    | { kind: 'root'; rootMessageIndex: number | null }
+    | { kind: 'child'; parentId: string; selectedChildIndex: number | null };
+  expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   if (IS_E2E) {
     return;
@@ -106,11 +109,11 @@ export async function updateHeadMessage({
 
   const session = await requireSession();
 
-  await updateHeadMessageByChatId({
+  await updateBranchSelectionByChatId({
     chatId,
-    messageId,
     userId: session.user.id,
-    expectedHeadId,
+    operation,
+    expectedSnapshot,
   });
 }
 
@@ -157,7 +160,6 @@ export async function branchMessageAction({
   if (IS_E2E) {
     return {
       newMessageId: `${messageId}-edited`,
-      previousHeadId: null,
     } as const;
   }
 

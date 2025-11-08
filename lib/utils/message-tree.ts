@@ -3,15 +3,58 @@ import type {
   MessageTreeNode,
   MessageTreeResult,
 } from '../db/schema';
-const PATH_PATTERN = /^(_[0-9a-z]{2})(\._[0-9a-z]{2})*$/;
+import {
+  PATH_PATTERN,
+  getParentPath,
+  parsePathSegments,
+} from '@/lib/chat/message-path';
 
-function parsePathSegments(path: string): string[] {
-  return path.split('.').filter(Boolean);
+export interface BranchSelectionContext {
+  rootMessageIndex?: number | null;
 }
 
-function getParentPathFromText(path: string): string | null {
-  const lastDot = path.lastIndexOf('.');
-  return lastDot === -1 ? null : path.slice(0, lastDot);
+function toTimestamp(value: Date | string | number | null | undefined): number {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function pickByIndexOrLatest(
+  siblings: MessageTreeNode[],
+  preferredIndex?: number | null
+): MessageTreeNode | undefined {
+  if (!siblings.length) {
+    return undefined;
+  }
+
+  if (
+    preferredIndex !== null &&
+    preferredIndex !== undefined &&
+    Number.isFinite(preferredIndex)
+  ) {
+    const candidate = siblings.find(
+      (node) => node.siblingIndex === preferredIndex
+    );
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return siblings.reduce((latest, node) => {
+    const latestTimestamp = toTimestamp(latest.createdAt);
+    const nodeTimestamp = toTimestamp(node.createdAt);
+
+    if (nodeTimestamp > latestTimestamp) {
+      return node;
+    }
+
+    if (nodeTimestamp === latestTimestamp) {
+      return node.pathText.localeCompare(latest.pathText) > 0 ? node : latest;
+    }
+
+    return latest;
+  }, siblings[0]);
 }
 
 /**
@@ -21,10 +64,10 @@ function getParentPathFromText(path: string): string | null {
  */
 export function buildMessageTree(
   messages: DBMessage[],
-  headMessageId?: string | null
+  selection?: BranchSelectionContext
 ): MessageTreeResult {
   if (!messages.length) {
-    return { tree: [], nodes: [], branch: [] };
+    return { tree: [], nodes: [], branch: [], rootMessageIndex: null };
   }
 
   const nodesByPath = new Map<string, MessageTreeNode>();
@@ -36,7 +79,7 @@ export function buildMessageTree(
       continue;
     }
 
-    const parentPath = getParentPathFromText(pathText);
+    const parentPath = getParentPath(pathText);
     const depth = parsePathSegments(pathText).length;
     const node: MessageTreeNode = {
       ...message,
@@ -92,28 +135,23 @@ export function buildMessageTree(
   stampSiblingStats(roots);
 
   const branch: MessageTreeNode[] = [];
+  let resolvedRootIndex: number | null = null;
   if (roots.length) {
-    let cursor: MessageTreeNode | undefined;
-    if (headMessageId) {
-      const headMessage = messages.find((m) => m.id === headMessageId);
-      cursor = headMessage ? nodesByPath.get(headMessage.pathText!) : undefined;
-    } else {
-      let latestMessage = messages[0];
-      for (let i = 1; i < messages.length; i++) {
-        if (messages[i].createdAt > latestMessage.createdAt) {
-          latestMessage = messages[i];
-        }
-      }
-      cursor = nodesByPath.get(latestMessage.pathText!);
+    const preferredRootIndex = selection?.rootMessageIndex ?? null;
+    let cursor = pickByIndexOrLatest(roots, preferredRootIndex);
+
+    if (cursor) {
+      resolvedRootIndex = cursor.siblingIndex;
     }
 
     while (cursor) {
       branch.push(cursor);
-      if (!cursor.parentPath) break;
-      cursor = nodesByPath.get(cursor.parentPath);
+      cursor = pickByIndexOrLatest(
+        cursor.children,
+        cursor.selectedChildIndex ?? null
+      );
     }
-    branch.reverse();
   }
 
-  return { tree: roots, nodes, branch };
+  return { tree: roots, nodes, branch, rootMessageIndex: resolvedRootIndex };
 }

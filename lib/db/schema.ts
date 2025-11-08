@@ -25,7 +25,7 @@ export interface ChatSettings {
 }
 
 type PrismaChatWithRelations = Prisma.ChatGetPayload<{
-  include: { agent: true; headMessage: true };
+  include: { agent: true };
 }>;
 
 export type Chat = Omit<
@@ -61,4 +61,5 @@ export interface MessageTreeResult {
   tree: MessageTreeNode[];
   nodes: MessageTreeNode[];
   branch: MessageTreeNode[];
+  rootMessageIndex: number | null;
 }

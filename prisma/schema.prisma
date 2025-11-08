@@ -113,8 +113,10 @@ model Chat {
   forkDepth           Int     @default(0)
 
   // The message at the tip of the chat's active thread
-  headMessage   Message? @relation("HeadMessage", fields: [headMessageId], references: [id])
-  headMessageId String?  @unique @db.Uuid
+  headMessage      Message? @relation("HeadMessage", fields: [headMessageId], references: [id])
+  headMessageId    String?  @unique @db.Uuid
+  // The selected root message index for the chat's active thread
+  rootMessageIndex Int?
 
   agentId String? @db.Uuid
 
@@ -140,8 +142,10 @@ model Message {
   path     Unsupported("ltree") @map("path")
   pathText String?              @map("path_text") @db.Text
 
-  chat       Chat  @relation(fields: [chatId], references: [id])
-  headOfChat Chat? @relation("HeadMessage")
+  chat               Chat  @relation(fields: [chatId], references: [id])
+  headOfChat         Chat? @relation("HeadMessage")
+  // The selected child index for branching conversations
+  selectedChildIndex Int?
 
   @@unique([chatId, path])
   @@index([chatId])

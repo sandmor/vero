@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import type { MessageTreeNode, MessageTreeResult } from '@/lib/db/schema';
-import { calculateBranchSwitch } from '@/components/chat/use-chat-messaging';
+import {
+  planBranchSwitch,
+  computeBranchFromSelection,
+  shouldDeferTreeUpdate,
+} from '@/components/chat/use-chat-messaging';
 
 const createNode = ({
   id,
@@ -36,7 +40,7 @@ const createNode = ({
   } as unknown as MessageTreeNode;
 };
 
-describe('calculateBranchSwitch', () => {
+describe('planBranchSwitch', () => {
   it('switches to the next sibling and follows the newest leaf by default', () => {
     const base = new Date('2024-01-01T00:00:00Z');
     const userRoot = createNode({
@@ -90,24 +94,30 @@ describe('calculateBranchSwitch', () => {
       tree: [userRoot],
       nodes: [userRoot, assistantOriginal, assistantAlternate, userFollowUp],
       branch: [userRoot, assistantOriginal],
+      rootMessageIndex: 0,
     };
 
-    const result = calculateBranchSwitch({
+    const initialSelection = { rootMessageIndex: 0, selections: { '0': 0 } };
+
+    const plan = planBranchSwitch({
       tree,
+      selection: initialSelection,
       messageId: 'assistant-1',
       direction: 'next',
     });
 
-    expect(result).not.toBeNull();
-    if (!result) {
-      throw new Error('Expected a branch switch result');
+    expect(plan).not.toBeNull();
+    if (!plan) {
+      throw new Error('Expected a branch switch plan');
     }
-    const branchIds = result.branchNodes.map((node) => node.id);
+
+    const branch = computeBranchFromSelection(tree, plan.snapshot);
+    const branchIds = branch.map((node: MessageTreeNode) => node.id);
     expect(branchIds).toEqual(['user-1', 'assistant-2', 'user-2']);
-    expect(result.headNode.id).toBe('user-2');
+    expect(branch[branch.length - 1].id).toBe('user-2');
   });
 
-  it('prefers a requested head when it exists in the target subtree', () => {
+  it('switches to the next sibling and follows the newest leaf', () => {
     const base = new Date('2024-01-02T00:00:00Z');
     const userRoot = createNode({
       id: 'user-1',
@@ -189,26 +199,71 @@ describe('calculateBranchSwitch', () => {
         assistantPreferred,
       ],
       branch: [userRoot, assistantOriginal],
+      rootMessageIndex: 0,
     };
 
-    const result = calculateBranchSwitch({
+    const initialSelection = { rootMessageIndex: 0, selections: { '0': 0 } };
+
+    const plan = planBranchSwitch({
       tree,
+      selection: initialSelection,
       messageId: 'assistant-1',
       direction: 'next',
-      preferredHeadId: 'assistant-3',
     });
 
-    expect(result).not.toBeNull();
-    if (!result) {
-      throw new Error('Expected a branch switch result');
+    expect(plan).not.toBeNull();
+    if (!plan) {
+      throw new Error('Expected a branch switch plan');
     }
-    const branchIds = result.branchNodes.map((node) => node.id);
-    expect(branchIds).toEqual([
-      'user-1',
-      'assistant-2',
-      'user-3',
-      'assistant-3',
-    ]);
-    expect(result.headNode.id).toBe('assistant-3');
+
+    const branch = computeBranchFromSelection(tree, plan.snapshot);
+    const branchIds = branch.map((node: MessageTreeNode) => node.id);
+    expect(branchIds).toEqual(['user-1', 'assistant-2', 'user-2']);
+    expect(branch[branch.length - 1].id).toBe('user-2');
+  });
+});
+
+describe('shouldDeferTreeUpdate', () => {
+  it('defers during streaming unless explicitly allowed', () => {
+    expect(
+      shouldDeferTreeUpdate({
+        chatStatus: 'streaming',
+        pendingRegenerationId: null,
+        desiredSelection: null,
+        treeSelection: { rootMessageIndex: 0 },
+      })
+    ).toBe(true);
+
+    expect(
+      shouldDeferTreeUpdate({
+        chatStatus: 'streaming',
+        pendingRegenerationId: null,
+        desiredSelection: null,
+        treeSelection: { rootMessageIndex: 0 },
+        options: { allowDuringStreaming: true },
+      })
+    ).toBe(false);
+  });
+
+  it('defers when the desired selection differs from the incoming tree selection', () => {
+    expect(
+      shouldDeferTreeUpdate({
+        chatStatus: 'ready',
+        pendingRegenerationId: null,
+        desiredSelection: { rootMessageIndex: 0 },
+        treeSelection: { rootMessageIndex: 1 },
+      })
+    ).toBe(true);
+  });
+
+  it('allows updates when no desired selection is locked in', () => {
+    expect(
+      shouldDeferTreeUpdate({
+        chatStatus: 'ready',
+        pendingRegenerationId: null,
+        desiredSelection: null,
+        treeSelection: { rootMessageIndex: 0 },
+      })
+    ).toBe(false);
   });
 });
