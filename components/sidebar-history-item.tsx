@@ -2,6 +2,7 @@ import Link from 'next/link';
 import {
   memo,
   useRef,
+  useState,
   type MouseEvent as ReactMouseEvent,
   type TouchEvent as ReactTouchEvent,
 } from 'react';
@@ -9,12 +10,14 @@ import { motion } from 'framer-motion';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import type { Chat } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import {
   CheckCircle,
   CheckSquare,
   Globe,
   Lock,
   MoreHorizontal,
+  PenLine,
   Share,
   Square,
   Trash2,
@@ -34,6 +37,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from './ui/sidebar';
+import { ChatRenameDialog } from './chat-rename-dialog';
 
 export type ChatItemSelectionProps = {
   isSelectionMode: boolean;
@@ -55,12 +59,14 @@ const PureChatItem = ({
   chat,
   isActive,
   onDelete,
+  onRename,
   setOpenMobile,
   selection,
 }: {
   chat: Chat;
   isActive: boolean;
   onDelete: (chatId: string) => void;
+  onRename: (chatId: string, newTitle: string) => void;
   setOpenMobile: (open: boolean) => void;
   selection?: ChatItemSelectionProps;
 }) => {
@@ -69,8 +75,33 @@ const PureChatItem = ({
     initialVisibilityType: chat.visibility,
   });
   const longPressActivatedRef = useRef(false);
+  const [isRenameDialogOpen, setRenameDialogOpen] = useState(false);
   const isSelectionMode = selection?.isSelectionMode ?? false;
   const isSelected = selection?.isSelected ?? false;
+
+  const handleRename = async (newTitle: string) => {
+    try {
+      const response = await fetch(`/chat/${chat.id}/api`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: newTitle }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || 'Failed to rename chat';
+        toast.error(errorMessage);
+        return;
+      }
+
+      onRename(chat.id, newTitle);
+    } catch (error) {
+      console.error('Failed to rename chat', error);
+      toast.error('Failed to rename chat. Please try again.');
+    }
+  };
 
   const handleNavigate = (event: ReactMouseEvent<HTMLAnchorElement>) => {
     if (longPressActivatedRef.current) {
@@ -137,111 +168,126 @@ const PureChatItem = ({
   );
 
   return (
-    <SidebarMenuItem
-      data-chat-id={chat.id}
-      data-selected={isSelected && isSelectionMode}
-      data-testid="sidebar-history-item"
-    >
-      <SidebarMenuButton
-        asChild
-        isActive={isSelectionMode ? isSelected : isActive}
-        className={cn(
-          'group/item flex-1 overflow-hidden',
-          isSelectionMode && 'pr-2'
-        )}
+    <>
+      <SidebarMenuItem
+        data-chat-id={chat.id}
+        data-selected={isSelected && isSelectionMode}
+        data-testid="sidebar-history-item"
       >
-        <Link
-          href={`/chat/${chat.id}`}
-          onClick={handleNavigate}
-          onMouseDown={handlePressStart}
-          onMouseUp={handlePressEnd}
-          onMouseLeave={handlePressEnd}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onTouchCancel={handleTouchEnd}
-          className={linkClassName}
-        >
-          {isSelectionMode && (
-            <motion.span
-              className="flex h-4 w-4 items-center justify-center"
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ duration: 0.16, ease: 'easeOut' }}
-            >
-              {isSelected ? (
-                <CheckSquare className="h-4 w-4 text-primary" />
-              ) : (
-                <Square className="h-4 w-4 text-muted-foreground" />
-              )}
-            </motion.span>
+        <SidebarMenuButton
+          asChild
+          isActive={isSelectionMode ? isSelected : isActive}
+          className={cn(
+            'group/item flex-1 overflow-hidden',
+            isSelectionMode && 'pr-2'
           )}
-          <span className="truncate text-sm font-medium text-sidebar-foreground">
-            {chat.title}
-          </span>
-        </Link>
-      </SidebarMenuButton>
+        >
+          <Link
+            href={`/chat/${chat.id}`}
+            onClick={handleNavigate}
+            onMouseDown={handlePressStart}
+            onMouseUp={handlePressEnd}
+            onMouseLeave={handlePressEnd}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+            className={linkClassName}
+          >
+            {isSelectionMode && (
+              <motion.span
+                className="flex h-4 w-4 items-center justify-center"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ duration: 0.16, ease: 'easeOut' }}
+              >
+                {isSelected ? (
+                  <CheckSquare className="h-4 w-4 text-primary" />
+                ) : (
+                  <Square className="h-4 w-4 text-muted-foreground" />
+                )}
+              </motion.span>
+            )}
+            <span className="truncate text-sm font-medium text-sidebar-foreground">
+              {chat.title}
+            </span>
+          </Link>
+        </SidebarMenuButton>
 
-      {!isSelectionMode && (
-        <DropdownMenu modal={true}>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuAction
-              className="mr-0.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-              showOnHover={!isActive}
-            >
-              <MoreHorizontal />
-              <span className="sr-only">More</span>
-            </SidebarMenuAction>
-          </DropdownMenuTrigger>
+        {!isSelectionMode && (
+          <DropdownMenu modal={true}>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuAction
+                className="mr-0.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                showOnHover={!isActive}
+              >
+                <MoreHorizontal />
+                <span className="sr-only">More</span>
+              </SidebarMenuAction>
+            </DropdownMenuTrigger>
 
-          <DropdownMenuContent align="end" side="bottom">
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className="cursor-pointer">
-                <Share />
-                <span>Share</span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuPortal>
-                <DropdownMenuSubContent>
-                  <DropdownMenuItem
-                    className="cursor-pointer flex-row justify-between"
-                    onClick={() => {
-                      setVisibilityType('private');
-                    }}
-                  >
-                    <div className="flex flex-row items-center gap-2">
-                      <Lock size={12} />
-                      <span>Private</span>
-                    </div>
-                    {visibilityType === 'private' ? <CheckCircle /> : null}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="cursor-pointer flex-row justify-between"
-                    onClick={() => {
-                      setVisibilityType('public');
-                    }}
-                  >
-                    <div className="flex flex-row items-center gap-2">
-                      <Globe />
-                      <span>Public</span>
-                    </div>
-                    {visibilityType === 'public' ? <CheckCircle /> : null}
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuPortal>
-            </DropdownMenuSub>
+            <DropdownMenuContent align="end" side="bottom">
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onSelect={() => setRenameDialogOpen(true)}
+              >
+                <PenLine />
+                <span>Rename</span>
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="cursor-pointer">
+                  <Share />
+                  <span>Share</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem
+                      className="cursor-pointer flex-row justify-between"
+                      onClick={() => {
+                        setVisibilityType('private');
+                      }}
+                    >
+                      <div className="flex flex-row items-center gap-2">
+                        <Lock size={12} />
+                        <span>Private</span>
+                      </div>
+                      {visibilityType === 'private' ? <CheckCircle /> : null}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer flex-row justify-between"
+                      onClick={() => {
+                        setVisibilityType('public');
+                      }}
+                    >
+                      <div className="flex flex-row items-center gap-2">
+                        <Globe />
+                        <span>Public</span>
+                      </div>
+                      {visibilityType === 'public' ? <CheckCircle /> : null}
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuPortal>
+              </DropdownMenuSub>
 
-            <DropdownMenuItem
-              className="cursor-pointer text-destructive focus:bg-destructive/15 focus:text-destructive dark:text-red-500"
-              onSelect={() => onDelete(chat.id)}
-            >
-              <Trash2 />
-              <span>Delete</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </SidebarMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer text-destructive focus:bg-destructive/15 focus:text-destructive dark:text-red-500"
+                onSelect={() => onDelete(chat.id)}
+              >
+                <Trash2 />
+                <span>Delete</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </SidebarMenuItem>
+      <ChatRenameDialog
+        open={isRenameDialogOpen}
+        chat={chat}
+        onClose={() => setRenameDialogOpen(false)}
+        onRename={handleRename}
+      />
+    </>
   );
 };
 

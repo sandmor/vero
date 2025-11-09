@@ -69,9 +69,11 @@ async function fetchChatSearch(
 export function ChatSearch({
   currentChatId,
   onDelete,
+  onRename,
 }: {
   currentChatId?: string;
   onDelete: (chatId: string) => void;
+  onRename: (chatId: string, newTitle: string) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -350,6 +352,7 @@ export function ChatSearch({
                           isActive={chat.id === currentChatId}
                           key={chat.id}
                           onDelete={onDelete}
+                          onRename={onRename}
                           setOpenMobile={setOpenMobile}
                         />
                       ))}
@@ -412,6 +415,7 @@ export function ChatSearch({
                                         onDelete(chatId);
                                         setIsDialogOpen(false);
                                       }}
+                                      onRename={onRename}
                                       setOpenMobile={setOpenMobile}
                                     />
                                   ))}

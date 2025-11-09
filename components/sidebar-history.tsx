@@ -381,6 +381,24 @@ export function SidebarHistory({
     });
   }, [selectedIds, queryClient, currentChatId, router, clearSelectionMode]);
 
+  const handleRename = (chatId: string, newTitle: string) => {
+    queryClient.setQueryData<InfiniteData<ChatHistory>>(
+      ['chat', 'history'],
+      (current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            chats: page.chats.map((c) =>
+              c.id === chatId ? { ...c, title: newTitle } : c
+            ),
+          })),
+        };
+      }
+    );
+  };
+
   if (sessionStatus === 'loading') {
     return (
       <SidebarGroup>
@@ -461,6 +479,7 @@ export function SidebarHistory({
           setDeleteId(chatId);
           setShowDeleteDialog(true);
         }}
+        onRename={handleRename}
       />
 
       <SidebarGroup>
@@ -583,6 +602,7 @@ export function SidebarHistory({
                               setDeleteId(chatId);
                               setShowDeleteDialog(true);
                             }}
+                            onRename={handleRename}
                             setOpenMobile={setOpenMobile}
                             selection={{
                               isSelectionMode,
@@ -614,6 +634,7 @@ export function SidebarHistory({
                               setDeleteId(chatId);
                               setShowDeleteDialog(true);
                             }}
+                            onRename={handleRename}
                             setOpenMobile={setOpenMobile}
                             selection={{
                               isSelectionMode,
@@ -645,6 +666,7 @@ export function SidebarHistory({
                               setDeleteId(chatId);
                               setShowDeleteDialog(true);
                             }}
+                            onRename={handleRename}
                             setOpenMobile={setOpenMobile}
                             selection={{
                               isSelectionMode,
@@ -676,6 +698,7 @@ export function SidebarHistory({
                               setDeleteId(chatId);
                               setShowDeleteDialog(true);
                             }}
+                            onRename={handleRename}
                             setOpenMobile={setOpenMobile}
                             selection={{
                               isSelectionMode,
@@ -707,6 +730,7 @@ export function SidebarHistory({
                               setDeleteId(chatId);
                               setShowDeleteDialog(true);
                             }}
+                            onRename={handleRename}
                             setOpenMobile={setOpenMobile}
                             selection={{
                               isSelectionMode,
