@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
 import { prisma } from '@/lib/db/prisma';
 import { revalidatePath } from 'next/cache';
+import { Prisma } from '../../../../generated/prisma-client';
 
 export async function GET() {
   try {
@@ -96,7 +97,7 @@ export async function DELETE() {
 
     await prisma.user.update({
       where: { id: session.user.id },
-      data: { preferences: null as any },
+      data: { preferences: Prisma.DbNull },
     });
 
     revalidatePath('/settings');

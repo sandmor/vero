@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useSuspenseQuery } from '@tanstack/react-query';
 import { Chat } from '@/components/chat';
 import { SetLastChatUrl } from '@/components/set-last-chat-url';
+import { toast } from '@/components/toast';
 import type {
   BranchSelectionSnapshot,
   ChatBootstrapResponse,
 } from '@/types/chat-bootstrap';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
-import { computeChatLastUpdatedAt } from '@/lib/chat/bootstrap-helpers';
+import { useReactQueryWithCache } from '@/hooks/use-react-query-with-cache';
 
 async function fetchChatBootstrap(
   chatId?: string
@@ -36,23 +36,43 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   const {
     getCachedBootstrap,
     refreshCache,
-    upsertChatRecord,
     ready: isCacheReady,
   } = useEncryptedCache();
   const hasRequestedSyncRef = useRef(false);
   const cachedBootstrap = chatId ? getCachedBootstrap(chatId) : undefined;
-  const { data } = useSuspenseQuery({
-    queryKey: chatId
-      ? ['chat', 'bootstrap', chatId]
-      : ['chat', 'bootstrap', 'new'],
-    queryFn: () => fetchChatBootstrap(chatId),
-    staleTime: 0,
-    initialData: cachedBootstrap,
-  });
+
+  const { data, isFetching, error } =
+    useReactQueryWithCache<ChatBootstrapResponse>({
+      queryKey: chatId
+        ? ['chat', 'bootstrap', chatId]
+        : ['chat', 'bootstrap', 'new'],
+      queryFn: () => fetchChatBootstrap(chatId),
+      chatId,
+      enabled: true,
+      staleTime: 0, // Always check for fresh data
+      verifyCache: true,
+      onError: (err) => {
+        console.error('Failed to load chat bootstrap data:', err);
+        toast({
+          type: 'error',
+          description: 'Failed to load chat. Please try again.',
+        });
+      },
+    });
 
   useEffect(() => {
     hasRequestedSyncRef.current = false;
   }, [chatId]);
+
+  // Show loading toast when fetching data
+  useEffect(() => {
+    if (isFetching && !data) {
+      toast({
+        type: 'info',
+        description: 'Loading chat...',
+      });
+    }
+  }, [isFetching, data]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -66,56 +86,21 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     });
   }, [chatId, cachedBootstrap, isCacheReady, refreshCache]);
 
-  useEffect(() => {
-    if (!chatId) return;
-    if (!isCacheReady) return;
-    if (data.kind !== 'existing') return;
-    if (!data.prefetchedChat) return;
-
-    const cachedMessageIds =
-      cachedBootstrap?.kind === 'existing'
-        ? (cachedBootstrap.initialMessages ?? []).map((message) => message.id)
-        : [];
-    const incomingMessageIds = data.initialMessages.map(
-      (message) => message.id
+  // Show error state if there's an error
+  if (error && !data) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-background">
+        <span className="text-sm text-red-500">
+          Failed to load chat. Please try again.
+        </span>
+      </div>
     );
+  }
 
-    const hasMessageMismatch =
-      cachedMessageIds.length !== incomingMessageIds.length ||
-      cachedMessageIds.some(
-        (messageId, index) => messageId !== incomingMessageIds[index]
-      );
-
-    const cachedRootIndex =
-      cachedBootstrap?.kind === 'existing'
-        ? (cachedBootstrap.initialBranchState.rootMessageIndex ?? null)
-        : null;
-    const incomingRootIndex = data.initialBranchState.rootMessageIndex ?? null;
-
-    const shouldPersistUpdate =
-      !cachedBootstrap ||
-      hasMessageMismatch ||
-      cachedRootIndex !== incomingRootIndex;
-
-    if (!shouldPersistUpdate) {
-      return;
-    }
-
-    const lastUpdatedAt = computeChatLastUpdatedAt({
-      chat: { createdAt: new Date(data.prefetchedChat.createdAt) },
-      messages: data.initialMessages ?? [],
-      branchState: data.initialBranchState,
-    });
-
-    upsertChatRecord({
-      chatId: data.chatId,
-      lastUpdatedAt,
-      bootstrap: data,
-      chat: data.prefetchedChat,
-    }).catch(() => {
-      // cache provider surfaces errors; safe to ignore here
-    });
-  }, [chatId, cachedBootstrap, data, isCacheReady, upsertChatRecord]);
+  // Return null if no data (shouldn't happen with proper fallbacks)
+  if (!data) {
+    return null;
+  }
 
   const initialBranchState: BranchSelectionSnapshot =
     data.kind === 'existing'

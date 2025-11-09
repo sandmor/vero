@@ -263,30 +263,6 @@ export function UserPreferencesEditor() {
                 </motion.div>
               </Button>
             </div>
-
-            <div className="rounded-lg border border-border/60 bg-muted/50 p-4">
-              <h4 className="mb-2 text-sm font-medium">
-                Available Prompt Variables
-              </h4>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <code className="rounded bg-background px-1 py-0.5">
-                  {'{{userName}}'}
-                </code>
-                <span className="ml-2">- Your name</span>
-              </div>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <code className="rounded bg-background px-1 py-0.5">
-                  {'{{userOccupation}}'}
-                </code>
-                <span className="ml-2">- Your occupation</span>
-              </div>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <code className="rounded bg-background px-1 py-0.5">
-                  {'{{userCustomInstructions}}'}
-                </code>
-                <span className="ml-2">- Your custom instructions</span>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </motion.div>

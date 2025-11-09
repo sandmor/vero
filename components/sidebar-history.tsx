@@ -137,38 +137,21 @@ export function SidebarHistory({
     [cachedChats]
   );
 
+  // Use infinite query for pagination (but without cache for subsequent pages to avoid complexity)
   const {
     data: paginatedChatHistories,
     fetchNextPage,
     isFetchingNextPage,
     isLoading,
     isFetching,
+    refetch,
   } = useInfiniteQuery<ChatHistory>({
     queryKey: ['chat', 'history'],
     queryFn: async ({ pageParam }) => {
       const url = buildPageUrl(pageParam as string | undefined);
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch chat history');
-      const payload = (await res.json()) as ChatHistory;
-
-      if (!pageParam && isCacheReady) {
-        if (cachedChatEntities.length && payload.chats.length) {
-          const firstMismatch = payload.chats.find((serverChat) => {
-            const cached = cachedChatEntities.find(
-              (item) => item.id === serverChat.id
-            );
-            if (!cached) return true;
-            const cachedTimestamp = new Date(cached.createdAt).getTime();
-            const serverTimestamp = new Date(serverChat.createdAt).getTime();
-            return cachedTimestamp !== serverTimestamp;
-          });
-          if (firstMismatch) {
-            void refreshCache();
-          }
-        }
-      }
-
-      return payload;
+      return (await res.json()) as ChatHistory;
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => {
@@ -176,8 +159,13 @@ export function SidebarHistory({
       const lastChat = lastPage.chats.at(-1);
       return lastChat?.id;
     },
-    staleTime: 30_000,
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
+
+  // Use infinite query data for all operations (it includes cache verification for first page)
+  const dataToUse = paginatedChatHistories;
 
   const router = useRouter();
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -239,7 +227,23 @@ export function SidebarHistory({
     hasHydratedFromCacheRef.current = true;
   }, [cachedChatEntities, cacheMetadata, isCacheReady, queryClient]);
 
-  const allChats = useMemo(() => pages.flatMap((page) => page.chats), [pages]);
+  // Set up periodic refresh for sidebar history
+  useEffect(() => {
+    if (!user) return;
+
+    const interval = setInterval(() => {
+      refetch().catch(() => {
+        // Errors are handled by React Query
+      });
+    }, 60_000); // Refresh every minute
+
+    return () => clearInterval(interval);
+  }, [user, refetch]);
+
+  const allChats = useMemo(
+    () => dataToUse?.pages.flatMap((page) => page.chats) ?? [],
+    [dataToUse]
+  );
   const allChatIds = useMemo(() => allChats.map((chat) => chat.id), [allChats]);
 
   const handleToggleSelection = useCallback(
@@ -582,7 +586,7 @@ export function SidebarHistory({
           <SidebarMenu>
             {pages &&
               (() => {
-                const chatsFromHistory = pages.flatMap((p) => p.chats);
+                const chatsFromHistory = allChats;
 
                 const groupedChats = groupChatsByDate(chatsFromHistory);
 

@@ -491,42 +491,20 @@ export function useChatMessaging({
   }, [messages]);
 
   useEffect(() => {
-    const duplicateIds = new Set<string>();
-    const idCounts = new Map<string, number>();
-
-    for (const message of messages) {
-      if (message.role !== 'user') {
-        continue;
-      }
-
-      const count = (idCounts.get(message.id) ?? 0) + 1;
-      idCounts.set(message.id, count);
-      if (count > 1) {
-        duplicateIds.add(message.id);
-      }
-    }
-
-    if (duplicateIds.size === 0) {
-      return;
-    }
-
-    const preserved = new Set<string>();
+    const seenIds = new Set<string>();
     const deduped: ChatMessage[] = [];
 
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (!duplicateIds.has(message.id)) {
-        deduped.push(message);
-        continue;
-      }
-
-      if (!preserved.has(message.id)) {
-        preserved.add(message.id);
+    for (const message of messages) {
+      if (!seenIds.has(message.id)) {
+        seenIds.add(message.id);
         deduped.push(message);
       }
     }
 
-    deduped.reverse();
+    // Only update if duplicates were found
+    if (deduped.length === messages.length) {
+      return;
+    }
 
     setMessages((current) => {
       // Avoid triggering extra renders if deduped content matches current.
@@ -1083,32 +1061,19 @@ export function useChatMessaging({
             parts: editedParts,
           });
 
+          // Remove any duplicate messages that might have been added during the send process
           setMessages((current) => {
-            let duplicateCount = 0;
+            const uniqueMessages = [];
+            const seenIds = new Set();
+
             for (const message of current) {
-              if (message.id === newMessageId) {
-                duplicateCount += 1;
-                if (duplicateCount > 1) {
-                  break;
-                }
+              if (!seenIds.has(message.id)) {
+                seenIds.add(message.id);
+                uniqueMessages.push(message);
               }
             }
 
-            if (duplicateCount < 2) {
-              return current;
-            }
-
-            let skipped = false;
-            return current.filter((message) => {
-              if (message.id !== newMessageId) {
-                return true;
-              }
-              if (!skipped) {
-                skipped = true;
-                return false;
-              }
-              return true;
-            });
+            return uniqueMessages;
           });
 
           toast({ type: 'success', description: 'Message updated.' });

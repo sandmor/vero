@@ -3,11 +3,12 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { toast as sonnerToast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, CheckCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Info } from 'lucide-react';
 
-const iconsByType: Record<'success' | 'error', ReactNode> = {
+const iconsByType: Record<'success' | 'error' | 'info', ReactNode> = {
   success: <CheckCircle />,
   error: <AlertTriangle />,
+  info: <Info />,
 };
 
 export type ToastAction = {
@@ -61,14 +62,18 @@ function Toast(props: ToastProps & { actions?: ToastAction[] }) {
           'flex toast-mobile:w-fit w-full flex-row gap-3 rounded-lg p-3',
           multiLine ? 'items-start' : 'items-center',
           // background by type
-          type === 'error' ? 'bg-red-50 border border-red-100' : 'bg-zinc-100'
+          type === 'error'
+            ? 'bg-red-50 border border-red-100'
+            : type === 'info'
+              ? 'bg-blue-50 border border-blue-100'
+              : 'bg-zinc-100'
         )}
         data-testid="toast"
         key={id}
       >
         <div
           className={cn(
-            'data-[type=error]:text-red-600 data-[type=success]:text-green-600',
+            'data-[type=error]:text-red-600 data-[type=success]:text-green-600 data-[type=info]:text-blue-600',
             { 'pt-1': multiLine }
           )}
           data-type={type}
@@ -95,7 +100,9 @@ function Toast(props: ToastProps & { actions?: ToastAction[] }) {
                   a.primary
                     ? type === 'error'
                       ? 'bg-white text-red-700 shadow-sm hover:bg-red-50'
-                      : 'bg-white text-green-700 shadow-sm hover:bg-green-50'
+                      : type === 'info'
+                        ? 'bg-white text-blue-700 shadow-sm hover:bg-blue-50'
+                        : 'bg-white text-green-700 shadow-sm hover:bg-green-50'
                     : 'bg-transparent text-zinc-800/80 hover:text-zinc-900'
                 )}
               >
@@ -111,6 +118,6 @@ function Toast(props: ToastProps & { actions?: ToastAction[] }) {
 
 type ToastProps = {
   id: string | number;
-  type: 'success' | 'error';
+  type: 'success' | 'error' | 'info';
   description: string;
 };
