@@ -514,6 +514,7 @@ export async function POST(request: Request) {
           modelCapabilities,
           appSettings,
           effectiveUserMessage,
+          userPreferences,
         ] = await Promise.all([
           messagesPromise,
           modelPromise,
@@ -522,6 +523,20 @@ export async function POST(request: Request) {
           modelCapabilitiesPromise,
           appSettingsPromise,
           effectiveUserMessagePromise,
+          // Load user preferences
+          prisma.user
+            .findUnique({
+              where: { id: session.user.id },
+              select: { preferences: true },
+            })
+            .then((result) => {
+              const prefs = result?.preferences;
+              if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) {
+                return null;
+              }
+              return prefs as Record<string, unknown>;
+            })
+            .catch(() => null),
         ]);
 
         const dbUiMessages = convertToUIMessages(messagesFromDb);
@@ -638,11 +653,27 @@ export async function POST(request: Request) {
           settings.prompt,
           basePromptParts
         );
+        // Convert user preferences to prompt variables
+        const userPrefVariables: Record<string, string> = {};
+        if (userPreferences) {
+          const prefs = userPreferences as any;
+          if (prefs.name) userPrefVariables.userName = String(prefs.name);
+          if (prefs.occupation)
+            userPrefVariables.userOccupation = String(prefs.occupation);
+          if (prefs.customInstructions)
+            userPrefVariables.userCustomInstructions = String(
+              prefs.customInstructions
+            );
+        }
+
         const promptOptions: SystemPromptOptions = {
           requestHints,
           pinnedEntries: pinnedForPrompt,
           allowedTools: allowedToolIds,
-          variables: getAgentPromptVariableMap(promptResolution.normalized),
+          variables: {
+            ...getAgentPromptVariableMap(promptResolution.normalized),
+            ...userPrefVariables,
+          },
         };
 
         if (!agentPromptConfigIsDefault(promptResolution.normalized)) {

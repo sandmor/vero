@@ -35,8 +35,9 @@ model Tier {
 }
 
 model User {
-  id    String @id @db.VarChar(191) // Accept Clerk style ids (e.g. user_...) or UUIDs
-  email String @db.VarChar(128)
+  id          String @id @db.VarChar(191) // Accept Clerk style ids (e.g. user_...) or UUIDs
+  email       String @db.VarChar(128)
+  preferences Json? // User preferences: { name?: string, occupation?: string, customInstructions?: string }
 
   chats                Chat[]
   documents            Document[]

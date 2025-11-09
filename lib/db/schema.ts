@@ -5,8 +5,18 @@ import type { ArtifactKind } from '@/components/artifact';
 import type { AgentPromptConfig } from '@/lib/agent-prompt';
 import type { ChatToolId } from '@/lib/ai/tool-ids';
 
+// User preferences interface
+export interface UserPreferences {
+  name?: string;
+  occupation?: string;
+  customInstructions?: string;
+}
+
 // Re-export Prisma model types with the same names previously used across the app
-export type User = Prisma.UserGetPayload<{}>;
+export type User = Prisma.UserGetPayload<{}> & {
+  preferences: UserPreferences | null;
+};
+
 // Override Chat type to narrow JSON lastContext to our runtime shape
 // ChatSettings: forward-compatible container for per-chat configuration.
 // pinnedEntries: cached list of currently pinned archive entry slugs (authoritative source remains junction table)

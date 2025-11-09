@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArchiveExplorer } from '@/components/archive/archive-explorer';
 import { AgentsManagement } from '@/components/agents-management';
 import { UserApiKeysEditor } from '@/components/user-api-keys-editor';
+import { UserPreferencesEditor } from '@/components/user-preferences-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function SettingsView({
@@ -19,21 +20,26 @@ export default function SettingsView({
   isAdmin,
   adminContent,
 }: {
-  defaultTab: 'archive' | 'api-keys' | 'agents' | 'admin';
+  defaultTab: 'archive' | 'api-keys' | 'agents' | 'admin' | 'preferences';
   isAdmin: boolean;
   adminContent?: ReactNode;
 }) {
   const router = useRouter();
   const search = useSearchParams();
-  const [tab, setTab] = useState<'archive' | 'api-keys' | 'agents' | 'admin'>(
-    defaultTab
-  );
+  const [tab, setTab] = useState<
+    'archive' | 'api-keys' | 'agents' | 'admin' | 'preferences'
+  >(defaultTab);
   const tabHeightsRef = useRef<
-    Partial<Record<'archive' | 'api-keys' | 'agents' | 'admin', number>>
+    Partial<
+      Record<
+        'archive' | 'api-keys' | 'agents' | 'admin' | 'preferences',
+        number
+      >
+    >
   >({});
-  const activeTabRef = useRef<'archive' | 'api-keys' | 'agents' | 'admin'>(
-    defaultTab
-  );
+  const activeTabRef = useRef<
+    'archive' | 'api-keys' | 'agents' | 'admin' | 'preferences'
+  >(defaultTab);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const observedNodeRef = useRef<HTMLDivElement | null>(null);
   const baselineHeightRef = useRef<number>(0);
@@ -164,7 +170,7 @@ export default function SettingsView({
     <Tabs
       value={tab}
       onValueChange={(v) =>
-        setTab(v as 'archive' | 'api-keys' | 'agents' | 'admin')
+        setTab(v as 'archive' | 'api-keys' | 'agents' | 'admin' | 'preferences')
       }
       className="flex flex-col h-full min-h-0"
     >
@@ -178,6 +184,9 @@ export default function SettingsView({
           </TabsTrigger>
           <TabsTrigger value="agents" className="rounded-full px-4 py-1.5">
             Agents
+          </TabsTrigger>
+          <TabsTrigger value="preferences" className="rounded-full px-4 py-1.5">
+            Preferences
           </TabsTrigger>
           {isAdmin && (
             <TabsTrigger value="admin" className="rounded-full px-4 py-1.5">
@@ -241,6 +250,24 @@ export default function SettingsView({
               style={activeContentStyle}
             >
               <AgentsManagement />
+            </motion.div>
+          )}
+        </TabsContent>
+        <TabsContent
+          value="preferences"
+          className="flex h-full min-h-0 flex-col overflow-auto"
+        >
+          {tab === 'preferences' && (
+            <motion.div
+              key="preferences"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
+              className="flex-1"
+              ref={registerActiveContent}
+              style={activeContentStyle}
+            >
+              <UserPreferencesEditor />
             </motion.div>
           )}
         </TabsContent>

@@ -29,6 +29,11 @@ export type SystemPromptContext = {
   allowedTools?: ChatToolId[];
   pinnedEntries?: PinnedEntry[];
   variables?: Record<string, string>;
+  userPreferences?: {
+    name?: string;
+    occupation?: string;
+    customInstructions?: string;
+  };
 };
 
 export type SystemPromptOptions = SystemPromptContext & {
@@ -151,6 +156,26 @@ const archivePart: PromptPart<SystemPromptContext> = {
     isToolGroupEnabled(allowedTools, ARCHIVE_TOOL_IDS),
 };
 
+const userPreferencesPart: PromptPart<SystemPromptContext> = {
+  id: 'user-preferences',
+  template: `User Context:
+{{#if userName}}You are speaking with {{userName}}. {{/if}}{{#if userOccupation}}Their occupation is {{userOccupation}}. {{/if}}{{#if userCustomInstructions}}
+IMPORTANT: Follow these custom instructions from the user:
+{{userCustomInstructions}}{{/if}}`,
+  priority: 12,
+  isEnabled: ({ variables }) =>
+    Boolean(
+      variables?.userName ||
+        variables?.userOccupation ||
+        variables?.userCustomInstructions
+    ),
+  prepare: ({ variables }) => ({
+    userName: variables?.userName || '',
+    userOccupation: variables?.userOccupation || '',
+    userCustomInstructions: variables?.userCustomInstructions || '',
+  }),
+};
+
 const pinnedMemoryPart: PromptPart<SystemPromptContext> = {
   id: 'pinned-memory',
   template: pinnedMemoryTemplate,
@@ -163,6 +188,7 @@ const pinnedMemoryPart: PromptPart<SystemPromptContext> = {
 
 const defaultSystemPromptParts: PromptPart<SystemPromptContext>[] = [
   baseBehaviorPart,
+  userPreferencesPart,
   formattingPart,
   runCodePart,
   requestOriginPart,
@@ -258,6 +284,16 @@ export const systemPrompt = ({
     allowedTools,
     variables,
   };
+
+  // Add user preferences to variables if available
+  if (context.userPreferences) {
+    context.variables = {
+      ...context.variables,
+      userName: context.userPreferences.name || '',
+      userOccupation: context.userPreferences.occupation || '',
+      userCustomInstructions: context.userPreferences.customInstructions || '',
+    };
+  }
 
   let composition: PromptCompositionResult;
 

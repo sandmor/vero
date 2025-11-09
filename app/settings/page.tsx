@@ -65,7 +65,9 @@ export default async function SettingsPage({
         ? 'api-keys'
         : tabParam === 'agents'
           ? 'agents'
-          : 'archive';
+          : tabParam === 'preferences'
+            ? 'preferences'
+            : 'archive';
   const dehydrated =
     defaultTab === 'archive'
       ? await prefetchArchive()
@@ -78,7 +80,7 @@ export default async function SettingsPage({
       <header className="px-6 pt-6">
         <SettingsHeader
           title="Account Settings"
-          subtitle="Manage your knowledge archive, AI agents, and administrative configuration."
+          subtitle="Manage your knowledge archive, AI agents, API keys, and personal preferences."
         />
       </header>
       <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 mt-4">

@@ -18,6 +18,9 @@ const DATETIME_REGEX =
 const EACH_BLOCK_REGEX =
   /\{\{#each\s+([a-zA-Z0-9_.-]+)\s*\}\}([\s\S]*?)\{\{\/each\}\}/g;
 
+const IF_BLOCK_REGEX =
+  /\{\{#if\s+([a-zA-Z0-9_.-]+)\s*\}\}([\s\S]*?)\{\{\/if\}\}/g;
+
 function resolvePath(source: TemplateData, path: string): unknown {
   const segments = path.split('.');
   let current: unknown = source;
@@ -89,6 +92,22 @@ function renderEachBlocks(template: string, data: TemplateData): string {
         return renderTemplate(block, iterationData);
       })
       .join('');
+  });
+}
+
+function renderIfBlocks(template: string, data: TemplateData): string {
+  return template.replace(IF_BLOCK_REGEX, (_, key: string, block: string) => {
+    const value = resolvePath(data, key);
+
+    // Consider the block as "enabled" if the value is truthy
+    const isEnabled = Boolean(value);
+
+    if (!isEnabled) {
+      return '';
+    }
+
+    // Recursively render the block content
+    return renderTemplate(block, data);
   });
 }
 
@@ -167,7 +186,8 @@ function renderDatetimeBlocks(template: string, now = new Date()): string {
 
 export function renderTemplate(template: string, data: TemplateData): string {
   const withEachBlocks = renderEachBlocks(template, data);
-  const withDatetimeBlocks = renderDatetimeBlocks(withEachBlocks);
+  const withIfBlocks = renderIfBlocks(withEachBlocks, data);
+  const withDatetimeBlocks = renderDatetimeBlocks(withIfBlocks);
 
   return withDatetimeBlocks.replace(
     PLACEHOLDER_REGEX,
