@@ -369,7 +369,6 @@ function PureArtifact({
                     input={input}
                     messages={messages}
                     selectedModelId={selectedModelId}
-                    selectedVisibilityType={selectedVisibilityType}
                     sendMessage={sendMessage}
                     setAttachments={setAttachments}
                     setInput={setInput}

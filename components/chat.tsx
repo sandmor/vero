@@ -472,7 +472,6 @@ export function Chat({
             messages={messages}
             onModelChange={preferences.handleModelChange}
             selectedModelId={preferences.currentModelId}
-            selectedVisibilityType={visibilityType}
             sendMessage={sendMessage}
             setAttachments={setAttachments}
             setInput={setInput}
