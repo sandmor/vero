@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -56,6 +57,10 @@ export type MultiSelectionResult<T extends string> = {
   handleTouchMove: (event: ReactTouchEvent<HTMLElement>) => boolean;
   /** Handles touch end/cancel events; returns true when long press was canceled. */
   handleTouchEnd: () => boolean;
+  /** Returns the latest ordered selection. */
+  getSelectedIds: () => T[];
+  /** Removes all provided identifiers from the selection. */
+  removeFromSelection: (ids: Iterable<T>) => void;
 };
 
 export function useMultiSelection<T extends string>(
@@ -215,6 +220,47 @@ export function useMultiSelection<T extends string>(
 
   const selectedIds = useMemo(() => Array.from(selectedSet), [selectedSet]);
   const selectedCount = selectedIds.length;
+  const selectedIdsRef = useRef(selectedIds);
+
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
+
+  const getSelectedIds = useCallback(() => {
+    return selectedIdsRef.current.slice();
+  }, []);
+
+  const removeFromSelection = useCallback((ids: Iterable<T>) => {
+    const toRemove = Array.isArray(ids) ? ids : Array.from(ids);
+    if (toRemove.length === 0) {
+      return;
+    }
+
+    setSelectedSet((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+
+      const next = new Set(prev);
+      let changed = false;
+      for (const id of toRemove) {
+        if (next.delete(id)) {
+          changed = true;
+        }
+      }
+
+      if (!changed) {
+        return prev;
+      }
+
+      if (next.size === 0) {
+        setIsSelectionMode(false);
+        lastSelectedRef.current = null;
+      }
+
+      return next;
+    });
+  }, []);
 
   return {
     isSelectionMode,
@@ -233,5 +279,7 @@ export function useMultiSelection<T extends string>(
     handleTouchStart,
     handleTouchMove,
     handleTouchEnd,
+    getSelectedIds,
+    removeFromSelection,
   };
 }

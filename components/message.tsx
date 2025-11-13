@@ -1,7 +1,7 @@
 'use client';
 import equal from 'fast-deep-equal';
 import { motion } from 'framer-motion';
-import { Fragment, memo, useState } from 'react';
+import { Fragment, memo, useCallback, useState } from 'react';
 import type { ChatMessage } from '@/lib/types';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { cn, sanitizeText } from '@/lib/utils';
@@ -56,7 +56,7 @@ const PurePreviewMessage = ({
     mode: MessageDeletionMode
   ) => Promise<{ chatDeleted: boolean }>;
   onToggleSelectMessage?: (messageId: string) => void;
-  onNavigate?: (direction: 'next' | 'prev') => void;
+  onNavigate?: (messageId: string, direction: 'next' | 'prev') => void;
   isSelected?: boolean;
   isSelectionMode?: boolean;
   onForkMessage?: (messageId: string) => void;
@@ -83,11 +83,17 @@ const PurePreviewMessage = ({
   const inlineReasoningTrimmed = inlineReasoningText.trim();
   const hasInlineReasoning = inlineReasoningTrimmed.length > 0;
   const shouldShowPlaceholder = mode === 'view' && !hasVisibleContent;
+  const handleNavigate = useCallback(
+    (direction: 'next' | 'prev') => {
+      onNavigate?.(message.id, direction);
+    },
+    [message.id, onNavigate]
+  );
   const siblingsPicker =
     message.metadata?.siblingsCount && message.metadata.siblingsCount > 1 ? (
       <MessageVersionPicker
         activeIndex={message.metadata.siblingIndex}
-        onNavigate={onNavigate}
+        onNavigate={handleNavigate}
         total={message.metadata.siblingsCount}
       />
     ) : null;

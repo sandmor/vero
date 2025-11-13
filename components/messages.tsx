@@ -1,6 +1,6 @@
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { ArrowDownIcon } from 'lucide-react';
-import { useEffect } from 'react';
+import { memo, useEffect } from 'react';
 import { useMessages } from '@/hooks/use-messages';
 import type { ChatMessage } from '@/lib/types';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
@@ -30,7 +30,7 @@ type MessagesProps = {
   allowedModels?: import('@/lib/ai/models').ChatModelOption[];
 };
 
-export function Messages({
+function MessagesComponent({
   chatId,
   status,
   messages,
@@ -97,7 +97,7 @@ export function Messages({
               isSelected={selectedMessageIds.has(message.id)}
               isSelectionMode={isSelectionMode}
               onRegenerateAssistant={onRegenerateAssistant}
-              onNavigate={(direction) => onNavigate?.(message.id, direction)}
+              onNavigate={onNavigate}
               onForkMessage={onForkMessage}
               onEditMessage={onEditMessage}
               disableRegenerate={disableRegenerate}
@@ -129,3 +129,27 @@ export function Messages({
     </div>
   );
 }
+
+const areMessagesPropsEqual = (prev: MessagesProps, next: MessagesProps) => {
+  if (prev.chatId !== next.chatId) return false;
+  if (prev.status !== next.status) return false;
+  if (prev.isReadonly !== next.isReadonly) return false;
+  if (prev.isArtifactVisible !== next.isArtifactVisible) return false;
+  if (prev.selectedModelId !== next.selectedModelId) return false;
+  if (prev.disableRegenerate !== next.disableRegenerate) return false;
+  if (prev.messages !== next.messages) return false;
+  if (prev.selectedMessageIds !== next.selectedMessageIds) return false;
+  if (prev.isSelectionMode !== next.isSelectionMode) return false;
+  if (prev.onDeleteMessage !== next.onDeleteMessage) return false;
+  if (prev.onToggleSelectMessage !== next.onToggleSelectMessage) return false;
+  if (prev.onRegenerateAssistant !== next.onRegenerateAssistant) return false;
+  if (prev.onNavigate !== next.onNavigate) return false;
+  if (prev.onForkMessage !== next.onForkMessage) return false;
+  if (prev.onEditMessage !== next.onEditMessage) return false;
+  if (prev.allowedModels !== next.allowedModels) return false;
+  return true;
+};
+
+export const Messages = memo(MessagesComponent, areMessagesPropsEqual);
+
+Messages.displayName = 'Messages';

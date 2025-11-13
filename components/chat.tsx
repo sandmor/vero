@@ -149,6 +149,12 @@ export function Chat({
     [selectedIds]
   );
 
+  const getSelectedIds = useCallback(() => selectedIds, [selectedIds]);
+
+  const clearSelection = useCallback(() => {
+    stopSelectionMode();
+  }, [stopSelectionMode]);
+
   const removeFromSelection = useCallback(
     (ids: string[]) => {
       if (!ids.length) return;
@@ -158,11 +164,15 @@ export function Chat({
     [selectedIds, setSelection]
   );
 
-  const getSelectedIds = useCallback(() => selectedIds, [selectedIds]);
-
-  const clearSelection = useCallback(() => {
-    stopSelectionMode();
-  }, [stopSelectionMode]);
+  const selectionApi = useMemo(
+    () => ({
+      getSelectedIds,
+      removeFromSelection,
+      clearSelection,
+      setSelection,
+    }),
+    [getSelectedIds, removeFromSelection, clearSelection, setSelection]
+  );
 
   const {
     messages,
@@ -191,12 +201,7 @@ export function Chat({
     preferences,
     setUsage,
     setDataStream,
-    selection: {
-      getSelectedIds,
-      removeFromSelection,
-      clearSelection,
-      setSelection: (ids) => setSelection(ids),
-    },
+    selection: selectionApi,
   });
 
   const handleBulkDialogToggle = useCallback(
