@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Wand2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AnimatedButtonLabel } from '@/components/ui/animated-button';
@@ -29,6 +29,10 @@ export function ChatRenameDialog({
   const [title, setTitle] = useState(chat.title);
   const [saveFeedback, setSaveFeedback] = useFeedbackState();
   const [generateFeedback, setGenerateFeedback] = useFeedbackState();
+
+  useEffect(() => {
+    setTitle(chat.title);
+  }, [chat.title]);
 
   const handleGenerateTitle = async () => {
     setGenerateFeedback('loading');

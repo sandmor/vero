@@ -304,5 +304,8 @@ export const ChatItem = memo(PureChatItem, (prevProps, nextProps) => {
   ) {
     return false;
   }
+  if (prevProps.chat.title !== nextProps.chat.title) {
+    return false;
+  }
   return true;
 });
