@@ -27,8 +27,8 @@ export function useReactQueryWithCache<T = any>({
   queryFn,
   enabled = true,
   staleTime = 5 * 60 * 1000, // 5 minutes default
-  refetchOnWindowFocus = true,
-  refetchOnReconnect = true,
+  refetchOnWindowFocus = false,
+  refetchOnReconnect = false,
   refetchInterval = false,
   onSuccess,
   onError,
@@ -70,8 +70,11 @@ export function useReactQueryWithCache<T = any>({
 
     verificationPromiseRef.current = (async () => {
       try {
-        // Fetch fresh data from server
-        const freshData = await queryFn();
+        // Fetch fresh data from server while sharing state with React Query
+        const freshData = await queryClient.fetchQuery({
+          queryKey,
+          queryFn,
+        });
 
         // Compare cached and fresh data
         let isCacheValid = true;
@@ -92,9 +95,6 @@ export function useReactQueryWithCache<T = any>({
           console.info(
             `Cache verification failed for chat ${chatId}, updating cache`
           );
-
-          // Update React Query cache
-          queryClient.setQueryData(queryKey, freshData);
 
           // Update encrypted cache if it's a chat bootstrap response with existing chat
           if (

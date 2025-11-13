@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chat } from '@/components/chat';
 import { SetLastChatUrl } from '@/components/set-last-chat-url';
 import { toast } from '@/components/toast';
@@ -10,6 +10,8 @@ import type {
 } from '@/types/chat-bootstrap';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { useReactQueryWithCache } from '@/hooks/use-react-query-with-cache';
+import equal from 'fast-deep-equal';
+import { ChatLoadingSkeleton } from '@/components/chat/chat-loading-skeleton';
 
 async function fetchChatBootstrap(
   chatId?: string
@@ -41,7 +43,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   const hasRequestedSyncRef = useRef(false);
   const cachedBootstrap = chatId ? getCachedBootstrap(chatId) : undefined;
 
-  const { data, isFetching, error } =
+  const { data: queryData, error } =
     useReactQueryWithCache<ChatBootstrapResponse>({
       queryKey: chatId
         ? ['chat', 'bootstrap', chatId]
@@ -60,19 +62,15 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
       },
     });
 
+  const stableBootstrap = useStableBootstrap({
+    chatId,
+    queryData,
+    cachedBootstrap,
+  });
+
   useEffect(() => {
     hasRequestedSyncRef.current = false;
   }, [chatId]);
-
-  // Show loading toast when fetching data
-  useEffect(() => {
-    if (isFetching && !data) {
-      toast({
-        type: 'info',
-        description: 'Loading chat...',
-      });
-    }
-  }, [isFetching, data]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -87,7 +85,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   }, [chatId, cachedBootstrap, isCacheReady, refreshCache]);
 
   // Show error state if there's an error
-  if (error && !data) {
+  if (error && !stableBootstrap) {
     return (
       <div className="flex h-dvh items-center justify-center bg-background">
         <span className="text-sm text-red-500">
@@ -97,45 +95,132 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     );
   }
 
-  // Return null if no data (shouldn't happen with proper fallbacks)
-  if (!data) {
-    return null;
+  if (!stableBootstrap) {
+    return <ChatLoadingSkeleton />;
   }
 
   const initialBranchState: BranchSelectionSnapshot =
-    data.kind === 'existing'
-      ? data.initialBranchState
-      : (data.initialBranchState ?? { rootMessageIndex: null });
+    stableBootstrap.kind === 'existing'
+      ? stableBootstrap.initialBranchState
+      : (stableBootstrap.initialBranchState ?? { rootMessageIndex: null });
 
-  const commonProps = {
-    id: data.chatId,
-    initialChatModel: data.initialChatModel,
-    initialVisibilityType: data.initialVisibilityType,
-    isReadonly: data.isReadonly,
-    autoResume: data.autoResume,
-    allowedModels: data.allowedModels,
-    initialSettings: data.initialSettings ?? null,
-    initialAgent: data.initialAgent ?? null,
-    initialMessages: data.initialMessages ?? [],
-    initialBranchState,
-  } as const;
+  const commonProps = useMemo(
+    () =>
+      ({
+        id: stableBootstrap.chatId,
+        initialChatModel: stableBootstrap.initialChatModel,
+        initialVisibilityType: stableBootstrap.initialVisibilityType,
+        isReadonly: stableBootstrap.isReadonly,
+        autoResume: stableBootstrap.autoResume,
+        allowedModels: stableBootstrap.allowedModels,
+        initialSettings: stableBootstrap.initialSettings ?? null,
+        initialAgent: stableBootstrap.initialAgent ?? null,
+        initialMessages: stableBootstrap.initialMessages ?? [],
+        initialBranchState,
+      }) as const,
+    [initialBranchState, stableBootstrap]
+  );
 
   const chatElement =
-    data.kind === 'existing' ? (
+    stableBootstrap.kind === 'existing' ? (
       <Chat
-        key={data.chatId}
+        key={stableBootstrap.chatId}
         {...commonProps}
-        agentId={data.agentId ?? undefined}
-        initialLastContext={data.initialLastContext ?? undefined}
+        agentId={stableBootstrap.agentId ?? undefined}
+        initialLastContext={stableBootstrap.initialLastContext ?? undefined}
       />
     ) : (
-      <Chat key={data.chatId} {...commonProps} />
+      <Chat key={stableBootstrap.chatId} {...commonProps} />
     );
 
   return (
     <>
-      {data.shouldSetLastChatUrl ? <SetLastChatUrl /> : null}
+      {stableBootstrap.shouldSetLastChatUrl ? <SetLastChatUrl /> : null}
       {chatElement}
     </>
   );
+}
+
+type StableBootstrapParams = {
+  chatId?: string;
+  queryData?: ChatBootstrapResponse;
+  cachedBootstrap?: ChatBootstrapResponse;
+};
+
+function useStableBootstrap({
+  chatId,
+  queryData,
+  cachedBootstrap,
+}: StableBootstrapParams) {
+  const cachedForChat = useMemo(() => {
+    if (!cachedBootstrap) return undefined;
+    if (chatId && cachedBootstrap.chatId !== chatId) {
+      return undefined;
+    }
+    return cachedBootstrap;
+  }, [cachedBootstrap, chatId]);
+
+  const [bootstrap, setBootstrap] = useState<ChatBootstrapResponse | null>(
+    () => queryData ?? cachedForChat ?? null
+  );
+
+  const previousChatIdRef = useRef<string | undefined>(chatId);
+
+  useEffect(() => {
+    if (!queryData) {
+      return;
+    }
+
+    setBootstrap((current) => {
+      if (!current) {
+        return queryData;
+      }
+
+      if (current.chatId !== queryData.chatId) {
+        return queryData;
+      }
+
+      if (!equal(current, queryData)) {
+        return queryData;
+      }
+
+      return current;
+    });
+  }, [queryData]);
+
+  useEffect(() => {
+    if (bootstrap || !cachedForChat) {
+      return;
+    }
+
+    setBootstrap(cachedForChat);
+  }, [bootstrap, cachedForChat]);
+
+  useEffect(() => {
+    if (previousChatIdRef.current === chatId) {
+      return;
+    }
+
+    previousChatIdRef.current = chatId;
+
+    if (!chatId) {
+      setBootstrap(queryData ?? cachedForChat ?? null);
+      return;
+    }
+
+    setBootstrap((current) => {
+      if (current && current.chatId === chatId) {
+        return current;
+      }
+      if (queryData && queryData.chatId === chatId) {
+        return queryData;
+      }
+      if (cachedForChat && cachedForChat.chatId === chatId) {
+        return cachedForChat;
+      }
+      return null;
+    });
+  }, [cachedForChat, chatId, queryData]);
+
+  return bootstrap;
 }
