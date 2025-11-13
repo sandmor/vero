@@ -493,6 +493,9 @@ export async function POST(request: Request) {
     // Regeneration replays an existing user turn; avoid duplicating it in persistence.
     let finalMergedUsage: AppUsage | undefined;
 
+    const streamContext = getStreamContext();
+    const streamId = streamContext ? generateUUID() : undefined;
+
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
         // Immediately send init event to flush headers early
@@ -501,10 +504,12 @@ export async function POST(request: Request) {
           data: { chatId: id, createdNewChat },
         });
         // Kick off context gathering in parallel while we prepare persistence.
-        const streamId = generateUUID();
-        const streamIdPromise = createStreamId({ streamId, chatId: id }).catch(
-          (e) => console.warn('Failed to persist stream id (non-fatal)', e)
-        );
+        const streamIdPromise =
+          streamId && streamContext
+            ? createStreamId({ streamId, chatId: id }).catch((e) =>
+                console.warn('Failed to persist stream id (non-fatal)', e)
+              )
+            : Promise.resolve<void>(undefined);
 
         const [
           messagesFromDb,
@@ -916,23 +921,33 @@ export async function POST(request: Request) {
       },
     });
 
-    // const streamContext = getStreamContext();
+    const sseHeaders: Record<string, string> = {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no',
+      Connection: 'keep-alive',
+    };
 
-    // if (streamContext) {
-    //   return new Response(
-    //     await streamContext.resumableStream(streamId, () =>
-    //       stream.pipeThrough(new JsonToSseTransformStream())
-    //     )
-    //   );
-    // }
+    if (streamContext && streamId) {
+      try {
+        const resumable = await streamContext.resumableStream(streamId, () =>
+          stream.pipeThrough(new JsonToSseTransformStream())
+        );
+
+        if (resumable) {
+          return new Response(resumable, { headers: sseHeaders });
+        }
+      } catch (error) {
+        console.warn('Resumable stream fallback triggered', {
+          chatId: id,
+          streamId,
+          error,
+        });
+      }
+    }
 
     return new Response(stream.pipeThrough(new JsonToSseTransformStream()), {
-      headers: {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-store',
-        'X-Accel-Buffering': 'no',
-        Connection: 'keep-alive',
-      },
+      headers: sseHeaders,
     });
   } catch (error) {
     const vercelId = request.headers.get('x-vercel-id');
