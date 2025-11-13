@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ChatModelOption } from '@/lib/ai/models';
 
 export type UserApiKeyWithModels = {
@@ -52,51 +52,59 @@ export function useUserApiKeys() {
    * BYOK is optional - only used when specific models are selected.
    * If no models selected for a provider's BYOK, global key is used instead.
    */
-  const getApiKeyUsageForModel = (modelId: string) => {
-    const [provider] = modelId.split(':');
-    const userKey = userApiKeys.find((key) => key.providerId === provider);
+  const getApiKeyUsageForModel = useCallback(
+    (modelId: string) => {
+      const [provider] = modelId.split(':');
+      const userKey = userApiKeys.find((key) => key.providerId === provider);
 
-    if (!userKey || !userKey.apiKey) {
+      if (!userKey || !userKey.apiKey) {
+        return { willUseUserKey: false };
+      }
+
+      if (userKey.selectedModelIds.length > 0) {
+        const isModelSelected = userKey.selectedModelIds.includes(modelId);
+        return {
+          willUseUserKey: isModelSelected,
+          providerId: provider,
+        };
+      }
+
+      // If user has a key but did not opt into model-level BYOK, fallback to app key.
       return { willUseUserKey: false };
-    }
-
-    // If user has selected specific models, check if this model is included
-    if (userKey.selectedModelIds.length > 0) {
-      const isModelSelected = userKey.selectedModelIds.includes(modelId);
-      return {
-        willUseUserKey: isModelSelected,
-        providerId: provider,
-      };
-    }
-
-    // If user has key but no specific model selection, do not use BYOK (use global key)
-    return { willUseUserKey: false };
-  };
+    },
+    [userApiKeys]
+  );
 
   /**
    * Check if a provider has user key configured
    */
-  const hasUserKeyForProvider = (providerId: string) => {
-    return userApiKeys.some(
-      (key) => key.providerId === providerId && key.apiKey
-    );
-  };
+  const hasUserKeyForProvider = useCallback(
+    (providerId: string) => {
+      return userApiKeys.some(
+        (key) => key.providerId === providerId && key.apiKey
+      );
+    },
+    [userApiKeys]
+  );
 
   /**
    * Get all models that will use user keys
    */
-  const getModelsUsingUserKeys = (availableModels: ChatModelOption[]) => {
-    const modelsUsingUserKeys: string[] = [];
+  const getModelsUsingUserKeys = useCallback(
+    (availableModels: ChatModelOption[]) => {
+      const modelsUsingUserKeys: string[] = [];
 
-    for (const model of availableModels) {
-      const usage = getApiKeyUsageForModel(model.id);
-      if (usage.willUseUserKey) {
-        modelsUsingUserKeys.push(model.id);
+      for (const model of availableModels) {
+        const usage = getApiKeyUsageForModel(model.id);
+        if (usage.willUseUserKey) {
+          modelsUsingUserKeys.push(model.id);
+        }
       }
-    }
 
-    return modelsUsingUserKeys;
-  };
+      return modelsUsingUserKeys;
+    },
+    [getApiKeyUsageForModel]
+  );
 
   return {
     userApiKeys,

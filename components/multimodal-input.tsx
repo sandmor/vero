@@ -102,6 +102,30 @@ function PureMultimodalInput({
   const { width } = useWindowSize();
   const { getApiKeyUsageForModel } = useUserApiKeys();
 
+  const modelChangeRef = useRef(onModelChange);
+  useEffect(() => {
+    modelChangeRef.current = onModelChange;
+  }, [onModelChange]);
+
+  const stableModelChange = useCallback((modelId: string) => {
+    return modelChangeRef.current?.(modelId);
+  }, []);
+
+  const reasoningEffortChangeRef = useRef(onReasoningEffortChange);
+  useEffect(() => {
+    reasoningEffortChangeRef.current = onReasoningEffortChange;
+  }, [onReasoningEffortChange]);
+
+  const stableReasoningChange = useCallback(
+    (
+      effort: 'low' | 'medium' | 'high',
+      options?: { userInitiated?: boolean }
+    ) => {
+      return reasoningEffortChangeRef.current?.(effort, options);
+    },
+    []
+  );
+
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -414,14 +438,14 @@ function PureMultimodalInput({
             <ModelSelectorCompact
               allowedModels={allowedModels}
               chatHasAttachments={chatHasAttachments}
-              onModelChange={onModelChange}
+              onModelChange={stableModelChange}
               selectedModelId={selectedModelId}
               getApiKeyUsageForModel={getApiKeyUsageForModel}
             />
             {onReasoningEffortChange && (
               <ReasoningEffortSelector
                 selectedEffort={reasoningEffort}
-                onSelectEffort={onReasoningEffortChange}
+                onSelectEffort={stableReasoningChange}
                 chatHasStarted={messages.length > 0}
               />
             )}
