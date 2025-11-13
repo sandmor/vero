@@ -51,8 +51,8 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
       queryFn: () => fetchChatBootstrap(chatId),
       chatId,
       enabled: true,
-      staleTime: 0, // Always check for fresh data
-      verifyCache: true,
+      staleTime: chatId ? 0 : 30_000, // Avoid duplicate new-chat fetches while still refreshing existing chats instantly
+      verifyCache: !!chatId,
       onError: (err) => {
         console.error('Failed to load chat bootstrap data:', err);
         toast({
@@ -96,7 +96,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   }
 
   if (!stableBootstrap) {
-    return <ChatLoadingSkeleton />;
+    return <ChatLoadingSkeleton variant={chatId ? 'existing' : 'new'} />;
   }
 
   const initialBranchState: BranchSelectionSnapshot =

@@ -71,10 +71,11 @@ export const regularPrompt =
 const formattingPrompt = `
 Formatting expectations
 - Render math with KaTeX syntax: inline $...$, block $$...$$
+- Never write formulas or math outside the appropriate KaTeX delimiters; every mathematical expression must be wrapped in inline $...$ or block $$...$$
 - If using diagrams, use Markdown code fences labelled \`\`\`mermaid
 - Prefer clear headings, tight prose, and cite tools or artifacts when you use them
 - Use markdown lists to present items.
-- Always wrap code in markdown's code blocks.
+- Always wrap code in markdown's fenced code blocks with a language label (even short snippets or shell commands); never place code inline in prose.
 `;
 
 const runCodePrompt = RUN_CODE_TOOL_PROMPT;

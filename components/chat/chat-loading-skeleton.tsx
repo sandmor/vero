@@ -1,7 +1,17 @@
 import { Skeleton } from '@/components/ui/skeleton';
 
+type ChatLoadingSkeletonProps = {
+  variant?: 'existing' | 'new';
+};
+
 // Visual placeholder that mirrors the live chat layout while data is loading.
-export function ChatLoadingSkeleton() {
+export function ChatLoadingSkeleton({
+  variant = 'existing',
+}: ChatLoadingSkeletonProps) {
+  if (variant === 'new') {
+    return <NewChatSkeleton />;
+  }
+
   return (
     <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
       <HeaderSkeleton />
@@ -9,6 +19,28 @@ export function ChatLoadingSkeleton() {
       <div className="overscroll-behavior-contain -webkit-overflow-scrolling-touch flex-1 touch-pan-y overflow-y-scroll">
         <div className="mx-auto flex min-w-0 max-w-4xl flex-col gap-4 px-2 py-4 md:gap-6 md:px-4">
           <ThreadSkeleton />
+        </div>
+      </div>
+
+      <ComposerSkeleton />
+    </div>
+  );
+}
+
+function NewChatSkeleton() {
+  return (
+    <div className="overscroll-behavior-contain flex h-dvh min-w-0 touch-pan-y flex-col bg-background">
+      <HeaderSkeleton />
+
+      <div className="overscroll-behavior-contain -webkit-overflow-scrolling-touch flex-1 touch-pan-y overflow-y-scroll">
+        <div className="mx-auto flex min-w-0 max-w-4xl flex-1 flex-col gap-4 px-2 py-6 md:gap-6 md:px-4">
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-4 md:px-8">
+            <div className="space-y-4 md:space-y-5">
+              <Skeleton className="h-7 w-40 rounded-lg md:h-8 md:w-52" />
+              <Skeleton className="h-4 w-64 rounded-lg md:h-5 md:w-80" />
+              <Skeleton className="h-4 w-52 rounded-lg md:h-5 md:w-64" />
+            </div>
+          </div>
         </div>
       </div>
 

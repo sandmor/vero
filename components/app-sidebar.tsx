@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { CheckSquare, Plus } from 'lucide-react';
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
@@ -17,11 +16,12 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { useMultiSelection } from '@/hooks/use-multi-selection';
 import { useAppSession } from '@/hooks/use-app-session';
+import { useNewChatNavigation } from '@/hooks/use-new-chat-navigation';
 
 export function AppSidebar() {
-  const router = useRouter();
   const { setOpenMobile } = useSidebar();
   const { data, isLoading, isError, status: queryStatus } = useAppSession();
+  const { startNewChat, isNavigating } = useNewChatNavigation();
 
   let sessionStatus: 'loading' | 'authenticated' | 'unauthenticated';
   if (queryStatus === 'pending') {
@@ -91,17 +91,22 @@ export function AppSidebar() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    className="h-8 p-1 md:h-fit md:p-2"
+                    aria-busy={isNavigating || undefined}
+                    className={`h-8 transform p-1 transition-transform duration-150 md:h-fit md:p-2 ${isNavigating ? 'scale-95' : ''}`}
                     data-testid="sidebar-new-chat-button"
+                    disabled={isNavigating}
                     onClick={() => {
+                      if (isNavigating) return;
                       setOpenMobile(false);
-                      router.push('/');
-                      router.refresh();
+                      startNewChat();
                     }}
                     type="button"
                     variant="ghost"
                   >
-                    <Plus size={16} />
+                    <Plus
+                      size={16}
+                      className={`transition-transform duration-200 ${isNavigating ? 'scale-90 opacity-80' : ''}`}
+                    />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent align="end" className="hidden md:block">

@@ -5,7 +5,7 @@ import { ChatLoadingSkeleton } from '@/components/chat/chat-loading-skeleton';
 
 export const dynamic = 'force-static';
 
-const ChatFallback = () => <ChatLoadingSkeleton />;
+const ChatFallback = () => <ChatLoadingSkeleton variant="new" />;
 
 export default function Page() {
   return (

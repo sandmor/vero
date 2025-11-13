@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { memo } from 'react';
 import { useWindowSize } from 'usehooks-ts';
 import { SidebarToggle } from '@/components/sidebar-toggle';
@@ -15,6 +14,7 @@ import { motion } from 'framer-motion';
 import type { ChatModelCapabilitiesSummary } from '@/lib/ai/models';
 import type { ChatToolId } from '@/lib/ai/tool-ids';
 import type { AgentPreset } from '@/types/agent';
+import { useNewChatNavigation } from '@/hooks/use-new-chat-navigation';
 
 function PureChatHeader({
   chatId,
@@ -50,10 +50,10 @@ function PureChatHeader({
   selectedModelId?: string;
   selectedModelCapabilities?: ChatModelCapabilitiesSummary | null;
 }) {
-  const router = useRouter();
   const { open } = useSidebar();
 
   const { width: windowWidth } = useWindowSize();
+  const { startNewChat, isNavigating } = useNewChatNavigation();
 
   return (
     <motion.header
@@ -66,14 +66,19 @@ function PureChatHeader({
 
       {(!open || windowWidth < 768) && (
         <Button
-          className="order-2 ml-auto h-8 px-2 md:order-1 md:ml-0 md:h-fit md:px-2"
+          aria-busy={isNavigating || undefined}
+          className={`order-2 ml-auto h-8 px-2 transform transition-transform duration-150 md:order-1 md:ml-0 md:h-fit md:px-2 ${isNavigating ? 'scale-95' : ''}`}
+          disabled={isNavigating}
           onClick={() => {
-            router.push('/');
-            router.refresh();
+            if (isNavigating) return;
+            startNewChat();
           }}
           variant="outline"
         >
-          <Plus size={16} />
+          <Plus
+            size={16}
+            className={`transition-transform duration-200 ${isNavigating ? 'scale-90 opacity-80' : ''}`}
+          />
           <span className="sr-only md:not-sr-only md:ml-2">New Chat</span>
         </Button>
       )}
