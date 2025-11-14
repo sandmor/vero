@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { connection } from 'next/server';
 import { useEffect, useState } from 'react';
 import { useSignIn } from '@clerk/nextjs';
 import { AuthForm } from '@/components/auth-form';
@@ -13,7 +14,8 @@ import {
   sanitizeRedirectPath,
 } from '@/lib/auth/redirects';
 
-export default function Page() {
+export default async function Page() {
+  await connection();
   const router = useRouter();
   const searchParams = useSearchParams();
 
