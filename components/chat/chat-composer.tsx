@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Chat } from '@/components/chat';
 import { SetLastChatUrl } from '@/components/set-last-chat-url';
 import { toast } from '@/components/toast';
@@ -12,6 +13,8 @@ import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { useReactQueryWithCache } from '@/hooks/use-react-query-with-cache';
 import equal from 'fast-deep-equal';
 import { ChatLoadingSkeleton } from '@/components/chat/chat-loading-skeleton';
+import { useAppSession } from '@/hooks/use-app-session';
+import { buildLoginRedirectUrl } from '@/lib/auth/redirects';
 
 async function fetchChatBootstrap(
   chatId?: string
@@ -35,6 +38,7 @@ async function fetchChatBootstrap(
 }
 
 export function ChatComposer({ chatId }: { chatId?: string }) {
+  const router = useRouter();
   const {
     getCachedBootstrap,
     refreshCache,
@@ -42,6 +46,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   } = useEncryptedCache();
   const hasRequestedSyncRef = useRef(false);
   const cachedBootstrap = chatId ? getCachedBootstrap(chatId) : undefined;
+  const { data: sessionData, status: sessionStatus } = useAppSession();
 
   const { data: queryData, error } =
     useReactQueryWithCache<ChatBootstrapResponse>({
@@ -61,6 +66,21 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
         });
       },
     });
+
+  useEffect(() => {
+    if (!chatId) return;
+    if (!error) return;
+    const status = (error as Error & { status?: number })?.status;
+    if (!status || (status !== 404 && status !== 401)) return;
+    if (sessionStatus !== 'success') return;
+    const userType = sessionData?.session?.user?.type;
+    if (userType === 'regular') return;
+
+    const loginUrl = buildLoginRedirectUrl(
+      `/chat/${encodeURIComponent(chatId)}`
+    );
+    router.replace(loginUrl);
+  }, [chatId, error, router, sessionData, sessionStatus]);
 
   const stableBootstrap = useStableBootstrap({
     chatId,

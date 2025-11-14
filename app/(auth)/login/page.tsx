@@ -1,28 +1,37 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useSignIn } from '@clerk/nextjs';
 import { AuthForm } from '@/components/auth-form';
 import { SubmitButton } from '@/components/submit-button';
 import { toast } from '@/components/toast';
 import { SocialAuthButtons } from '@/components/social-auth-buttons';
+import {
+  LOGIN_REDIRECT_QUERY_KEY,
+  sanitizeRedirectPath,
+} from '@/lib/auth/redirects';
 
 export default function Page() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState('');
   const [isSuccessful, setIsSuccessful] = useState(false);
 
   const { isLoaded, signIn, setActive } = useSignIn();
 
+  const redirectTarget = sanitizeRedirectPath(
+    searchParams.get(LOGIN_REDIRECT_QUERY_KEY)
+  );
+
   useEffect(() => {
     if (isSuccessful) {
-      const timeout = setTimeout(() => router.push('/'), 300);
+      const timeout = setTimeout(() => router.push(redirectTarget), 300);
       return () => clearTimeout(timeout);
     }
-  }, [isSuccessful, router]);
+  }, [isSuccessful, redirectTarget, router]);
 
   const handleSubmit = async (formData: FormData) => {
     if (!isLoaded) return;
@@ -67,7 +76,10 @@ export default function Page() {
             {isLoaded ? 'Sign in' : 'Loading'}
           </SubmitButton>
           <SocialAuthDivider />
-          <SocialAuthButtons mode="sign-in" />
+          <SocialAuthButtons
+            mode="sign-in"
+            redirectUrlComplete={redirectTarget}
+          />
           <p className="mt-4 text-center text-gray-600 text-sm dark:text-zinc-400">
             {"Don't have an account? "}
             <Link
