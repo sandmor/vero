@@ -55,12 +55,49 @@ type BranchSelectionOperation =
   | { kind: 'root'; rootMessageIndex: number | null }
   | { kind: 'child'; parentId: string; selectedChildIndex: number | null };
 
-type SelectionUpdateState = {
+export type SelectionUpdateState = {
   id: symbol;
   operation: BranchSelectionOperation;
   status: 'pending' | 'success' | 'error';
   promise: Promise<void>;
   error: unknown;
+};
+
+type SelectionUpdateRef = {
+  current: SelectionUpdateState | null;
+};
+
+export const drainSelectionUpdateRef = (
+  ref: SelectionUpdateRef
+): Promise<void> | null => {
+  const attempt = ref.current;
+  if (!attempt) {
+    return null;
+  }
+
+  if (attempt.status === 'pending') {
+    return attempt.promise.then(() => {
+      const followUp = drainSelectionUpdateRef(ref);
+      if (followUp) {
+        return followUp;
+      }
+    });
+  }
+
+  if (attempt.status === 'error') {
+    const error =
+      attempt.error instanceof Error
+        ? attempt.error
+        : new Error('Failed to switch message version.');
+    ref.current = null;
+    return Promise.reject(error);
+  }
+
+  if (ref.current === attempt) {
+    ref.current = null;
+  }
+
+  return drainSelectionUpdateRef(ref);
 };
 
 export type TreeUpdateDeferOptions = {
@@ -814,30 +851,6 @@ export function useChatMessaging({
     [chatId, isReadonly, queryClient, router]
   );
 
-  const handleRegenerateAssistant = useCallback(
-    (assistantMessageId: string) => {
-      if (status === 'submitted' || status === 'streaming') {
-        return;
-      }
-      if (pendingRegenerationId) {
-        return;
-      }
-      setPendingRegenerationId(assistantMessageId);
-      toast({ type: 'success', description: 'Regenerating message…' });
-      try {
-        regenerate({ messageId: assistantMessageId });
-      } catch (error) {
-        console.error('Regenerate request failed', error);
-        toast({
-          type: 'error',
-          description: 'Failed to start regeneration.',
-        });
-        setPendingRegenerationId(null);
-      }
-    },
-    [pendingRegenerationId, regenerate, status]
-  );
-
   useEffect(() => {
     if (!pendingRegenerationId) {
       regenerationStartedRef.current = false;
@@ -894,36 +907,50 @@ export function useChatMessaging({
     status === 'streaming' ||
     pendingRegenerationId !== null;
 
-  const ensureBranchReady = useCallback((): Promise<void> | null => {
-    const attempt = selectionUpdateRef.current;
-    if (!attempt) {
-      return null;
-    }
+  const ensureBranchReady = useCallback(
+    (): Promise<void> | null => drainSelectionUpdateRef(selectionUpdateRef),
+    []
+  );
 
-    if (attempt.status === 'pending') {
-      return attempt.promise.then(() => {
-        const followUp = ensureBranchReady();
-        if (followUp) {
-          return followUp;
+  const handleRegenerateAssistant = useCallback(
+    async (assistantMessageId: string) => {
+      if (status === 'submitted' || status === 'streaming') {
+        return;
+      }
+      if (pendingRegenerationId) {
+        return;
+      }
+
+      const readiness = ensureBranchReady();
+      if (readiness) {
+        try {
+          await readiness;
+        } catch (error) {
+          console.warn('Regeneration blocked while switching branches', error);
+          toast({
+            type: 'error',
+            description:
+              'Unable to regenerate while switching versions. Please try again.',
+          });
+          return;
         }
-      });
-    }
+      }
 
-    if (attempt.status === 'error') {
-      const error =
-        attempt.error instanceof Error
-          ? attempt.error
-          : new Error('Failed to switch message version.');
-      selectionUpdateRef.current = null;
-      return Promise.reject(error);
-    }
-
-    if (selectionUpdateRef.current === attempt) {
-      selectionUpdateRef.current = null;
-    }
-
-    return ensureBranchReady();
-  }, []);
+      setPendingRegenerationId(assistantMessageId);
+      toast({ type: 'success', description: 'Regenerating message…' });
+      try {
+        regenerate({ messageId: assistantMessageId });
+      } catch (error) {
+        console.error('Regenerate request failed', error);
+        toast({
+          type: 'error',
+          description: 'Failed to start regeneration.',
+        });
+        setPendingRegenerationId(null);
+      }
+    },
+    [ensureBranchReady, pendingRegenerationId, regenerate, status]
+  );
 
   const sendMessageWithBranchGuard = useCallback<typeof sendMessage>(
     (payload) => {

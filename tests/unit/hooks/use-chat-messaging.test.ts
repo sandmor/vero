@@ -4,7 +4,9 @@ import {
   planBranchSwitch,
   computeBranchFromSelection,
   shouldDeferTreeUpdate,
+  drainSelectionUpdateRef,
 } from '@/components/chat/use-chat-messaging';
+import type { SelectionUpdateState } from '@/components/chat/use-chat-messaging';
 
 const createNode = ({
   id,
@@ -265,5 +267,97 @@ describe('shouldDeferTreeUpdate', () => {
         treeSelection: { rootMessageIndex: 0 },
       })
     ).toBe(false);
+  });
+
+  it('defers when a regeneration is pending even if status is ready', () => {
+    expect(
+      shouldDeferTreeUpdate({
+        chatStatus: 'ready',
+        pendingRegenerationId: 'assistant-123',
+        desiredSelection: null,
+        treeSelection: { rootMessageIndex: 0 },
+      })
+    ).toBe(true);
+  });
+});
+
+describe('drainSelectionUpdateRef', () => {
+  const operation: SelectionUpdateState['operation'] = {
+    kind: 'root',
+    rootMessageIndex: 0,
+  };
+
+  it('returns null when there is no pending attempt', () => {
+    const ref = { current: null };
+    expect(drainSelectionUpdateRef(ref)).toBeNull();
+  });
+
+  it('resolves after a pending attempt completes', async () => {
+    let resolvePromise: () => void;
+    const pendingPromise = new Promise<void>((resolve) => {
+      resolvePromise = resolve;
+    });
+
+    const attemptId = Symbol('pending');
+
+    const pendingState: SelectionUpdateState = {
+      id: attemptId,
+      operation,
+      status: 'pending',
+      promise: pendingPromise,
+      error: null,
+    };
+
+    const successState: SelectionUpdateState = {
+      id: attemptId,
+      operation,
+      status: 'success',
+      promise: Promise.resolve(),
+      error: null,
+    };
+
+    const ref = { current: pendingState };
+    pendingPromise.then(() => {
+      ref.current = successState;
+    });
+
+    const readiness = drainSelectionUpdateRef(ref);
+    expect(readiness).not.toBeNull();
+
+    resolvePromise!();
+    await readiness;
+
+    expect(ref.current).toBeNull();
+  });
+
+  it('propagates errors and clears the ref', async () => {
+    const failure = new Error('boom');
+    const ref = {
+      current: {
+        id: Symbol('error'),
+        operation,
+        status: 'error',
+        promise: Promise.resolve(),
+        error: failure,
+      } satisfies SelectionUpdateState,
+    };
+
+    await expect(drainSelectionUpdateRef(ref)).rejects.toThrow('boom');
+    expect(ref.current).toBeNull();
+  });
+
+  it('consumes completed attempts and returns null', () => {
+    const ref = {
+      current: {
+        id: Symbol('success'),
+        operation,
+        status: 'success',
+        promise: Promise.resolve(),
+        error: null,
+      } satisfies SelectionUpdateState,
+    };
+
+    expect(drainSelectionUpdateRef(ref)).toBeNull();
+    expect(ref.current).toBeNull();
   });
 });
