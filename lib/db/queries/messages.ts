@@ -364,6 +364,12 @@ export async function saveMessages({
           ON CONFLICT ("id") DO NOTHING
         `
       );
+
+      // Update Chat's updatedAt timestamp
+      await tx.chat.update({
+        where: { id: chatId },
+        data: { updatedAt: new Date() },
+      });
     });
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -750,7 +756,7 @@ export async function deleteMessageById({
       if (shouldClearRootSelection) {
         await tx.chat.update({
           where: { id: chatId },
-          data: { rootMessageIndex: null },
+          data: { rootMessageIndex: null, updatedAt: new Date() },
         });
       }
 
@@ -788,6 +794,12 @@ export async function deleteMessageById({
           }
         }
       }
+
+      // Update Chat's updatedAt timestamp
+      await tx.chat.update({
+        where: { id: chatId },
+        data: { updatedAt: new Date() },
+      });
 
       return { messageId, chatId, chatDeleted: false } as const;
     });
@@ -1033,7 +1045,7 @@ export async function deleteMessagesByIds({
       ) {
         await tx.chat.update({
           where: { id: chatId },
-          data: { rootMessageIndex: null },
+          data: { rootMessageIndex: null, updatedAt: new Date() },
         });
       }
 
@@ -1071,6 +1083,12 @@ export async function deleteMessagesByIds({
           }
         }
       }
+
+      // Update Chat's updatedAt timestamp
+      await tx.chat.update({
+        where: { id: chatId },
+        data: { updatedAt: new Date() },
+      });
 
       return { deleted: deletedCount, chatDeleted: false };
     });
@@ -1136,7 +1154,7 @@ export async function updateBranchSelectionByChatId({
 
         await tx.chat.update({
           where: { id: chatId },
-          data: { rootMessageIndex: requestedIndex },
+          data: { rootMessageIndex: requestedIndex, updatedAt: new Date() },
         });
 
         return { kind: 'root', rootMessageIndex: requestedIndex } as const;

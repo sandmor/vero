@@ -28,7 +28,15 @@ export async function saveChat({
 }) {
   try {
     await prisma.chat.create({
-      data: { id, createdAt: new Date(), userId, title, visibility, agentId },
+      data: {
+        id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        userId,
+        title,
+        visibility,
+        agentId,
+      },
     });
     return;
   } catch (_error) {
@@ -230,6 +238,7 @@ export async function searchChats({
       Array<{
         id: string;
         createdAt: Date;
+        updatedAt: Date;
         title: string;
         userId: string;
         visibility: string;
@@ -246,9 +255,10 @@ export async function searchChats({
       }>
     >`
       WITH chat_title_matches AS (
-        SELECT 
+        SELECT
           c.id,
           c."createdAt",
+          c."updatedAt",
           c.title,
           c."userId",
           c.visibility,
@@ -269,6 +279,7 @@ export async function searchChats({
         SELECT DISTINCT ON (c.id)
           c.id,
           c."createdAt",
+          c."updatedAt",
           c.title,
           c."userId",
           c.visibility,
@@ -315,7 +326,7 @@ export async function searchChats({
       ),
       unique_results AS (
         SELECT DISTINCT ON (id)
-          id, "createdAt", title, "userId", visibility, "lastContext",
+          id, "createdAt", "updatedAt", title, "userId", visibility, "lastContext",
           "parentChatId", "forkedFromMessageId", "forkDepth", settings, "agentId",
           "rootMessageIndex", "matchType", rank
         FROM combined_results
@@ -327,9 +338,10 @@ export async function searchChats({
       total_count AS (
         SELECT COUNT(*)::int AS total FROM unique_results
       )
-      SELECT 
+      SELECT
         ur.id,
         ur."createdAt",
+        ur."updatedAt",
         ur.title,
         ur."userId",
         ur.visibility,
@@ -355,9 +367,10 @@ export async function searchChats({
 
     const totalResult = await prisma.$queryRaw<Array<{ total: number }>>`
       WITH chat_title_matches AS (
-        SELECT 
+        SELECT
           c.id,
           c."createdAt",
+          c."updatedAt",
           c.title,
           c."userId",
           c.visibility,
@@ -378,6 +391,7 @@ export async function searchChats({
         SELECT DISTINCT ON (c.id)
           c.id,
           c."createdAt",
+          c."updatedAt",
           c.title,
           c."userId",
           c.visibility,
@@ -439,6 +453,7 @@ export async function searchChats({
     const chats: Chat[] = results.map((result) => ({
       id: result.id,
       createdAt: result.createdAt,
+      updatedAt: result.updatedAt,
       title: result.title,
       userId: result.userId,
       visibility: result.visibility as Chat['visibility'],
@@ -499,7 +514,10 @@ export async function updateChatVisiblityById({
   visibility: 'private' | 'public';
 }) {
   try {
-    await prisma.chat.update({ where: { id: chatId }, data: { visibility } });
+    await prisma.chat.update({
+      where: { id: chatId },
+      data: { visibility, updatedAt: new Date() },
+    });
     return;
   } catch (_error) {
     throw new ChatSDKError(
@@ -517,7 +535,10 @@ export async function updateChatTitleById({
   title: string;
 }) {
   try {
-    await prisma.chat.update({ where: { id: chatId }, data: { title } });
+    await prisma.chat.update({
+      where: { id: chatId },
+      data: { title, updatedAt: new Date() },
+    });
     return;
   } catch (_error) {
     throw new ChatSDKError(
@@ -537,7 +558,10 @@ export async function updateChatLastContextById({
   try {
     await prisma.chat.update({
       where: { id: chatId },
-      data: { lastContext: context as Prisma.InputJsonValue },
+      data: {
+        lastContext: context as Prisma.InputJsonValue,
+        updatedAt: new Date(),
+      },
     });
     return;
   } catch (error) {
@@ -605,6 +629,7 @@ export async function forkChat({
       data: {
         id: newChatId,
         createdAt: new Date(),
+        updatedAt: new Date(),
         userId,
         title: sourceChat.title,
         visibility: sourceChat.visibility as string,
@@ -709,7 +734,7 @@ export async function forkChat({
           if (realTitle && realTitle !== sourceChat.title) {
             await prisma.chat.update({
               where: { id: newChatId },
-              data: { title: realTitle },
+              data: { title: realTitle, updatedAt: new Date() },
             });
           }
         }

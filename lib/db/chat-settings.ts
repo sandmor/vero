@@ -42,7 +42,10 @@ export async function updateChatSettings(
   try {
     await prisma.chat.update({
       where: { id: chatId },
-      data: { settings: next as unknown as Prisma.InputJsonValue },
+      data: {
+        settings: next as unknown as Prisma.InputJsonValue,
+        updatedAt: new Date(),
+      },
     });
   } catch (_error) {
     throw new ChatSDKError(
@@ -97,7 +100,7 @@ export async function updateChatAgent(chatId: string, agentId: string | null) {
   try {
     await prisma.chat.update({
       where: { id: chatId },
-      data: { agentId },
+      data: { agentId, updatedAt: new Date() },
     });
   } catch (_error) {
     throw new ChatSDKError(
@@ -182,7 +185,7 @@ export async function applyInitialSettingsPreset({
 
   await prisma.chat.update({
     where: { id: chatId },
-    data: { settings: merged },
+    data: { settings: merged, updatedAt: new Date() },
   });
 
   return merged as ChatSettings;

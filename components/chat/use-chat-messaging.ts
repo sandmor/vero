@@ -2,7 +2,7 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import type { DataUIPart } from 'ai';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import equal from 'fast-deep-equal';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/components/toast';
@@ -1058,54 +1058,24 @@ export function useChatMessaging({
             editedText: trimmed,
           });
 
-          const optimisticUserMessage: ChatMessage = {
-            id: newMessageId,
-            role: 'user',
-            parts: editedParts,
-            metadata: {
-              createdAt:
-                targetMessage.metadata?.createdAt ?? new Date().toISOString(),
-              model: targetMessage.metadata?.model,
-              siblingIndex: targetMessage.metadata?.siblingIndex ?? 0,
-              siblingsCount: Math.max(
-                targetMessage.metadata?.siblingsCount ?? 1,
-                1
-              ),
-            },
-          };
-
-          setMessages([
-            ...previousMessages.slice(0, targetIndex),
-            optimisticUserMessage,
-          ]);
-
+          // Reset selection state since we're creating a new branch
           selectionRef.current = null;
           currentMessageTreeRef.current = undefined;
 
+          // Refresh the message tree to get the newly created message from the database
+          await refreshMessageTree();
+
+          // Send the message to trigger assistant response generation
+          // Don't pass the ID - let sendMessage generate a new one to avoid
+          // conflicts. The database will ignore the duplicate via ON CONFLICT DO NOTHING,
+          // and our synchronous deduplication will clean up any UI duplicates
           await sendMessageWithBranchGuard({
-            id: newMessageId,
             role: 'user',
             parts: editedParts,
-          });
-
-          // Remove any duplicate messages that might have been added during the send process
-          setMessages((current) => {
-            const uniqueMessages = [];
-            const seenIds = new Set();
-
-            for (const message of current) {
-              if (!seenIds.has(message.id)) {
-                seenIds.add(message.id);
-                uniqueMessages.push(message);
-              }
-            }
-
-            return uniqueMessages;
           });
 
           toast({ type: 'success', description: 'Message updated.' });
 
-          await refreshMessageTree();
           queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
         } catch (error) {
           setMessages(previousMessages);
@@ -1358,8 +1328,23 @@ export function useChatMessaging({
     }
   }, [messages, refreshMessageTree, status]);
 
+  // Deduplicate messages synchronously to prevent React key errors
+  const dedupedMessages = useMemo(() => {
+    const seenIds = new Set<string>();
+    const deduped: ChatMessage[] = [];
+
+    for (const message of messages) {
+      if (!seenIds.has(message.id)) {
+        seenIds.add(message.id);
+        deduped.push(message);
+      }
+    }
+
+    return deduped;
+  }, [messages]);
+
   return {
-    messages,
+    messages: dedupedMessages,
     setMessages,
     sendMessage: sendMessageWithBranchGuard,
     status,

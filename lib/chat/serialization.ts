@@ -15,10 +15,11 @@ export function serializeAgent(agent: Chat['agent']): SerializedAgent {
 }
 
 export function serializeChat(chat: Chat): SerializedChat {
-  const { agent, createdAt, ...rest } = chat;
+  const { agent, createdAt, updatedAt, ...rest } = chat;
   return {
     ...rest,
     createdAt: createdAt.toISOString(),
+    updatedAt: updatedAt.toISOString(),
     agent: serializeAgent(agent),
   } as SerializedChat;
 }
@@ -37,10 +38,11 @@ export function deserializeAgent(serialized: SerializedAgent): Agent | null {
 }
 
 export function deserializeChat(snapshot: SerializedChat): Chat {
-  const { agent, createdAt, ...rest } = snapshot;
+  const { agent, createdAt, updatedAt, ...rest } = snapshot;
   return {
     ...rest,
     createdAt: new Date(createdAt),
+    updatedAt: new Date(updatedAt),
     agent: deserializeAgent(agent),
   } as Chat;
 }

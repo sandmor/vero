@@ -25,8 +25,9 @@ export type SerializedAgent = {
   updatedAt: string;
 } | null;
 
-export type SerializedChat = Omit<Chat, 'createdAt' | 'agent'> & {
+export type SerializedChat = Omit<Chat, 'createdAt' | 'updatedAt' | 'agent'> & {
   createdAt: string;
+  updatedAt: string;
   agent: SerializedAgent;
 };
 

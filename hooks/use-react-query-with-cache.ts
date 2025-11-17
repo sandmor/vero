@@ -99,28 +99,14 @@ export function useReactQueryWithCache<T = any>({
           // Update encrypted cache if it's a chat bootstrap response with existing chat
           if (
             chatId &&
-            isChatBootstrapResponse(freshData) &&
-            (freshData as any).kind === 'existing' &&
-            (freshData as any).prefetchedChat
+            isExistingChatBootstrap(freshData) &&
+            freshData.prefetchedChat
           ) {
-            const { computeChatLastUpdatedAt } = await import(
-              '@/lib/chat/bootstrap-helpers'
-            );
-            const lastUpdatedAt = computeChatLastUpdatedAt({
-              chat: {
-                createdAt: new Date(
-                  (freshData as any).prefetchedChat.createdAt
-                ),
-              },
-              messages: (freshData as any).initialMessages ?? [],
-              branchState: (freshData as any).initialBranchState,
-            });
-
             await upsertChatRecord({
-              chatId: (freshData as any).chatId,
-              lastUpdatedAt,
-              bootstrap: freshData as ChatBootstrapResponse,
-              chat: (freshData as any).prefetchedChat,
+              chatId: freshData.chatId,
+              lastUpdatedAt: freshData.prefetchedChat.updatedAt,
+              bootstrap: freshData,
+              chat: freshData.prefetchedChat,
             });
           }
 
@@ -156,29 +142,12 @@ export function useReactQueryWithCache<T = any>({
         const data = await queryFn();
 
         // Update encrypted cache on successful fetch
-        if (
-          chatId &&
-          data &&
-          isChatBootstrapResponse(data) &&
-          (data as any).kind === 'existing' &&
-          (data as any).prefetchedChat
-        ) {
-          const { computeChatLastUpdatedAt } = await import(
-            '@/lib/chat/bootstrap-helpers'
-          );
-          const lastUpdatedAt = computeChatLastUpdatedAt({
-            chat: {
-              createdAt: new Date((data as any).prefetchedChat.createdAt),
-            },
-            messages: (data as any).initialMessages ?? [],
-            branchState: (data as any).initialBranchState,
-          });
-
+        if (chatId && isExistingChatBootstrap(data) && data.prefetchedChat) {
           await upsertChatRecord({
-            chatId: (data as any).chatId,
-            lastUpdatedAt,
-            bootstrap: data as ChatBootstrapResponse,
-            chat: (data as any).prefetchedChat,
+            chatId: data.chatId,
+            lastUpdatedAt: data.prefetchedChat.updatedAt,
+            bootstrap: data,
+            chat: data.prefetchedChat,
           });
         }
 
@@ -237,4 +206,16 @@ export function useReactQueryWithCache<T = any>({
 // Helper function to check if data is a ChatBootstrapResponse
 function isChatBootstrapResponse(data: any): data is ChatBootstrapResponse {
   return data && typeof data === 'object' && 'kind' in data && 'chatId' in data;
+}
+
+// Helper function to check if data is an ExistingChatBootstrap
+function isExistingChatBootstrap(
+  data: any
+): data is Extract<ChatBootstrapResponse, { kind: 'existing' }> {
+  return (
+    data &&
+    typeof data === 'object' &&
+    data.kind === 'existing' &&
+    'chatId' in data
+  );
 }

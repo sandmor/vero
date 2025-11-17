@@ -1,11 +1,9 @@
-import type { Chat, ChatSettings, DBMessage } from '@/lib/db/schema';
+import type { ChatSettings } from '@/lib/db/schema';
 import { DEFAULT_CHAT_MODEL, isModelIdAllowed } from '@/lib/ai/models';
 import {
   normalizeModelId,
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
-import { buildMessageTree } from '@/lib/utils/message-tree';
-import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 
 export function buildInitialSettings(
   base: ChatSettings | null,
@@ -65,32 +63,4 @@ export function resolveInitialReasoningEffort({
   const normalizedAgent = normalizeReasoningEffort(agentSettingsReasoning);
   const normalizedCookie = normalizeReasoningEffort(cookieReasoning);
   return normalizedChat ?? normalizedAgent ?? normalizedCookie ?? undefined;
-}
-
-export function computeChatLastUpdatedAt({
-  chat,
-  messages,
-  branchState,
-}: {
-  chat: Pick<Chat, 'createdAt'>;
-  messages: DBMessage[];
-  branchState?: BranchSelectionSnapshot;
-}): string {
-  const baseline = new Date(chat.createdAt).getTime();
-  if (!messages.length) {
-    return new Date(baseline).toISOString();
-  }
-
-  const tree = buildMessageTree(messages, {
-    rootMessageIndex: branchState?.rootMessageIndex ?? null,
-  });
-  const candidateNodes = tree.branch.length ? tree.branch : tree.nodes;
-  const iterable = candidateNodes.length ? candidateNodes : messages;
-
-  const latestTimestamp = iterable.reduce<number>((acc, node) => {
-    const value = new Date(node.createdAt).getTime();
-    return Number.isNaN(value) ? acc : Math.max(acc, value);
-  }, baseline);
-
-  return new Date(latestTimestamp).toISOString();
 }

@@ -100,6 +100,7 @@ model Agent {
 model Chat {
   id          String   @id @default(uuid()) @db.Uuid
   createdAt   DateTime
+  updatedAt   DateTime @default(now()) @updatedAt
   title       String   @db.Text
   userId      String   @db.VarChar(191)
   visibility  String   @default("private")

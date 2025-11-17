@@ -18,7 +18,6 @@ import type { CacheMetadataPayload, CachedChatRecord } from '@/lib/cache/types';
 import { ChatSDKError } from '@/lib/errors';
 import {
   buildInitialSettings,
-  computeChatLastUpdatedAt,
   resolveInitialModel,
   resolveInitialReasoningEffort,
 } from '@/lib/chat/bootstrap-helpers';
@@ -172,15 +171,9 @@ export async function POST(request: NextRequest) {
       prefetchedChat: serializeChat(chatForSerialization),
     };
 
-    const lastUpdatedAt = computeChatLastUpdatedAt({
-      chat,
-      messages,
-      branchState: effectiveBranchState,
-    });
-
     cacheEntries.push({
       bootstrap,
-      lastUpdatedAt,
+      lastUpdatedAt: chat.updatedAt.toISOString(),
       chat: serializeChat(chatForSerialization),
     });
   }
