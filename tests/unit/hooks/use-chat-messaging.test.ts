@@ -229,8 +229,7 @@ describe('shouldDeferTreeUpdate', () => {
   it('defers during streaming unless explicitly allowed', () => {
     expect(
       shouldDeferTreeUpdate({
-        chatStatus: 'streaming',
-        pendingRegenerationId: null,
+        isStreaming: true,
         desiredSelection: null,
         treeSelection: { rootMessageIndex: 0 },
       })
@@ -238,8 +237,7 @@ describe('shouldDeferTreeUpdate', () => {
 
     expect(
       shouldDeferTreeUpdate({
-        chatStatus: 'streaming',
-        pendingRegenerationId: null,
+        isStreaming: true,
         desiredSelection: null,
         treeSelection: { rootMessageIndex: 0 },
         options: { allowDuringStreaming: true },
@@ -250,8 +248,7 @@ describe('shouldDeferTreeUpdate', () => {
   it('defers when the desired selection differs from the incoming tree selection', () => {
     expect(
       shouldDeferTreeUpdate({
-        chatStatus: 'ready',
-        pendingRegenerationId: null,
+        isStreaming: false,
         desiredSelection: { rootMessageIndex: 0 },
         treeSelection: { rootMessageIndex: 1 },
       })
@@ -261,23 +258,11 @@ describe('shouldDeferTreeUpdate', () => {
   it('allows updates when no desired selection is locked in', () => {
     expect(
       shouldDeferTreeUpdate({
-        chatStatus: 'ready',
-        pendingRegenerationId: null,
+        isStreaming: false,
         desiredSelection: null,
         treeSelection: { rootMessageIndex: 0 },
       })
     ).toBe(false);
-  });
-
-  it('defers when a regeneration is pending even if status is ready', () => {
-    expect(
-      shouldDeferTreeUpdate({
-        chatStatus: 'ready',
-        pendingRegenerationId: 'assistant-123',
-        desiredSelection: null,
-        treeSelection: { rootMessageIndex: 0 },
-      })
-    ).toBe(true);
   });
 });
 
