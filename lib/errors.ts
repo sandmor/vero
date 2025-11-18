@@ -136,3 +136,95 @@ function getStatusCodeByType(type: ErrorType) {
       return 500;
   }
 }
+
+// Enhanced error types for better type safety and discriminated unions
+
+export interface NetworkError extends Error {
+  type: 'network';
+  statusCode?: number;
+  endpoint?: string;
+  retryable: boolean;
+}
+
+export interface ValidationError extends Error {
+  type: 'validation';
+  field?: string;
+  value?: unknown;
+  constraints: string[];
+}
+
+export interface ChatError {
+  type: 'network' | 'validation' | 'unknown' | 'server';
+  message: string;
+  originalError?: Error;
+  metadata?: Record<string, unknown>;
+}
+
+export function isNetworkError(error: unknown): error is NetworkError {
+  return (
+    error instanceof Error &&
+    'type' in error &&
+    (error as NetworkError).type === 'network'
+  );
+}
+
+export function isValidationError(error: unknown): error is ValidationError {
+  return (
+    error instanceof Error &&
+    'type' in error &&
+    (error as ValidationError).type === 'validation'
+  );
+}
+
+export function toChatError(error: unknown): ChatError {
+  if (error instanceof ChatSDKError) {
+    return {
+      type: 'server',
+      message: error.message,
+      originalError: error,
+      metadata: {
+        errorCode: `${error.type}:${error.surface}`,
+        statusCode: error.statusCode,
+      },
+    };
+  }
+
+  if (error instanceof Error) {
+    if (isNetworkError(error)) {
+      return {
+        type: 'network',
+        message: error.message,
+        originalError: error,
+        metadata: {
+          statusCode: error.statusCode,
+          endpoint: error.endpoint,
+          retryable: error.retryable,
+        },
+      };
+    }
+
+    if (isValidationError(error)) {
+      return {
+        type: 'validation',
+        message: error.message,
+        originalError: error,
+        metadata: {
+          field: error.field,
+          constraints: error.constraints,
+        },
+      };
+    }
+
+    return {
+      type: 'unknown',
+      message: error.message,
+      originalError: error,
+    };
+  }
+
+  return {
+    type: 'unknown',
+    message: String(error),
+    originalError: error instanceof Error ? error : undefined,
+  };
+}

@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useMachine } from '@xstate/react';
 import { toast } from '@/components/toast';
 import type { ChatPreferences } from './use-chat-preferences';
-import { ChatSDKError } from '@/lib/errors';
+import { ChatSDKError, toChatError, type ChatError } from '@/lib/errors';
 import type { ChatMessage, CustomUIDataTypes } from '@/lib/types';
 import type { MessageTreeResult } from '@/lib/db/schema';
 import type { AppUsage } from '@/lib/usage';
@@ -173,6 +173,16 @@ export function useChatMessaging({
     onError: (error) => {
       if (error instanceof ChatSDKError) {
         toast({ type: 'error', description: error.message });
+      } else {
+        const chatError = toChatError(error);
+        console.error('Chat error:', chatError);
+        toast({
+          type: 'error',
+          description:
+            chatError.type === 'unknown'
+              ? 'An unexpected error occurred'
+              : chatError.message,
+        });
       }
     },
   });
@@ -180,39 +190,6 @@ export function useChatMessaging({
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
-
-  // Deduplicate messages synchronously
-  useEffect(() => {
-    const seenIds = new Set<string>();
-    const deduped: ChatMessage[] = [];
-
-    for (const message of messages) {
-      if (!seenIds.has(message.id)) {
-        seenIds.add(message.id);
-        deduped.push(message);
-      }
-    }
-
-    if (deduped.length === messages.length) {
-      return;
-    }
-
-    setMessages((current) => {
-      if (current.length === deduped.length) {
-        let equal = true;
-        for (let i = 0; i < current.length; i += 1) {
-          if (current[i] !== deduped[i]) {
-            equal = false;
-            break;
-          }
-        }
-        if (equal) {
-          return current;
-        }
-      }
-      return deduped;
-    });
-  }, [messages, setMessages]);
 
   const refreshMessageTree = useCallback(async () => {
     if (IS_E2E) {
@@ -885,16 +862,13 @@ export function useChatMessaging({
 
   const dedupedMessages = useMemo(() => {
     const seenIds = new Set<string>();
-    const deduped: ChatMessage[] = [];
-
-    for (const message of messages) {
-      if (!seenIds.has(message.id)) {
-        seenIds.add(message.id);
-        deduped.push(message);
+    return messages.filter((message) => {
+      if (seenIds.has(message.id)) {
+        return false;
       }
-    }
-
-    return deduped;
+      seenIds.add(message.id);
+      return true;
+    });
   }, [messages]);
 
   const disableRegenerate =
