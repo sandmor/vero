@@ -194,8 +194,7 @@ export async function getChatsByUserId({
       lastContext: c.lastContext as unknown as Chat['lastContext'],
       settings: (c.settings as ChatSettings) ?? null,
       agent: (c as any).agent ?? null,
-      headMessageId: c.headMessageId ?? null,
-      rootMessageIndex: c.rootMessageIndex ?? null,
+      rootMessageIndex: c.rootMessageIndex ?? 0,
     };
 
     return {
@@ -464,8 +463,7 @@ export async function searchChats({
       settings: (result.settings as ChatSettings) ?? null,
       agentId: result.agentId ?? null,
       agent: result.agentId ? (agentMap.get(result.agentId) ?? null) : null,
-      headMessageId: null,
-      rootMessageIndex: result.rootMessageIndex ?? null,
+      rootMessageIndex: result.rootMessageIndex ?? 0,
     }));
 
     return {

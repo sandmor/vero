@@ -32,6 +32,26 @@ import {
 
 const IS_E2E = process.env.NEXT_PUBLIC_E2E === '1';
 
+const NON_STREAMING_STATUSES = new Set([
+  'ready',
+  'idle',
+  'error',
+  'initial',
+  'aborted',
+  'cancelled',
+  'canceled',
+  'stopped',
+  'failed',
+  'paused',
+]);
+
+const isStreamingStatus = (value: string | undefined): boolean => {
+  if (!value) {
+    return false;
+  }
+  return !NON_STREAMING_STATUSES.has(value);
+};
+
 export type SelectionApi = {
   getSelectedIds: () => string[];
   removeFromSelection: (ids: string[]) => void;
@@ -187,6 +207,8 @@ export function useChatMessaging({
     },
   });
 
+  const streamingStateRef = useRef(isStreamingStatus(status));
+
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -217,7 +239,7 @@ export function useChatMessaging({
   }, [chatId]);
 
   // Initialize tree sync machine
-  const [treeSyncState, sendTreeSync] = useMachine(treeSyncMachine, {
+  const [, sendTreeSync] = useMachine(treeSyncMachine, {
     input: {
       chatId,
       currentTree: initialMessageTree,
@@ -237,22 +259,19 @@ export function useChatMessaging({
   });
 
   // Initialize branch switch machine
-  const [branchState, sendBranch, branchActor] = useMachine(
-    branchSwitchMachine,
-    {
-      input: {
-        chatId,
-        tree: currentMessageTreeRef.current,
-        selection: selectionRef.current,
-        previousMessages: messages,
-        onMessagesChange: setMessages,
-        onTreeChange: (tree) => {
-          currentMessageTreeRef.current = tree;
-        },
-        onRefreshTree: refreshMessageTree,
+  const [, sendBranch, branchActor] = useMachine(branchSwitchMachine, {
+    input: {
+      chatId,
+      tree: currentMessageTreeRef.current,
+      selection: selectionRef.current,
+      previousMessages: messages,
+      onMessagesChange: setMessages,
+      onTreeChange: (tree) => {
+        currentMessageTreeRef.current = tree;
       },
-    }
-  );
+      onRefreshTree: refreshMessageTree,
+    },
+  });
 
   // Check if a branch switch is in progress
   const ensureBranchReady = useCallback((): Promise<void> | null => {
@@ -330,14 +349,19 @@ export function useChatMessaging({
 
   // Handle streaming state changes
   useEffect(() => {
-    if (status === 'submitted' || status === 'streaming') {
+    const isStreaming = isStreamingStatus(status);
+    const wasStreaming = streamingStateRef.current;
+
+    if (isStreaming && !wasStreaming) {
       sendTreeSync({ type: 'STREAM_STARTED' });
       sendRegeneration({ type: 'STREAM_STARTED' });
-    } else if (status === 'ready') {
+    } else if (!isStreaming && wasStreaming) {
       sendTreeSync({ type: 'STREAM_FINISHED' });
       sendRegeneration({ type: 'STREAM_FINISHED' });
     }
-  }, [status]);
+
+    streamingStateRef.current = isStreaming;
+  }, [status, sendRegeneration, sendTreeSync]);
 
   // Handle regeneration completion - refresh tree to get proper sibling metadata
   useEffect(() => {
@@ -349,7 +373,7 @@ export function useChatMessaging({
     }
 
     // Only act when regeneration has started and stream is no longer active
-    if (status === 'submitted' || status === 'streaming') {
+    if (isStreamingStatus(status)) {
       return;
     }
 
@@ -388,15 +412,6 @@ export function useChatMessaging({
     sendRegeneration,
     queryClient,
   ]);
-
-  // Post-stream sync
-  useEffect(() => {
-    if (status !== 'ready') return;
-
-    if (treeSyncState.context.pendingPostStreamSync) {
-      sendTreeSync({ type: 'SYNC_REQUESTED' });
-    }
-  }, [status, treeSyncState.context.pendingPostStreamSync, sendTreeSync]);
 
   const handleChatDeleted = useCallback(() => {
     if (chatDeletedRef.current) {
@@ -590,7 +605,7 @@ export function useChatMessaging({
 
   const handleRegenerateAssistant = useCallback(
     async (assistantMessageId: string) => {
-      if (status === 'submitted' || status === 'streaming') {
+      if (isStreamingStatus(status)) {
         return;
       }
       if (regenerationState.context.messageId !== null) {
@@ -821,7 +836,7 @@ export function useChatMessaging({
 
   const handleNavigate = useCallback(
     (messageId: string, direction: 'next' | 'prev') => {
-      if (status === 'submitted' || status === 'streaming') {
+      if (isStreamingStatus(status)) {
         toast({
           type: 'error',
           description:
@@ -836,7 +851,7 @@ export function useChatMessaging({
   );
 
   useEffect(() => {
-    if (status !== 'ready') {
+    if (isStreamingStatus(status)) {
       return;
     }
 
@@ -872,9 +887,7 @@ export function useChatMessaging({
   }, [messages]);
 
   const disableRegenerate =
-    status === 'submitted' ||
-    status === 'streaming' ||
-    regenerationState.context.messageId !== null;
+    isStreamingStatus(status) || regenerationState.context.messageId !== null;
 
   return {
     messages: dedupedMessages,

@@ -73,6 +73,13 @@ export const treeSyncMachine = setup({
     isIdle: ({ context }) => {
       return !context.isStreaming;
     },
+    shouldSyncPostStream: ({ context }) => {
+      return (
+        context.pendingPostStreamSync &&
+        !context.isStreaming &&
+        typeof context.fetchTree === 'function'
+      );
+    },
   },
   actions: {
     updateContextFromEvent: assign(({ event }) => {
@@ -133,13 +140,11 @@ export const treeSyncMachine = setup({
       context.onSelectionChange(selection);
       context.onMessagesChange(messages);
     },
-    updateCurrentTree: assign({
-      currentTree: ({ event }) => {
-        if (event.type === 'TREE_UPDATE_REQUESTED') {
-          return event.tree;
-        }
-        return undefined;
-      },
+    updateCurrentTree: assign(({ event }) => {
+      if (event.type === 'TREE_UPDATE_REQUESTED') {
+        return { currentTree: event.tree };
+      }
+      return {};
     }),
     updateTreeFromFetch: assign({
       currentTree: ({ event }) => {
@@ -201,6 +206,12 @@ export const treeSyncMachine = setup({
   initial: 'idle',
   states: {
     idle: {
+      always: [
+        {
+          guard: 'shouldSyncPostStream',
+          target: 'fetching',
+        },
+      ],
       on: {
         TREE_UPDATE_REQUESTED: [
           {
@@ -270,7 +281,7 @@ export const treeSyncMachine = setup({
         },
         onError: {
           target: 'idle',
-          actions: ['storeError', 'logError'],
+          actions: ['storeError', 'logError', 'clearPendingPostStreamSync'],
         },
       },
     },

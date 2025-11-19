@@ -4,8 +4,13 @@ import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 import { cloneSelectionSnapshot } from './selection-snapshot';
 
 export type BranchSelectionOperation =
-  | { kind: 'root'; rootMessageIndex: number | null }
-  | { kind: 'child'; parentId: string; selectedChildIndex: number | null };
+  | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
+  | {
+      kind: 'child';
+      parentId: string;
+      selectedChildIndex: number | null;
+      childId?: string;
+    };
 
 export type BranchSwitchPlan = {
   branch: MessageTreeNode[];
@@ -151,13 +156,18 @@ export const planBranchSwitch = ({
   let operation: BranchSelectionOperation;
 
   if (!parent) {
-    operation = { kind: 'root', rootMessageIndex: targetNode.siblingIndex };
+    operation = {
+      kind: 'root',
+      rootMessageIndex: targetNode.siblingIndex,
+      childId: targetNode.id,
+    };
     nextSnapshot.rootMessageIndex = targetNode.siblingIndex;
   } else {
     operation = {
       kind: 'child',
       parentId: parent.id,
       selectedChildIndex: targetNode.siblingIndex,
+      childId: targetNode.id,
     };
     const selections = ensureSelectionMap(nextSnapshot);
     selections[parent.id] = targetNode.siblingIndex;

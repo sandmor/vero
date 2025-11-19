@@ -748,15 +748,14 @@ export async function deleteMessageById({
         return { messageId, chatId, chatDeleted: true } as const;
       }
 
-      const selectedRootIndex = message.chat.rootMessageIndex ?? null;
+      const selectedRootIndex = message.chat.rootMessageIndex ?? 0;
       const shouldClearRootSelection =
-        selectedRootIndex !== null &&
-        impactedRootIndices.has(selectedRootIndex);
+        selectedRootIndex !== 0 && impactedRootIndices.has(selectedRootIndex);
 
       if (shouldClearRootSelection) {
         await tx.chat.update({
           where: { id: chatId },
-          data: { rootMessageIndex: null, updatedAt: new Date() },
+          data: { rootMessageIndex: 0, updatedAt: new Date() },
         });
       }
 
@@ -789,7 +788,7 @@ export async function deleteMessageById({
           if (parentIdsToClear.length) {
             await tx.message.updateMany({
               where: { id: { in: parentIdsToClear } },
-              data: { selectedChildIndex: null },
+              data: { selectedChildIndex: 0 },
             });
           }
         }
@@ -1045,7 +1044,7 @@ export async function deleteMessagesByIds({
       ) {
         await tx.chat.update({
           where: { id: chatId },
-          data: { rootMessageIndex: null, updatedAt: new Date() },
+          data: { rootMessageIndex: 0, updatedAt: new Date() },
         });
       }
 
@@ -1078,7 +1077,7 @@ export async function deleteMessagesByIds({
           if (parentIdsToClear.length) {
             await tx.message.updateMany({
               where: { id: { in: parentIdsToClear } },
-              data: { selectedChildIndex: null },
+              data: { selectedChildIndex: 0 },
             });
           }
         }
@@ -1109,8 +1108,13 @@ export async function updateBranchSelectionByChatId({
   chatId: string;
   userId: string;
   operation:
-    | { kind: 'root'; rootMessageIndex: number | null }
-    | { kind: 'child'; parentId: string; selectedChildIndex: number | null };
+    | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
+    | {
+        kind: 'child';
+        parentId: string;
+        selectedChildIndex: number | null;
+        childId?: string;
+      };
   expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   try {
@@ -1132,19 +1136,44 @@ export async function updateBranchSelectionByChatId({
       }
 
       if (operation.kind === 'root') {
-        const requestedIndex =
+        let requestedIndex =
           operation.rootMessageIndex !== null &&
           operation.rootMessageIndex !== undefined
             ? Math.max(0, Math.trunc(operation.rootMessageIndex))
-            : null;
+            : 0;
+
+        if (operation.childId) {
+          const targetMessage = await tx.message.findUnique({
+            where: { id: operation.childId },
+            select: { pathText: true, chatId: true },
+          });
+
+          if (
+            targetMessage &&
+            targetMessage.chatId === chatId &&
+            targetMessage.pathText &&
+            PATH_PATTERN.test(targetMessage.pathText)
+          ) {
+            const parentPath = getParentPath(targetMessage.pathText);
+            if (!parentPath) {
+              // It is a root message, find its index
+              const roots = await getDirectChildrenPaths(tx, chatId, null);
+              const index = roots.indexOf(targetMessage.pathText);
+              if (index !== -1) {
+                requestedIndex = index;
+              }
+            }
+          }
+        }
 
         if (
           expectedSnapshot &&
           expectedSnapshot.rootMessageIndex !== undefined
         ) {
-          const expected = expectedSnapshot.rootMessageIndex ?? null;
-          const current = chat.rootMessageIndex ?? null;
-          if (expected !== current) {
+          const expected = expectedSnapshot.rootMessageIndex ?? 0;
+          const current = chat.rootMessageIndex ?? 0;
+          // If we resolved by ID, we trust that over the snapshot check for index
+          if (!operation.childId && expected !== current) {
             throw new ChatSDKError(
               'bad_request:database',
               'Branch selection update conflict'
@@ -1162,7 +1191,7 @@ export async function updateBranchSelectionByChatId({
 
       const parent = await tx.message.findUnique({
         where: { id: operation.parentId },
-        select: { chatId: true, selectedChildIndex: true },
+        select: { chatId: true, selectedChildIndex: true, pathText: true },
       });
 
       if (!parent) {
@@ -1189,7 +1218,8 @@ export async function updateBranchSelectionByChatId({
 
         if (expected !== undefined) {
           const current = parent.selectedChildIndex ?? null;
-          if (expected !== current) {
+          // If we resolved by ID, we trust that over the snapshot check for index
+          if (!operation.childId && expected !== current) {
             throw new ChatSDKError(
               'bad_request:database',
               'Branch selection update conflict'
@@ -1198,11 +1228,39 @@ export async function updateBranchSelectionByChatId({
         }
       }
 
-      const normalizedIndex =
+      let normalizedIndex =
         operation.selectedChildIndex === null ||
         operation.selectedChildIndex === undefined
-          ? null
+          ? 0
           : Math.max(0, Math.trunc(operation.selectedChildIndex));
+
+      if (operation.childId) {
+        const targetMessage = await tx.message.findUnique({
+          where: { id: operation.childId },
+          select: { pathText: true, chatId: true },
+        });
+
+        if (
+          targetMessage &&
+          targetMessage.chatId === chatId &&
+          targetMessage.pathText &&
+          PATH_PATTERN.test(targetMessage.pathText) &&
+          parent.pathText
+        ) {
+          const parentPath = getParentPath(targetMessage.pathText);
+          if (parentPath === parent.pathText) {
+            const siblings = await getDirectChildrenPaths(
+              tx,
+              chatId,
+              parent.pathText
+            );
+            const index = siblings.indexOf(targetMessage.pathText);
+            if (index !== -1) {
+              normalizedIndex = index;
+            }
+          }
+        }
+      }
 
       await tx.message.update({
         where: { id: operation.parentId },

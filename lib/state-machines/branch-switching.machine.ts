@@ -7,6 +7,7 @@ import {
   type BranchSwitchPlan,
   type BranchSelectionOperation,
   cloneSelectionSnapshot,
+  buildSelectionSnapshot,
 } from '@/lib/utils/index';
 import { updateBranchSelection } from '@/app/(chat)/actions';
 import { toast } from '@/components/toast';
@@ -83,7 +84,7 @@ export const branchSwitchMachine = setup({
       previousBranch: ({ context }) =>
         context.tree ? [...context.tree.branch] : [],
       previousSelection: ({ context }) =>
-        context.selection ? cloneSelectionSnapshot(context.selection) : null,
+        context.tree ? buildSelectionSnapshot(context.tree) : null,
     }),
     computePlan: assign({
       plan: ({ context }) => {
@@ -107,11 +108,28 @@ export const branchSwitchMachine = setup({
       const nextMessages = convertToUIMessages(context.plan.branch);
       context.onMessagesChange(nextMessages);
 
-      // Update tree with new branch
-      context.onTreeChange({
+      // Update tree with new branch AND selection metadata
+      const updatedTree = {
         ...context.tree,
         branch: context.plan.branch,
-      });
+        rootMessageIndex: context.plan.snapshot.rootMessageIndex,
+      };
+
+      // Also update selectedChildIndex in nodes if selections changed
+      if (context.plan.snapshot.selections) {
+        updatedTree.nodes = context.tree.nodes.map((node) => {
+          if (context.plan!.snapshot.selections?.[node.id] !== undefined) {
+            return {
+              ...node,
+              selectedChildIndex:
+                context.plan!.snapshot.selections[node.id] ?? 0,
+            };
+          }
+          return node;
+        });
+      }
+
+      context.onTreeChange(updatedTree);
     },
     updateSelection: assign({
       selection: ({ context }) => {
@@ -122,12 +140,31 @@ export const branchSwitchMachine = setup({
       // Restore previous messages
       context.onMessagesChange([...context.previousMessages]);
 
-      // Restore previous tree
-      if (context.tree) {
-        context.onTreeChange({
+      // Restore previous tree with previous selection metadata
+      if (context.tree && context.previousSelection) {
+        const restoredTree = {
           ...context.tree,
           branch: context.previousBranch,
-        });
+          rootMessageIndex: context.previousSelection.rootMessageIndex,
+        };
+
+        // Restore selectedChildIndex in nodes
+        if (context.previousSelection.selections) {
+          restoredTree.nodes = context.tree.nodes.map((node) => {
+            if (
+              context.previousSelection!.selections?.[node.id] !== undefined
+            ) {
+              return {
+                ...node,
+                selectedChildIndex:
+                  context.previousSelection!.selections[node.id] ?? 0,
+              };
+            }
+            return node;
+          });
+        }
+
+        context.onTreeChange(restoredTree);
       }
     },
     restorePreviousSelection: assign({
@@ -246,7 +283,10 @@ export const branchSwitchMachine = setup({
         src: 'persistSelection',
         input: ({ context }) => ({
           chatId: context.chatId,
-          operation: context.plan!.operation,
+          operation: {
+            ...context.plan!.operation,
+            childId: context.plan!.operation.childId,
+          },
           snapshot: context.previousSelection,
         }),
         onDone: {

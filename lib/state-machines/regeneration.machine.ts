@@ -169,6 +169,9 @@ export const regenerationMachine = setup({
           target: 'streaming',
           actions: 'markStarted',
         },
+        STREAM_FINISHED: {
+          target: 'completing',
+        },
         CANCEL: {
           target: 'idle',
           actions: 'resetState',
