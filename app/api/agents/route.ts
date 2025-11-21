@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
 import { prisma } from '@/lib/db/prisma';
 import { normalizeAgentSettingsPayload } from '@/lib/agent-settings';
-import type { Prisma } from '@/generated/prisma-client';
+import type { Prisma } from '@/generated/prisma-client/client';
 
 export async function GET() {
   const session = await getAppSession();

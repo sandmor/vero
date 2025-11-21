@@ -1,4 +1,4 @@
-import type { Prisma } from '../../../generated/prisma-client';
+import type { Prisma } from '../../../generated/prisma-client/client';
 import { prisma } from '../prisma';
 import { ChatSDKError } from '../../errors';
 import type { Chat, ChatSettings, DBMessage, MessageTreeNode } from '../schema';

@@ -2,7 +2,7 @@ import { prisma } from '../db/prisma';
 import type { ProviderInfo, ProviderModel } from '@tokenlens/core';
 import type { SupportedProvider } from './registry';
 import { getTier } from './tiers';
-import { Prisma } from '../../generated/prisma-client';
+import { Prisma } from '../../generated/prisma-client/client';
 
 export type ModelFormat = 'text' | 'image' | 'file' | 'audio' | 'video';
 

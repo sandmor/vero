@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
 import { prisma } from '@/lib/db/prisma';
 import { revalidatePath } from 'next/cache';
-import { Prisma } from '../../../../generated/prisma-client';
+import { Prisma } from '../../../../generated/prisma-client/client';
 
 export async function GET() {
   try {

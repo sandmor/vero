@@ -1,4 +1,4 @@
-import type { Prisma } from '../../../generated/prisma-client';
+import type { Prisma } from '../../../generated/prisma-client/client';
 import type { ArtifactKind } from '@/components/artifact';
 import { prisma } from '../prisma';
 import { ChatSDKError } from '../../errors';

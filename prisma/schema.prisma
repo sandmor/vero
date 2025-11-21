@@ -1,14 +1,11 @@
 generator client {
-  provider        = "prisma-client-js"
+  provider        = "prisma-client"
   output          = "../generated/prisma-client"
   previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider   = "postgresql"
-  // Prisma CLI loads .env by default. Next.js will load .env.local at runtime.
-  // Ensure DATABASE_URL is available when running Prisma commands.
-  url        = env("DATABASE_URL")
   extensions = [ltree]
 }
 

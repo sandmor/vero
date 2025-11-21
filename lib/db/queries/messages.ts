@@ -1,6 +1,6 @@
-import { Prisma as PrismaRuntime } from '../../../generated/prisma-client';
+import { Prisma as PrismaRuntime } from '../../../generated/prisma-client/client';
 import { randomUUID } from 'crypto';
-import type { Prisma } from '../../../generated/prisma-client';
+import type { Prisma } from '../../../generated/prisma-client/client';
 import { prisma } from '../prisma';
 import { ChatSDKError } from '../../errors';
 import type { DBMessage, MessageTreeNode, MessageTreeResult } from '../schema';

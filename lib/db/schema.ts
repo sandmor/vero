@@ -1,4 +1,4 @@
-import type { Prisma } from '../../generated/prisma-client';
+import type { Prisma } from '../../generated/prisma-client/client';
 import type { AppUsage } from '../usage';
 import type { VisibilityType } from '@/components/visibility-selector';
 import type { ArtifactKind } from '@/components/artifact';

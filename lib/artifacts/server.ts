@@ -8,7 +8,7 @@ import { saveDocument } from '../db/queries';
 import type { Document } from '../db/schema';
 import type { ChatMessage } from '../types';
 import type { CodeLanguage } from '../code/languages';
-import type { Prisma } from '../../generated/prisma-client';
+import type { Prisma } from '../../generated/prisma-client/client';
 
 export type ArtifactToolContext = {
   modelId?: string;
