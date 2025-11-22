@@ -21,9 +21,7 @@ import type { ChatModelCapabilitiesSummary } from '@/lib/ai/models';
 const LABELS: Record<ChatToolId, string> = {
   getWeather: 'Weather',
   runCode: 'Run Code',
-  createDocument: 'Create Doc',
-  updateDocument: 'Update Doc',
-  requestSuggestions: 'Suggestions',
+
   readArchive: 'Read Archive',
   writeArchive: 'Write Archive',
   manageChatPins: 'Manage Chat Pins',
@@ -31,11 +29,6 @@ const LABELS: Record<ChatToolId, string> = {
 
 // Define logical groups (order preserved)
 const TOOL_GROUPS: { id: string; label: string; tools: ChatToolId[] }[] = [
-  {
-    id: 'documents',
-    label: 'Documents',
-    tools: ['createDocument', 'updateDocument', 'requestSuggestions'],
-  },
   {
     id: 'archive',
     label: 'Archive',

@@ -1,7 +1,7 @@
 import type { Prisma } from '../../generated/prisma-client/client';
 import type { AppUsage } from '../usage';
 import type { VisibilityType } from '@/components/visibility-selector';
-import type { ArtifactKind } from '@/components/artifact';
+
 import type { AgentPromptConfig } from '@/lib/agent-prompt';
 import type { ChatToolId } from '@/lib/ai/tool-ids';
 
@@ -47,10 +47,7 @@ export type Chat = Omit<
   settings: ChatSettings | null;
 };
 export type Agent = Prisma.AgentGetPayload<{}>;
-export type Document = Omit<Prisma.DocumentGetPayload<{}>, 'kind'> & {
-  kind: ArtifactKind;
-};
-export type Suggestion = Prisma.SuggestionGetPayload<{}>;
+
 export type Stream = Prisma.StreamGetPayload<{}>;
 export type ArchiveEntry = Prisma.ArchiveEntryGetPayload<{}>;
 export type ArchiveLink = Prisma.ArchiveLinkGetPayload<{}>;

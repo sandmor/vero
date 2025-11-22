@@ -2,9 +2,6 @@
 export const CHAT_TOOL_IDS = [
   'getWeather',
   'runCode',
-  'createDocument',
-  'updateDocument',
-  'requestSuggestions',
   'readArchive',
   'writeArchive',
   'manageChatPins',

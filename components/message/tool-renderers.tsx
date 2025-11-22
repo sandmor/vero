@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 import { memo } from 'react';
 import equal from 'fast-deep-equal';
-import { DocumentToolResult } from '@/components/document';
-import { DocumentPreview } from '@/components/document-preview';
+
 import {
   Tool,
   ToolContent,
@@ -28,13 +27,6 @@ type ArchivePart = Extract<
   { type: 'tool-readArchive' | 'tool-writeArchive' | 'tool-manageChatPins' }
 >;
 
-type DocumentPart = Extract<
-  ToolPart,
-  { type: 'tool-createDocument' | 'tool-updateDocument' }
->;
-
-type SuggestionsPart = Extract<ToolPart, { type: 'tool-requestSuggestions' }>;
-
 type WeatherPart = Extract<ToolPart, { type: 'tool-getWeather' }>;
 
 type RunCodePart = Extract<ToolPart, { type: 'tool-runCode' }>;
@@ -54,20 +46,6 @@ const formatSerializableError = (
   if (!error) return undefined;
   const parts = [error.name, error.message].filter(Boolean);
   return parts.length ? parts.join(': ') : undefined;
-};
-
-type DocumentKind = 'text' | 'code' | 'sheet' | 'image';
-
-const toDocumentKind = (value: unknown): DocumentKind | undefined => {
-  if (
-    value === 'text' ||
-    value === 'code' ||
-    value === 'sheet' ||
-    value === 'image'
-  ) {
-    return value;
-  }
-  return undefined;
 };
 
 const WeatherRenderer = memo(
@@ -165,159 +143,6 @@ const ArchiveRenderer = memo(
 
 ArchiveRenderer.displayName = 'ArchiveRenderer';
 
-const DocumentRenderer = memo(
-  ({ part, context }: { part: DocumentPart; context: ToolRendererContext }) => {
-    const { toolCallId, type, output } = part;
-    const error =
-      output &&
-      typeof output === 'object' &&
-      !Array.isArray(output) &&
-      'error' in output
-        ? String((output as { error: unknown }).error ?? '')
-        : undefined;
-
-    if (error) {
-      return (
-        <div
-          className="w-full max-w-full rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:bg-red-950/50 dark:text-red-400"
-          key={toolCallId}
-        >
-          Error {type === 'tool-createDocument' ? 'creating' : 'updating'}{' '}
-          document: {error}
-        </div>
-      );
-    }
-
-    if (type === 'tool-createDocument') {
-      return (
-        <DocumentPreview
-          isReadonly={context.isReadonly}
-          key={toolCallId}
-          result={output}
-        />
-      );
-    }
-
-    const result = output && typeof output === 'object' ? output : undefined;
-    const derivedKind =
-      result && 'kind' in result
-        ? toDocumentKind((result as { kind?: unknown }).kind)
-        : undefined;
-    const derivedTitle =
-      result && 'title' in result && typeof result.title === 'string'
-        ? result.title
-        : undefined;
-    const derivedId =
-      result && 'id' in result && typeof result.id === 'string'
-        ? result.id
-        : undefined;
-
-    return (
-      <div className="relative w-full max-w-full" key={toolCallId}>
-        <DocumentPreview
-          args={
-            result
-              ? {
-                  title: derivedTitle,
-                  kind: derivedKind,
-                  isUpdate: true,
-                }
-              : undefined
-          }
-          isReadonly={context.isReadonly}
-          result={
-            result
-              ? {
-                  id: derivedId,
-                  title: derivedTitle,
-                  kind: derivedKind,
-                }
-              : undefined
-          }
-        />
-      </div>
-    );
-  },
-  (prevProps, nextProps) =>
-    equal(prevProps.part, nextProps.part) &&
-    prevProps.context.isReadonly === nextProps.context.isReadonly
-);
-
-DocumentRenderer.displayName = 'DocumentRenderer';
-
-const SuggestionsRenderer = memo(
-  ({
-    part,
-    context,
-  }: {
-    part: SuggestionsPart;
-    context: ToolRendererContext;
-  }) => {
-    const { toolCallId, state, input, output, errorText } = part;
-    const outputHasError =
-      output &&
-      typeof output === 'object' &&
-      !Array.isArray(output) &&
-      'error' in output;
-    const derivedError = outputHasError
-      ? String((output as { error: unknown }).error ?? '')
-      : undefined;
-    const isRenderableSuggestion =
-      output &&
-      !outputHasError &&
-      typeof output === 'object' &&
-      'id' in output &&
-      'title' in output &&
-      'kind' in output;
-    const suggestionKind = isRenderableSuggestion
-      ? toDocumentKind((output as { kind?: unknown }).kind)
-      : undefined;
-    const canRenderSuggestion = Boolean(
-      isRenderableSuggestion && suggestionKind
-    );
-
-    return (
-      <Tool
-        className="w-full max-w-full overflow-hidden"
-        defaultOpen
-        key={toolCallId}
-      >
-        <ToolHeader state={state} type="tool-requestSuggestions" />
-        <ToolContent>
-          <ToolInput input={input ?? {}} />
-          {state === 'output-available' || state === 'output-error' ? (
-            <ToolOutput
-              errorText={
-                state === 'output-error'
-                  ? (errorText ?? derivedError)
-                  : derivedError
-              }
-              output={
-                state === 'output-available' && canRenderSuggestion ? (
-                  <DocumentToolResult
-                    isReadonly={context.isReadonly}
-                    result={{
-                      id: (output as { id: string }).id,
-                      title: (output as { title: string }).title,
-                      kind: suggestionKind!,
-                    }}
-                    type="request-suggestions"
-                  />
-                ) : null
-              }
-            />
-          ) : null}
-        </ToolContent>
-      </Tool>
-    );
-  },
-  (prevProps, nextProps) =>
-    equal(prevProps.part, nextProps.part) &&
-    prevProps.context.isReadonly === nextProps.context.isReadonly
-);
-
-SuggestionsRenderer.displayName = 'SuggestionsRenderer';
-
 const RunCodeRenderer = memo(
   ({ part }: { part: RunCodePart }) => {
     const { toolCallId, state, input, output, errorText } = part;
@@ -351,7 +176,7 @@ const RunCodeRenderer = memo(
         key={toolCallId}
       >
         <ToolHeader state={state} type="tool-runCode" />
-        <ToolContent className="[&_pre]:max-w-full [&_pre]:break-words">
+        <ToolContent className="[&_pre]:max-w-full [&_pre]:wrap-break-word">
           {(state === 'input-available' ||
             state === 'output-available' ||
             state === 'output-error') &&
@@ -508,19 +333,7 @@ export const renderToolPart = (
     case 'tool-writeArchive':
     case 'tool-manageChatPins':
       return <ArchiveRenderer key={part.toolCallId} part={part} />;
-    case 'tool-createDocument':
-    case 'tool-updateDocument':
-      return (
-        <DocumentRenderer key={part.toolCallId} part={part} context={context} />
-      );
-    case 'tool-requestSuggestions':
-      return (
-        <SuggestionsRenderer
-          key={part.toolCallId}
-          part={part}
-          context={context}
-        />
-      );
+
     case 'tool-runCode':
       return <RunCodeRenderer key={part.toolCallId} part={part} />;
     default:

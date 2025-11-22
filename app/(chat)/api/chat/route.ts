@@ -37,16 +37,12 @@ import { fetchModels } from 'tokenlens/fetch';
 import { getUsage } from 'tokenlens/helpers';
 import { getModelCost } from '@/lib/ai/pricing';
 import { getLanguageModel, getLanguageModelWithKey } from '@/lib/ai/providers';
-import { createDocument } from '@/lib/ai/tools/create-document';
+import { getChatSettings } from '@/lib/db/chat-settings';
 import { readArchive } from '@/lib/ai/tools/readArchive';
 import { writeArchive } from '@/lib/ai/tools/writeArchive';
 import { manageChatPins } from '@/lib/ai/tools/manageChatPins';
 import { getWeather } from '@/lib/ai/tools/get-weather';
-import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
-import { updateDocument } from '@/lib/ai/tools/update-document';
 import { runCode } from '@/lib/ai/tools/run-code';
-import type { ArtifactToolContext } from '@/lib/artifacts/server';
-import { getChatSettings } from '@/lib/db/chat-settings';
 import { isProductionEnvironment } from '@/lib/constants';
 import {
   createStreamId,
@@ -746,17 +742,6 @@ export async function POST(request: Request) {
           mergedModelMessages = merged;
         }
 
-        const artifactContext: ArtifactToolContext = {
-          modelId: selectedChatModel,
-          model,
-          providerOptions: Object.keys(providerOptions).length
-            ? providerOptions
-            : undefined,
-          systemPrompt: composedSystemPrompt,
-          messages: mergedModelMessages,
-          reasoningEffort: effectiveReasoningEffort,
-        };
-
         const activeTools: Record<string, any> = {};
 
         if (allowedToolIds.includes('getWeather')) {
@@ -767,26 +752,7 @@ export async function POST(request: Request) {
             requestHints,
           });
         }
-        if (allowedToolIds.includes('createDocument')) {
-          activeTools.createDocument = createDocument({
-            session,
-            dataStream,
-            context: artifactContext,
-          });
-        }
-        if (allowedToolIds.includes('updateDocument')) {
-          activeTools.updateDocument = updateDocument({
-            session,
-            dataStream,
-            context: artifactContext,
-          });
-        }
-        if (allowedToolIds.includes('requestSuggestions')) {
-          activeTools.requestSuggestions = requestSuggestions({
-            session,
-            dataStream,
-          });
-        }
+
         if (allowedToolIds.includes('readArchive')) {
           activeTools.readArchive = readArchive({ session });
         }

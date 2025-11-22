@@ -3,11 +3,7 @@
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatHeader } from '@/components/chat-header';
-import {
-  initialArtifactData,
-  useArtifact,
-  useArtifactSelector,
-} from '@/hooks/use-artifact';
+
 import { useAutoResume } from '@/hooks/use-auto-resume';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 import { useMultiSelection } from '@/hooks/use-multi-selection';
@@ -19,7 +15,7 @@ import type {
 import type { Attachment, ChatMessage } from '@/lib/types';
 import type { AppUsage } from '@/lib/usage';
 import { cn, convertToUIMessages } from '@/lib/utils';
-import { Artifact } from './artifact';
+
 import { useDataStreamDispatch } from './data-stream-provider';
 import { Messages } from './messages';
 import { MultimodalInput } from './multimodal-input';
@@ -105,8 +101,6 @@ export function Chat({
     initialVisibilityType,
   });
   const setDataStream = useDataStreamDispatch();
-  const { setArtifact, setMetadata } = useArtifact();
-  const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
 
   const [input, setInput] = useState<string>('');
   const [usage, setUsage] = useState<AppUsage | undefined>(initialLastContext);
@@ -238,24 +232,6 @@ export function Chat({
     }
   }, [selectedCount]);
 
-  useEffect(() => {
-    const resetArtifactState = () => ({
-      ...initialArtifactData,
-      boundingBox: { ...initialArtifactData.boundingBox },
-      status: 'idle' as const,
-    });
-
-    setDataStream([]);
-    setArtifact(resetArtifactState());
-    setMetadata(null, false);
-
-    return () => {
-      setDataStream([]);
-      setArtifact(resetArtifactState());
-      setMetadata(null, false);
-    };
-  }, [id, setArtifact, setDataStream, setMetadata]);
-
   const searchParams = useSearchParams();
   const query = searchParams.get('query');
   const regenerateParam = searchParams.get('regenerate');
@@ -367,7 +343,6 @@ export function Chat({
 
       <Messages
         chatId={id}
-        isArtifactVisible={isArtifactVisible}
         isReadonly={isReadonly}
         messages={messages}
         onDeleteMessage={handleDeleteMessage}
@@ -490,27 +465,6 @@ export function Chat({
           />
         )}
       </div>
-
-      <Artifact
-        attachments={attachments}
-        chatId={id}
-        input={input}
-        isReadonly={isReadonly}
-        messages={messages}
-        onDeleteMessage={handleDeleteMessage}
-        onToggleSelectMessage={!isReadonly ? toggleMessageSelection : undefined}
-        selectedMessageIds={selectedMessageIdsSet}
-        isSelectionMode={isSelectionMode}
-        selectedModelId={preferences.currentModelId}
-        selectedVisibilityType={visibilityType}
-        sendMessage={sendMessage}
-        setAttachments={setAttachments}
-        setInput={setInput}
-        setMessages={setMessages}
-        status={status}
-        stop={stop}
-        allowedModels={allowedModels}
-      />
     </div>
   );
 }

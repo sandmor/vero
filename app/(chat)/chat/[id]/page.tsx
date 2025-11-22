@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { ChatComposerClient } from '@/components/chat/chat-composer.client';
-import { DataStreamHandler } from '@/components/data-stream-handler';
+
 import { ChatLoadingSkeleton } from '@/components/chat/chat-loading-skeleton';
 
 const ChatFallback = () => <ChatLoadingSkeleton />;
@@ -16,7 +16,6 @@ export default async function Page({
       <Suspense fallback={<ChatFallback />}>
         <ChatComposerClient chatId={id} />
       </Suspense>
-      <DataStreamHandler />
     </>
   );
 }

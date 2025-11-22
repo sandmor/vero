@@ -13,7 +13,7 @@ type MessagesProps = {
   status: UseChatHelpers<ChatMessage>['status'];
   messages: ChatMessage[];
   isReadonly: boolean;
-  isArtifactVisible: boolean;
+
   selectedModelId: string;
   onRegenerateAssistant?: (assistantMessageId: string) => void;
   disableRegenerate?: boolean;
@@ -134,7 +134,7 @@ const areMessagesPropsEqual = (prev: MessagesProps, next: MessagesProps) => {
   if (prev.chatId !== next.chatId) return false;
   if (prev.status !== next.status) return false;
   if (prev.isReadonly !== next.isReadonly) return false;
-  if (prev.isArtifactVisible !== next.isArtifactVisible) return false;
+
   if (prev.selectedModelId !== next.selectedModelId) return false;
   if (prev.disableRegenerate !== next.disableRegenerate) return false;
   if (prev.messages !== next.messages) return false;

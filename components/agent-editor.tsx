@@ -103,9 +103,7 @@ interface AgentFormState {
 const TOOL_LABELS: Record<ChatToolId, string> = {
   getWeather: 'Weather',
   runCode: 'Run Code',
-  createDocument: 'Create document',
-  updateDocument: 'Update document',
-  requestSuggestions: 'Suggestions',
+
   readArchive: 'Read Archive',
   writeArchive: 'Write Archive',
   manageChatPins: 'Manage Chat Pins',

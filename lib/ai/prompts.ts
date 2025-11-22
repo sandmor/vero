@@ -1,5 +1,5 @@
 import type { Geo } from '@vercel/functions';
-import type { ArtifactKind } from '@/components/artifact';
+
 import {
   PromptTemplateEngine,
   type PromptPart,
@@ -58,7 +58,6 @@ export interface SystemPromptComposition {
 
 const PINNED_MEMORY_CHAR_LIMIT = 20_000;
 
-const ARTIFACT_TOOL_IDS = ['createDocument', 'updateDocument'] as const;
 const ARCHIVE_TOOL_IDS = [
   'readArchive',
   'writeArchive',
@@ -73,7 +72,7 @@ Formatting expectations
 - Render math with KaTeX syntax: inline $...$, block $$...$$
 - Never write formulas or math outside the appropriate KaTeX delimiters; every mathematical expression must be wrapped in inline $...$ or block $$...$$
 - If using diagrams, use Markdown code fences labelled \`\`\`mermaid
-- Prefer clear headings, tight prose, and cite tools or artifacts when you use them
+- Prefer clear headings, tight prose, and cite tools when you use them
 - Use markdown lists to present items.
 - Always wrap code in markdown's fenced code blocks with a language label (even short snippets or shell commands); never place code inline in prose.
 `;
@@ -85,15 +84,6 @@ const requestOriginTemplate = `About the origin of user's request:
 - lon: {{longitude}}
 - city: {{city}}
 - country: {{country}}
-`;
-
-const artifactsPrompt = `
-Artifacts workspace (side-by-side document view)
-- Use \`createDocument\` for code or substantial output (~10+ lines) the user may reuse
-- Label code fences with their language (default \`python\`); explain limits if another language is requested
-- Keep chat replies in conversation unless the user asks for an artifact
-- After creating a document, wait for user direction before calling \`updateDocument\`
-- For major revisions prefer full rewrites; use targeted updates only when the user scopes the change
 `;
 
 const archivePrompt = `
@@ -141,14 +131,6 @@ const requestOriginPart: PromptPart<SystemPromptContext> = {
   }),
 };
 
-const artifactsPart: PromptPart<SystemPromptContext> = {
-  id: 'artifacts',
-  template: artifactsPrompt,
-  priority: 30,
-  isEnabled: ({ allowedTools }) =>
-    isToolGroupEnabled(allowedTools, ARTIFACT_TOOL_IDS),
-};
-
 const archivePart: PromptPart<SystemPromptContext> = {
   id: 'archive',
   template: archivePrompt,
@@ -193,7 +175,7 @@ const defaultSystemPromptParts: PromptPart<SystemPromptContext>[] = [
   formattingPart,
   runCodePart,
   requestOriginPart,
-  artifactsPart,
+
   archivePart,
   pinnedMemoryPart,
 ];
@@ -365,27 +347,6 @@ def factorial(n):
 
 print(f"Factorial of 5 is: {factorial(5)}")
 `;
-
-export const sheetPrompt = `
-You are a spreadsheet creation assistant. Create a spreadsheet in csv format based on the given prompt. The spreadsheet should contain meaningful column headers and data.
-`;
-
-export const updateDocumentPrompt = (
-  currentContent: string | null,
-  type: ArtifactKind
-) => {
-  let mediaType = 'document';
-
-  if (type === 'code') {
-    mediaType = 'code snippet';
-  } else if (type === 'sheet') {
-    mediaType = 'spreadsheet';
-  }
-
-  return `Improve the following contents of the ${mediaType} based on the given prompt.
-
-${currentContent ?? ''}`;
-};
 
 function formatGeoValue(value: unknown): string {
   return value === undefined || value === null ? 'undefined' : String(value);

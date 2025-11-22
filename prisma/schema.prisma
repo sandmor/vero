@@ -37,8 +37,7 @@ model User {
   preferences Json? // User preferences: { name?: string, occupation?: string, customInstructions?: string }
 
   chats                Chat[]
-  documents            Document[]
-  suggestions          Suggestion[]
+
   archiveEntries       ArchiveEntry[]
   pinnedArchiveEntries ChatPinnedArchiveEntry[]
   rateLimit            UserRateLimit?
@@ -148,38 +147,9 @@ model Message {
   @@map("Message")
 }
 
-model Document {
-  id        String   @db.Uuid
-  createdAt DateTime
-  title     String   @db.Text
-  content   String?
-  kind      String   @default("text")
-  userId    String   @db.VarChar(191)
-  metadata  Json?
 
-  user        User         @relation(fields: [userId], references: [id])
-  suggestions Suggestion[]
 
-  @@id([id, createdAt])
-  @@map("Document")
-}
 
-model Suggestion {
-  id                String   @id @default(uuid()) @db.Uuid
-  documentId        String   @db.Uuid
-  documentCreatedAt DateTime
-  originalText      String   @db.Text
-  suggestedText     String   @db.Text
-  description       String?
-  isResolved        Boolean  @default(false)
-  userId            String   @db.VarChar(191)
-  createdAt         DateTime
-
-  user     User     @relation(fields: [userId], references: [id])
-  document Document @relation(fields: [documentId, documentCreatedAt], references: [id, createdAt])
-
-  @@map("Suggestion")
-}
 
 model Stream {
   id        String   @id @default(uuid()) @db.Uuid

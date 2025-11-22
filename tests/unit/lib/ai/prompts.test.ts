@@ -19,32 +19,6 @@ const baseRequestHints: RequestHints = {
 };
 
 describe('systemPrompt', () => {
-  it('includes artifacts guidance when artifact tools are enabled', () => {
-    const composition = systemPrompt({
-      requestHints: baseRequestHints,
-      allowedTools: ['createDocument', 'updateDocument'],
-    });
-
-    const prompt = composition.system;
-
-    expect(prompt).toContain(
-      'Artifacts workspace (side-by-side document view)'
-    );
-  });
-
-  it('omits artifacts guidance when artifact tools are disabled', () => {
-    const composition = systemPrompt({
-      requestHints: baseRequestHints,
-      allowedTools: [],
-    });
-
-    const prompt = composition.system;
-
-    expect(prompt).not.toContain(
-      'Artifacts workspace (side-by-side document view)'
-    );
-  });
-
   it('includes archive guidance only when archive tools are allowed', () => {
     const withoutArchiveComposition = systemPrompt({
       requestHints: baseRequestHints,
@@ -134,7 +108,6 @@ describe('systemPrompt', () => {
 
     const prompt = composition.system;
 
-    expect(prompt).toContain('Artifacts workspace');
     expect(prompt).toContain('Project context: Aurora');
     expect(prompt).toContain('---');
   });
@@ -176,7 +149,7 @@ describe('systemPrompt', () => {
     const prompt = composition.system;
 
     expect(prompt).toContain('Minimal prompt for analysis');
-    expect(prompt).not.toContain('Artifacts workspace');
+
     expect(prompt).not.toContain('You are a friendly');
   });
 

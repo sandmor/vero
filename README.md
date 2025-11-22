@@ -1,17 +1,18 @@
 <h1 align="center">Virid Chat</h1>
 
-Advanced multimodal AI chat application built with Next.js 15 (App Router), React 19, Prisma & PostgreSQL. It features a structured artifact system, persistent memory archive, tier‑aware model registry, runtime model capability introspection, and granular administrative controls.
+Advanced multimodal AI chat application built with Next.js 15 (App Router), React 19, Prisma & PostgreSQL. It features a persistent memory archive, tier‑aware model registry, runtime model capability introspection, and granular administrative controls.
 
 <p align="center">
   <a href="#features"><strong>Features</strong></a> ·
   <a href="#client-side-caching"><strong>Caching</strong></a> ·
-  <a href="#artifacts"><strong>Artifacts</strong></a> ·
-  <a href="#archive"><strong>Archive</strong></a> ·
-  <a href="#models"><strong>Models</strong></a> ·
-  <a href="#auth"><strong>Auth</strong></a> ·
-  <a href="#admin"><strong>Admin</strong></a> ·
-  <a href="#tech-stack"><strong>Tech Stack</strong></a> ·
-  <a href="#running-locally"><strong>Running locally</strong></a>
+
+<a href="#archive"><strong>Archive</strong></a> ·
+<a href="#models"><strong>Models</strong></a> ·
+<a href="#auth"><strong>Auth</strong></a> ·
+<a href="#admin"><strong>Admin</strong></a> ·
+<a href="#tech-stack"><strong>Tech Stack</strong></a> ·
+<a href="#running-locally"><strong>Running locally</strong></a>
+
 </p>
 <br />
 
@@ -34,15 +35,6 @@ Advanced multimodal AI chat application built with Next.js 15 (App Router), Reac
 - **Capability Introspection**: Model capabilities (tool support, formats) persisted & auto-synced (OpenRouter catalog fetch with fallback defaults)
 - **Selective Tool Access**: Agents/chats may restrict tool allow-lists (see `agent-settings` serialization)
 - **Context Preservation**: Persisted `lastContext`, pinned archive entries, and agent settings
-
-### Artifacts System
-
-AI-generated & user-editable structured documents that can be created inline during a conversation:
-
-- **Text Artifacts**: ProseMirror rich text w/ suggestion tracking (stored in `Document` / `Suggestion` tables)
-- **Code Artifacts**: CodeMirror editing + diff & syntax highlighting (execution hooks pluggable)
-- **Image Artifacts**: Generation via multimodal-capable models; editing UI (client-side transformations)
-- **Sheet Artifacts**: CSV / tabular data rendered using React Data Grid with editing & export
 
 ### Archive Memory System
 
@@ -86,38 +78,6 @@ To enhance performance and provide a more fluid user experience, Virid Chat impl
 - **Storage**: [Dexie.js](https://dexie.org/) is used as a wrapper around IndexedDB for convenient and robust database operations.
 - **Encryption**: The Web Crypto API is used for all cryptographic operations, ensuring a high level of security.
 - **State Management**: The cache is managed through a React Context provider (`EncryptedCacheProvider`) and a custom hook (`useEncryptedCache`), which integrates seamlessly with `react-query`.
-
-## Artifacts
-
-The artifact system enables AI to create and manipulate structured content during conversations:
-
-### Text Artifacts
-
-- Rich text editing with ProseMirror
-- AI-powered suggestions for improvements
-- Version history and diff viewing
-- Collaborative editing capabilities
-
-### Code Artifacts
-
-- Syntax highlighting (CodeMirror + Shiki hybrid for static render / diff)
-- Multi-language editing (JS/TS, Python, others extendable)
-- Draft vs current rendering + diff visualization
-- (Pluggable) execution/refactor hooks; suggestions stored similarly to text artifacts
-
-### Image Artifacts
-
-- AI-generated images from text prompts
-- Image editing and manipulation tools
-- Multiple format support (PNG, JPEG, WebP)
-- Integration with multimodal conversations
-
-### Sheet Artifacts
-
-- CSV data generation and editing
-- Interactive data grid with React Data Grid
-- Data visualization and analysis
-- Export capabilities
 
 ## Archive
 
@@ -223,10 +183,10 @@ Administrative interface for system management:
 ### Backend & Data
 
 - AI SDK (`ai` v5) provider unification + streaming handlers
-- Prisma ORM with modular schema (model capabilities, archive, artifacts, rate limit)
+- Prisma ORM with modular schema (model capabilities, archive, rate limit)
 - PostgreSQL primary storage (Neon friendly)
 - Redis (optional) future caching / ephemeral coordination; current rate limiting uses PostgreSQL
-- Vercel Blob for file & artifact attachments
+- Vercel Blob for file attachments
 
 ### Development & Deployment
 
@@ -240,7 +200,7 @@ Administrative interface for system management:
 
 - `ai`, `@ai-sdk/react` (multimodal streaming + tool calls)
 - `@clerk/nextjs` (auth), `@tanstack/react-query`, `react-hook-form`, `zod`
-- ProseMirror + CodeMirror + Shiki (artifact editors)
+
 - `sonner` (toasts), `lucide-react` (icons), `framer-motion` (animation)
 - `diff-match-patch` + custom diff view components
 - `dexie`: A wrapper for IndexedDB.
@@ -304,7 +264,6 @@ Create `.env.local` (loaded by Next.js) and ensure `DATABASE_URL` is present whe
 | `ADMIN_USER_ID`                | Hard admin (takes precedence over email)           |
 | `ADMIN_EMAIL`                  | Fallback admin identity (bootstrap)                |
 | `TITLE_GENERATION_MODEL`       | Override model for automatic chat title generation |
-| `ARTIFACT_GENERATION_MODEL`    | Override model for artifact creation prompts       |
 
 ### Database Setup
 
