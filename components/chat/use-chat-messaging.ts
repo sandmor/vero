@@ -185,8 +185,9 @@ export function useChatMessaging({
       }
     },
     onFinish: () => {
-      queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
       if (!chatHasStartedRef.current) {
+        // Only invalidate history for new chats to fetch the generated title
+        queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
         markChatAsStarted();
       }
     },
@@ -388,7 +389,6 @@ export function useChatMessaging({
         await refreshMessageTree();
         if (!cancelled) {
           sendRegeneration({ type: 'RESET' });
-          queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
         }
       } catch (error) {
         if (!cancelled) {
@@ -759,7 +759,6 @@ export function useChatMessaging({
           // Step 6: After generation completes, post-stream sync ensures everything is in sync
 
           toast({ type: 'success', description: 'Message updated.' });
-          queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
         } catch (error) {
           // Rollback on error
           setMessages(previousMessages);
@@ -801,7 +800,6 @@ export function useChatMessaging({
         // because it's the latest one created
 
         toast({ type: 'success', description: 'Message updated.' });
-        queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
       } catch (error) {
         // Rollback on error
         setMessages(previousMessages);

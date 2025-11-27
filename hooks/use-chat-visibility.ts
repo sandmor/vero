@@ -39,8 +39,6 @@ export function useChatVisibility({
 
   const setVisibilityType = (updatedVisibilityType: VisibilityType) => {
     queryClient.setQueryData(visibilityKey, updatedVisibilityType);
-    // Invalidate chat history so visibility updates propagate
-    queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
 
     updateChatVisibility({
       chatId,

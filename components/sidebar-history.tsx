@@ -159,9 +159,9 @@ export function SidebarHistory({
       const lastChat = lastPage.chats.at(-1);
       return lastChat?.id;
     },
-    staleTime: 10_000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    staleTime: 20 * 60_000, // 20 minutes - aligned with polling interval
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   // Use infinite query data for all operations (it includes cache verification for first page)
@@ -235,7 +235,7 @@ export function SidebarHistory({
       refetch().catch(() => {
         // Errors are handled by React Query
       });
-    }, 60_000); // Refresh every minute
+    }, 20 * 60_000); // Refresh every 20 minutes
 
     return () => clearInterval(interval);
   }, [user, refetch]);
