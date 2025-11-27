@@ -28,6 +28,7 @@ export type BranchSwitchContext = {
   onMessagesChange: (messages: ChatMessage[]) => void;
   onTreeChange: (tree: MessageTreeResult) => void;
   onRefreshTree: () => Promise<void>;
+  pendingNavigation: { messageId: string; direction: 'next' | 'prev' } | null;
 };
 
 export type BranchSwitchEvents =
@@ -137,6 +138,12 @@ export const branchSwitchMachine = setup({
       },
     }),
     rollback: ({ context }) => {
+      // Silent Rollback: If there's a pending navigation, don't restore the UI
+      // because we're about to navigate somewhere else anyway.
+      if (context.pendingNavigation) {
+        return;
+      }
+
       // Restore previous messages
       context.onMessagesChange([...context.previousMessages]);
 
@@ -209,16 +216,38 @@ export const branchSwitchMachine = setup({
           snapshot: BranchSelectionSnapshot | null;
         };
       }) => {
-        await updateBranchSelection({
-          chatId: input.chatId,
-          operation: input.operation,
-          expectedSnapshot: input.snapshot ?? undefined,
-        });
+        let attempts = 0;
+        const maxAttempts = 3;
+        while (attempts < maxAttempts) {
+          try {
+            await updateBranchSelection({
+              chatId: input.chatId,
+              operation: input.operation,
+              expectedSnapshot: input.snapshot ?? undefined,
+            });
+            return;
+          } catch (error) {
+            attempts++;
+            if (attempts >= maxAttempts) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 500 * attempts));
+          }
+        }
       }
     ),
     refreshTree: fromPromise(
       async ({ input }: { input: { refreshFn: () => Promise<void> } }) => {
-        await input.refreshFn();
+        let attempts = 0;
+        const maxAttempts = 3;
+        while (attempts < maxAttempts) {
+          try {
+            await input.refreshFn();
+            return;
+          } catch (error) {
+            attempts++;
+            if (attempts >= maxAttempts) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 500 * attempts));
+          }
+        }
       }
     ),
   },
@@ -235,6 +264,7 @@ export const branchSwitchMachine = setup({
     previousMessages: input.previousMessages,
     previousBranch: [],
     previousSelection: null,
+    pendingNavigation: null,
     onMessagesChange: input.onMessagesChange,
     onTreeChange: input.onTreeChange,
     onRefreshTree: input.onRefreshTree,
@@ -242,6 +272,15 @@ export const branchSwitchMachine = setup({
   initial: 'idle',
   states: {
     idle: {
+      always: {
+        guard: ({ context }) => context.pendingNavigation !== null,
+        target: 'validating',
+        actions: assign({
+          messageId: ({ context }) => context.pendingNavigation!.messageId,
+          direction: ({ context }) => context.pendingNavigation!.direction,
+          pendingNavigation: null,
+        }),
+      },
       on: {
         NAVIGATE: {
           target: 'validating',
@@ -253,6 +292,16 @@ export const branchSwitchMachine = setup({
       },
     },
     validating: {
+      on: {
+        NAVIGATE: {
+          actions: assign({
+            pendingNavigation: ({ event }) => ({
+              messageId: event.messageId,
+              direction: event.direction,
+            }),
+          }),
+        },
+      },
       always: [
         {
           guard: 'hasValidTree',
@@ -266,6 +315,16 @@ export const branchSwitchMachine = setup({
     },
     planning: {
       entry: ['savePreviousState', 'computePlan'],
+      on: {
+        NAVIGATE: {
+          actions: assign({
+            pendingNavigation: ({ event }) => ({
+              messageId: event.messageId,
+              direction: event.direction,
+            }),
+          }),
+        },
+      },
       always: [
         {
           guard: 'hasValidPlan',
@@ -279,6 +338,16 @@ export const branchSwitchMachine = setup({
     },
     applying: {
       entry: ['applyOptimisticUpdate', 'updateSelection'],
+      on: {
+        NAVIGATE: {
+          actions: assign({
+            pendingNavigation: ({ event }) => ({
+              messageId: event.messageId,
+              direction: event.direction,
+            }),
+          }),
+        },
+      },
       invoke: {
         src: 'persistSelection',
         input: ({ context }) => ({
@@ -300,6 +369,16 @@ export const branchSwitchMachine = setup({
       },
     },
     syncing: {
+      on: {
+        NAVIGATE: {
+          actions: assign({
+            pendingNavigation: ({ event }) => ({
+              messageId: event.messageId,
+              direction: event.direction,
+            }),
+          }),
+        },
+      },
       invoke: {
         src: 'refreshTree',
         input: ({ context }) => ({
@@ -319,7 +398,6 @@ export const branchSwitchMachine = setup({
       entry: ['rollback', 'restorePreviousSelection'],
       always: {
         target: 'idle',
-        actions: 'clearNavigationRequest',
       },
     },
   },
