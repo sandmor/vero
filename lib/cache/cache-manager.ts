@@ -76,21 +76,19 @@ export class EncryptedCacheManager {
       }))
     );
 
-    await this.db.transaction('rw', this.db.chats, async () => {
-      for (const item of encrypted) {
-        const payload: ChatCacheRecord = {
-          chatId: item.chatId,
-          lastUpdatedAt: item.lastUpdatedAt,
-          cachedAt: item.cachedAt,
-          schemaVersion: CACHE_DB_VERSION,
-          ciphertext: item.envelope.ciphertext,
-          iv: item.envelope.iv,
-          aad: item.envelope.aad,
-          optimisticState: item.optimisticState,
-        };
-        await this.db.chats.put(payload);
-      }
-    });
+    for (const item of encrypted) {
+      const payload: ChatCacheRecord = {
+        chatId: item.chatId,
+        lastUpdatedAt: item.lastUpdatedAt,
+        cachedAt: item.cachedAt,
+        schemaVersion: CACHE_DB_VERSION,
+        ciphertext: item.envelope.ciphertext,
+        iv: item.envelope.iv,
+        aad: item.envelope.aad,
+        optimisticState: item.optimisticState,
+      };
+      await this.db.chats.put(payload);
+    }
   }
 
   async storeDocuments<T>(
@@ -114,21 +112,19 @@ export class EncryptedCacheManager {
       }))
     );
 
-    await this.db.transaction('rw', this.db.documents, async () => {
-      for (const item of encrypted) {
-        const payload: DocumentCacheRecord = {
-          documentId: item.documentId,
-          chatId: item.chatId,
-          lastUpdatedAt: item.lastUpdatedAt,
-          cachedAt: item.cachedAt,
-          schemaVersion: CACHE_DB_VERSION,
-          ciphertext: item.envelope.ciphertext,
-          iv: item.envelope.iv,
-          aad: item.envelope.aad,
-        };
-        await this.db.documents.put(payload);
-      }
-    });
+    for (const item of encrypted) {
+      const payload: DocumentCacheRecord = {
+        documentId: item.documentId,
+        chatId: item.chatId,
+        lastUpdatedAt: item.lastUpdatedAt,
+        cachedAt: item.cachedAt,
+        schemaVersion: CACHE_DB_VERSION,
+        ciphertext: item.envelope.ciphertext,
+        iv: item.envelope.iv,
+        aad: item.envelope.aad,
+      };
+      await this.db.documents.put(payload);
+    }
   }
 
   async storeMetadata<T>(key: string, data: T): Promise<void> {
@@ -219,8 +215,8 @@ export class EncryptedCacheManager {
   async reset(): Promise<void> {
     this.isActive = false;
     this.key = null;
-    if (this.db.isOpen()) {
-      this.db.close();
+    if ((this.db as any).isOpen()) {
+      (this.db as any).close();
     }
     await deleteCacheDB();
     this.db = getCacheDB();
@@ -240,9 +236,9 @@ export class EncryptedCacheManager {
   }
 
   private async ensureOpen(): Promise<void> {
-    if (this.db.isOpen()) return;
+    if ((this.db as any).isOpen()) return;
     if (!this.openPromise) {
-      this.openPromise = this.db.open().then(() => {});
+      this.openPromise = (this.db as any).open().then(() => {});
     }
     try {
       await this.openPromise;

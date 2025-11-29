@@ -153,7 +153,7 @@ export function ArchiveExplorer() {
 
   const removeTag = useCallback(
     (form: typeof createForm | typeof editForm, tag: string) => {
-      const tags = form.getValues('tags').filter((t) => t !== tag);
+      const tags = form.getValues('tags').filter((t: string) => t !== tag);
       form.setValue('tags', tags, { shouldDirty: true, shouldValidate: true });
     },
     []
@@ -175,7 +175,7 @@ export function ArchiveExplorer() {
     }, ttl);
   }, []);
 
-  const handleCreate = createForm.handleSubmit(async (values) => {
+  const handleCreate = createForm.handleSubmit(async (values: FormValues) => {
     try {
       const { slug } = await createMutation.mutateAsync({
         entity: values.entity.trim(),
@@ -193,13 +193,13 @@ export function ArchiveExplorer() {
     }
   });
 
-  const handleUpdate = editForm.handleSubmit(async (values) => {
+  const handleUpdate = editForm.handleSubmit(async (values: FormValues) => {
     if (!current) return;
     setSaveFeedback('loading');
     try {
       const original = selected?.tags || [];
-      const addTags = values.tags.filter((t) => !original.includes(t));
-      const removeTags = original.filter((t) => !values.tags.includes(t));
+      const addTags = values.tags.filter((t: string) => !original.includes(t));
+      const removeTags = original.filter((t: string) => !values.tags.includes(t));
       await updateMutation.mutateAsync({
         slug: current,
         entity: values.entity.trim(),
@@ -369,7 +369,7 @@ export function ArchiveExplorer() {
                     <label className="text-sm font-medium">Tags</label>
                     <div className="flex flex-wrap gap-2 pb-1">
                       <AnimatePresence>
-                        {createForm.watch('tags').map((t) => (
+                        {createForm.watch('tags').map((t: string) => (
                           <motion.div
                             key={t}
                             initial={{ scale: 0.8, opacity: 0 }}
@@ -678,7 +678,7 @@ export function ArchiveExplorer() {
                     </label>
                     <div className="flex flex-wrap gap-2 pb-1">
                       <AnimatePresence>
-                        {editForm.watch('tags').map((t) => (
+                        {editForm.watch('tags').map((t: string) => (
                           <motion.div
                             key={t}
                             initial={{ scale: 0.8, opacity: 0 }}

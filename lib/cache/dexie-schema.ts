@@ -1,6 +1,6 @@
 'use client';
 
-import Dexie, { Table } from 'dexie';
+import Dexie from 'dexie';
 
 type SchemaVersion = 1;
 
@@ -47,14 +47,14 @@ export interface CacheMetadataRecord extends EncryptedEnvelope {
 }
 
 class ViridCacheDatabase extends Dexie {
-  chats!: Table<ChatCacheRecord, string>;
-  documents!: Table<DocumentCacheRecord, string>;
-  metadata!: Table<CacheMetadataRecord, string>;
+  chats!: Dexie.Table<ChatCacheRecord, string>;
+  documents!: Dexie.Table<DocumentCacheRecord, string>;
+  metadata!: Dexie.Table<CacheMetadataRecord, string>;
 
   constructor() {
     super(CACHE_DB_NAME, { autoOpen: false });
 
-    this.version(CACHE_DB_VERSION).stores({
+    (this as any).version(CACHE_DB_VERSION).stores({
       chats: 'chatId, lastUpdatedAt',
       documents: 'documentId, chatId, lastUpdatedAt',
       metadata: 'key',
@@ -76,7 +76,7 @@ export function getCacheDB(): ViridCacheDatabase {
 export async function deleteCacheDB(): Promise<void> {
   if (dbInstance) {
     try {
-      await dbInstance.close();
+      await (dbInstance as any).close();
     } catch {
       /* noop */
     }
