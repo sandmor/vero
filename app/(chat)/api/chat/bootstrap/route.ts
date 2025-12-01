@@ -14,6 +14,7 @@ import type { ChatSettings } from '@/lib/db/schema';
 import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
 import {
   buildInitialSettings,
+  mapAgentToPreset,
   resolveInitialModel,
   resolveInitialReasoningEffort,
 } from '@/lib/chat/bootstrap-helpers';
@@ -98,14 +99,7 @@ export async function GET(request: Request) {
       initialChatModel: initialModel,
       allowedModels,
       initialSettings,
-      initialAgent: chat.agent
-        ? {
-            id: chat.agent.id,
-            name: chat.agent.name,
-            description: chat.agent.description,
-            settings: chat.agent.settings,
-          }
-        : null,
+      initialAgent: mapAgentToPreset(chat.agent),
       agentId: chat.agent?.id ?? null,
       initialMessages: messages,
       initialBranchState: { rootMessageIndex },

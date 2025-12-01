@@ -16,21 +16,30 @@ import {
   getEncryptedCacheManager,
   type CachedChatPayload,
 } from '@/lib/cache/cache-manager';
-import type { CacheMetadataPayload, CachedChatRecord } from '@/lib/cache/types';
+import type {
+  CacheMetadataPayload,
+  CachedChatRecord,
+  SyncRequest,
+  SyncResponse,
+} from '@/lib/cache/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
 import type { ChatHistory } from '@/types/chat-history';
 import { deserializeChat } from '@/lib/chat/serialization';
 
 const CACHE_METADATA_KEY = 'cache-metadata';
-const CACHE_CHAT_LIMIT = 50;
 const CACHE_METADATA_VERSION = 1;
+const SYNC_PAGE_SIZE = 100;
+// Sync interval: how often to check for updates (5 minutes)
+const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const manager = getEncryptedCacheManager();
 
 const CACHE_DEBUG_TAG = '[EncryptedCache]';
+const IS_DEV = process.env.NODE_ENV === 'development';
 
 function cacheDebug(...args: unknown[]): void {
+  if (!IS_DEV) return;
   try {
     // eslint-disable-next-line no-console
     console.info(CACHE_DEBUG_TAG, ...args);
@@ -441,9 +450,9 @@ async function repairCacheState(
 type MetadataValidationResult =
   | { ok: true; metadata: CacheMetadataPayload }
   | {
-      ok: false;
-      reason: 'missing' | 'version-mismatch' | 'invalid-structure';
-    };
+    ok: false;
+    reason: 'missing' | 'version-mismatch' | 'invalid-structure';
+  };
 
 type ChatValidationResult =
   | { ok: true }
@@ -577,8 +586,8 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   ready: false,
   metadata: null,
   cachedChats: [],
-  refreshCache: async () => {},
-  upsertChatRecord: async () => {},
+  refreshCache: async () => { },
+  upsertChatRecord: async () => { },
   getCachedBootstrap: () => undefined,
 });
 
@@ -586,12 +595,10 @@ export function useEncryptedCache(): CacheContextValue {
   return useContext(EncryptedCacheContext);
 }
 
-async function storeDumpInCache(payload: {
-  metadata: CacheMetadataPayload;
-  chats: CachedChatRecord[];
-}) {
+async function storeChatsInCache(chats: CachedChatRecord[]) {
+  if (chats.length === 0) return;
   await manager.storeChats(
-    payload.chats.map((entry) => ({
+    chats.map((entry) => ({
       chatId: entry.chatId,
       data: entry,
       lastUpdatedAt: (() => {
@@ -600,7 +607,89 @@ async function storeDumpInCache(payload: {
       })(),
     }))
   );
-  await manager.storeMetadata(CACHE_METADATA_KEY, payload.metadata);
+}
+
+async function removeChatsFromCache(chatIds: string[]) {
+  for (const chatId of chatIds) {
+    try {
+      await manager.removeChat(chatId);
+    } catch (error) {
+      console.warn('Failed to remove chat from cache', { chatId, error });
+    }
+  }
+}
+
+async function performIncrementalSync(
+  lastSyncedAt: string | null,
+  knownChats: Array<{ id: string; updatedAt: string }>,
+  signal?: AbortSignal
+): Promise<{
+  upserts: CachedChatRecord[];
+  deletions: string[];
+  metadata: CacheMetadataPayload | null;
+  serverTimestamp: string;
+  totalChats: number;
+}> {
+  let allUpserts: CachedChatRecord[] = [];
+  let allDeletions: string[] = [];
+  let metadata: CacheMetadataPayload | null = null;
+  let serverTimestamp = '';
+  let totalChats = 0;
+  let cursor: string | null = null;
+  let hasMore = true;
+  let isFirstPage = true;
+
+  while (hasMore) {
+    if (signal?.aborted) {
+      throw new DOMException('Sync aborted', 'AbortError');
+    }
+
+    const requestBody: SyncRequest = {
+      lastSyncedAt,
+      pageSize: SYNC_PAGE_SIZE,
+      cursor,
+      // Only send known chats on first page to detect deletions
+      ...(isFirstPage && knownChats.length > 0 ? { knownChats } : {}),
+    };
+
+    const response = await fetch('/api/cache/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      credentials: 'include',
+      cache: 'no-store',
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Sync failed with status ${response.status}`);
+    }
+
+    const page: SyncResponse = await response.json();
+
+    allUpserts = [...allUpserts, ...page.upserts];
+
+    if (isFirstPage) {
+      allDeletions = page.deletions;
+      if (page.metadata) {
+        metadata = page.metadata;
+      }
+    }
+
+    serverTimestamp = page.serverTimestamp;
+    totalChats = page.totalChats;
+    hasMore = page.hasMore;
+    cursor = page.nextCursor;
+    isFirstPage = false;
+  }
+
+  return {
+    upserts: allUpserts,
+    deletions: allDeletions,
+    metadata,
+    serverTimestamp,
+    totalChats,
+  };
 }
 
 function shouldRefreshFromServer(
@@ -613,7 +702,8 @@ function shouldRefreshFromServer(
 function primeChatHistoryQuery(
   queryClient: ReturnType<typeof useQueryClient>,
   cachedChats: CachedChatPayload<CachedChatRecord>[],
-  metadata: CacheMetadataPayload | null
+  metadata: CacheMetadataPayload | null,
+  forceUpdate = false
 ) {
   if (!cachedChats.length) return;
 
@@ -637,7 +727,11 @@ function primeChatHistoryQuery(
 
   if (!cachedChatList.length) return;
 
-  if (existing) {
+  // Sort by createdAt descending to match the expected order
+  cachedChatList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  // Only skip update if there's existing data and forceUpdate is false
+  if (!forceUpdate && existing) {
     const hasChats = existing.pages.some((page) => page.chats.length > 0);
     if (hasChats) {
       return;
@@ -659,16 +753,49 @@ function primeChatHistoryQuery(
 
 function primeBootstrapQueries(
   queryClient: ReturnType<typeof useQueryClient>,
-  cachedChats: CachedChatPayload<CachedChatRecord>[]
+  cachedChats: CachedChatPayload<CachedChatRecord>[],
+  forceUpdate = false
 ) {
   cachedChats.forEach((entry) => {
     if (!entry.data.bootstrap) return;
     const key = ['chat', 'bootstrap', entry.chatId];
     const existing = queryClient.getQueryData<ChatBootstrapResponse>(key);
-    if (!existing) {
+    if (!existing || forceUpdate) {
       queryClient.setQueryData(key, entry.data.bootstrap);
     }
   });
+}
+
+function removeDeletedChatsFromQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  deletedChatIds: string[]
+) {
+  if (deletedChatIds.length === 0) return;
+
+  const deletedSet = new Set(deletedChatIds);
+
+  // Remove from history query
+  queryClient.setQueryData<InfiniteData<ChatHistory>>(
+    ['chat', 'history'],
+    (existing) => {
+      if (!existing) return existing;
+      return {
+        ...existing,
+        pages: existing.pages.map((page) => ({
+          ...page,
+          chats: page.chats.filter((chat) => !deletedSet.has(chat.id)),
+        })),
+      };
+    }
+  );
+
+  // Remove bootstrap queries for deleted chats
+  deletedChatIds.forEach((chatId) => {
+    queryClient.removeQueries({ queryKey: ['chat', 'bootstrap', chatId] });
+  });
+
+  // Invalidate search queries since they may contain deleted chats
+  queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
 }
 
 type CacheState = {
@@ -688,14 +815,25 @@ const initialState: CacheState = {
 
 export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
+
   const { data: sessionData, status: sessionStatus } = useAppSession();
   const [state, setState] = useState<CacheState>(initialState);
+
+  // Use refs to hold state values that callbacks need without causing re-creation
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const syncPromiseRef = useRef<Promise<void> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const encryptionKeyRef = useRef<CryptoKey | null>(null);
+  const isInitializedRef = useRef(false);
 
   const sessionUserId = sessionData?.session?.user?.id ?? null;
   const isLoggedIn = Boolean(sessionUserId);
+  const isLoggedInRef = useRef(isLoggedIn);
+  isLoggedInRef.current = isLoggedIn;
 
   const ensureManagerActivated = useCallback(async () => {
     if (manager.isInitialized()) {
@@ -711,10 +849,13 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
     cacheDebug('ensureManagerActivated: activating manager with existing key');
     await manager.activate(key);
-  }, []);
+  }, []); // No dependencies - uses refs only
 
-  const loadFromCache =
-    useCallback(async (): Promise<CacheMetadataPayload | null> => {
+  const loadFromCache = useCallback(
+    async (options?: {
+      forceUpdateQueries?: boolean;
+    }): Promise<CacheMetadataPayload | null> => {
+      const forceUpdate = options?.forceUpdateQueries ?? false;
       try {
         cacheDebug('loadFromCache: attempting to read cache state');
         const [rawCachedChats, metadataRecord] = await Promise.all([
@@ -837,12 +978,14 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
           isIntegrityValid: true,
         }));
 
+        const qc = queryClientRef.current;
         primeChatHistoryQuery(
-          queryClient,
+          qc,
           repairOutcome.cachedChats,
-          metadataValidation.metadata
+          metadataValidation.metadata,
+          forceUpdate
         );
-        primeBootstrapQueries(queryClient, repairOutcome.cachedChats);
+        primeBootstrapQueries(qc, repairOutcome.cachedChats, forceUpdate);
 
         return metadataValidation.metadata;
       } catch (error) {
@@ -879,15 +1022,18 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
         return null;
       }
-    }, [ensureManagerActivated, queryClient]);
+    }, [ensureManagerActivated]); // Only depends on ensureManagerActivated (stable)
 
   const refreshCache = useCallback(
     (options?: { force?: boolean }): Promise<void> => {
-      if (!isLoggedIn) {
+      const currentState = stateRef.current;
+      const currentIsLoggedIn = isLoggedInRef.current;
+
+      if (!currentIsLoggedIn) {
         cacheDebug('refreshCache: skipped (user not logged in)');
         return Promise.resolve();
       }
-      if (!options?.force && state.isIntegrityValid) {
+      if (!options?.force && currentState.isIntegrityValid) {
         cacheDebug('refreshCache: skipped (cache integrity still valid)');
         return Promise.resolve();
       }
@@ -897,10 +1043,15 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       }
 
       const promise = (async () => {
+        // Re-read state at start of async operation
+        const state = stateRef.current;
+        const qc = queryClientRef.current;
+
         try {
-          cacheDebug('refreshCache: starting full refresh', {
+          cacheDebug('refreshCache: starting incremental sync', {
             forced: Boolean(options?.force),
             priorStatus: state.status,
+            hasExistingMetadata: Boolean(state.metadata),
           });
           setState((prev) => ({
             ...prev,
@@ -910,45 +1061,78 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
           await ensureManagerActivated();
 
-          const response = await fetch('/api/cache/data-dump', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ limit: CACHE_CHAT_LIMIT }),
-            credentials: 'include',
-            cache: 'no-store',
+          // Determine if this is an initial sync or incremental
+          const isInitialSync = !state.metadata?.lastSyncedAt || options?.force;
+          const lastSyncedAt = isInitialSync ? null : state.metadata?.lastSyncedAt ?? null;
+
+          // Get known chats for deletion detection
+          const knownChats = state.cachedChats.map((entry) => ({
+            id: entry.chatId,
+            updatedAt: entry.data.lastUpdatedAt,
+          }));
+
+          cacheDebug('refreshCache: performing sync', {
+            isInitialSync,
+            lastSyncedAt,
+            knownChatsCount: knownChats.length,
           });
 
-          if (!response.ok) {
-            cacheDebug('refreshCache: server responded with failure', {
-              status: response.status,
+          const syncResult = await performIncrementalSync(
+            lastSyncedAt,
+            knownChats,
+            abortControllerRef.current?.signal
+          );
+
+          cacheDebug('refreshCache: sync completed', {
+            upsertsCount: syncResult.upserts.length,
+            deletionsCount: syncResult.deletions.length,
+            totalChats: syncResult.totalChats,
+          });
+
+          // Handle deletions
+          if (syncResult.deletions.length > 0) {
+            cacheDebug('refreshCache: removing deleted chats', {
+              count: syncResult.deletions.length,
             });
-            throw new Error('Failed to refresh cache from server');
+            await removeChatsFromCache(syncResult.deletions);
+            // Also remove from React Query cache
+            removeDeletedChatsFromQueries(qc, syncResult.deletions);
           }
 
-          cacheDebug('refreshCache: received new dump payload');
-          const payload = (await response.json()) as {
-            metadata: CacheMetadataPayload;
-            chats: CachedChatRecord[];
+          // Handle upserts
+          if (syncResult.upserts.length > 0) {
+            cacheDebug('refreshCache: storing updated chats', {
+              count: syncResult.upserts.length,
+            });
+            await storeChatsInCache(syncResult.upserts);
+          }
+
+          // Update metadata with sync timestamp
+          const updatedMetadata: CacheMetadataPayload = {
+            ...(syncResult.metadata ?? state.metadata ?? {
+              version: CACHE_METADATA_VERSION,
+              generatedAt: syncResult.serverTimestamp,
+              cacheCompletionMarker: {
+                completeFromDate: null,
+                completeToDate: null,
+                hasOlderChats: false,
+              },
+              allowedModels: [],
+            }),
+            lastSyncedAt: syncResult.serverTimestamp,
+            totalChats: syncResult.totalChats,
           };
 
-          try {
-            cacheDebug('refreshCache: resetting manager before seeding');
-            await manager.reset();
-          } catch (resetError) {
-            console.error(
-              'Failed to reset encrypted cache before seeding',
-              resetError
-            );
-          }
+          await manager.storeMetadata(CACHE_METADATA_KEY, updatedMetadata);
 
-          await ensureManagerActivated();
-          await storeDumpInCache(payload);
-          cacheDebug('refreshCache: cache seeded from payload', {
-            chatCount: payload.chats.length,
-          });
-          await loadFromCache();
+          cacheDebug('refreshCache: cache updated, reloading state');
+          await loadFromCache({ forceUpdateQueries: true });
         } catch (error) {
-          cacheDebug('refreshCache: failed to refresh cache', error);
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            cacheDebug('refreshCache: sync aborted');
+            return;
+          }
+          cacheDebug('refreshCache: failed to sync cache', error);
           setState((prev) => ({
             ...prev,
             status: prev.status === 'ready' ? prev.status : 'error',
@@ -965,7 +1149,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       syncPromiseRef.current = promise;
       return promise;
     },
-    [ensureManagerActivated, isLoggedIn, loadFromCache, state.isIntegrityValid]
+    [ensureManagerActivated, loadFromCache] // Stable dependencies only - uses refs for state
   );
 
   useEffect(() => {
@@ -979,12 +1163,19 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       abortControllerRef.current?.abort();
       abortControllerRef.current = null;
       syncPromiseRef.current = null;
+      isInitializedRef.current = false;
       manager.deactivate();
       void manager.reset();
       setState(initialState);
-      queryClient.removeQueries({ queryKey: ['chat', 'history'] });
-      queryClient.removeQueries({ queryKey: ['chat', 'bootstrap'] });
+      queryClientRef.current.removeQueries({ queryKey: ['chat', 'history'] });
+      queryClientRef.current.removeQueries({ queryKey: ['chat', 'bootstrap'] });
       encryptionKeyRef.current = null;
+      return;
+    }
+
+    // Prevent re-initialization if already initialized
+    if (isInitializedRef.current) {
+      cacheDebug('CacheProvider effect: already initialized, skipping');
       return;
     }
 
@@ -1002,11 +1193,20 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       try {
         cacheDebug('CacheProvider effect: fetching encryption key');
         const key = await fetchAndImportEncryptionKey(abortController.signal);
+
+        if (cancelled) return;
+
         encryptionKeyRef.current = key;
         await manager.activate(key);
 
+        if (cancelled) return;
+
+        isInitializedRef.current = true;
+
         cacheDebug('CacheProvider effect: loading cache from storage');
         const metadata = await loadFromCache();
+
+        if (cancelled) return;
 
         if (shouldRefreshFromServer(metadata)) {
           cacheDebug(
@@ -1037,7 +1237,29 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       abortController.abort();
       abortControllerRef.current = null;
     };
-  }, [isLoggedIn, sessionStatus, loadFromCache, refreshCache, queryClient]);
+  }, [isLoggedIn, sessionStatus]); // Only re-run on login state changes
+
+  // Store refreshCache in a ref for stable periodic sync
+  const refreshCacheRef = useRef(refreshCache);
+  refreshCacheRef.current = refreshCache;
+
+  // Periodic sync effect - keeps cache in sync with server
+  useEffect(() => {
+    if (!isLoggedIn || state.status !== 'ready') {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      cacheDebug('Periodic sync: checking for updates');
+      refreshCacheRef.current().catch((error) => {
+        cacheDebug('Periodic sync: failed', error);
+      });
+    }, SYNC_INTERVAL_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isLoggedIn, state.status]); // Only re-setup interval when login or ready state changes
 
   const getCachedBootstrap = useCallback(
     (chatId: string) => {
@@ -1075,7 +1297,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         await manager.storeMetadata(CACHE_METADATA_KEY, options.metadata);
       }
 
-      await loadFromCache();
+      await loadFromCache({ forceUpdateQueries: true });
     },
     [loadFromCache]
   );

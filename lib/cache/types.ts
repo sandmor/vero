@@ -13,6 +13,9 @@ export type CacheMetadataPayload = {
   generatedAt: string;
   cacheCompletionMarker: CacheCompletionMarker;
   allowedModels: ChatModelOption[];
+  // Sync tracking
+  lastSyncedAt?: string;
+  totalChats?: number;
 };
 
 export type SerializedAgent = {
@@ -36,4 +39,22 @@ export type CachedChatRecord = {
   lastUpdatedAt: string;
   bootstrap: ChatBootstrapResponse;
   chat: SerializedChat;
+};
+
+// Sync API types
+export type SyncRequest = {
+  lastSyncedAt: string | null;
+  knownChats?: Array<{ id: string; updatedAt: string }>;
+  pageSize?: number;
+  cursor?: string | null;
+};
+
+export type SyncResponse = {
+  upserts: CachedChatRecord[];
+  deletions: string[];
+  serverTimestamp: string;
+  hasMore: boolean;
+  nextCursor: string | null;
+  metadata?: CacheMetadataPayload;
+  totalChats: number;
 };

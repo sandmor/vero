@@ -1,9 +1,25 @@
-import type { ChatSettings } from '@/lib/db/schema';
+import type { ChatSettings, Agent } from '@/lib/db/schema';
+import type { AgentPreset } from '@/types/agent';
 import { DEFAULT_CHAT_MODEL, isModelIdAllowed } from '@/lib/ai/models';
 import {
   normalizeModelId,
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
+
+/**
+ * Maps a database agent record to the AgentPreset type for client consumption.
+ */
+export function mapAgentToPreset(
+  agent: Pick<Agent, 'id' | 'name' | 'description' | 'settings'> | null
+): AgentPreset | null {
+  if (!agent) return null;
+  return {
+    id: agent.id,
+    name: agent.name,
+    description: agent.description,
+    settings: agent.settings,
+  };
+}
 
 export function buildInitialSettings(
   base: ChatSettings | null,
