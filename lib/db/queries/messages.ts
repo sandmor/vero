@@ -471,6 +471,7 @@ export async function saveAssistantMessage({
   attachments = [],
   model,
   parentId,
+  selectNewMessage = false,
 }: {
   id: string;
   chatId: string;
@@ -478,21 +479,114 @@ export async function saveAssistantMessage({
   attachments?: unknown;
   model?: string | null;
   parentId?: string | null;
+  /** When true, updates the parent's selectedChildIndex to point to this new message */
+  selectNewMessage?: boolean;
 }) {
   try {
-    await saveMessages({
-      messages: [
-        {
-          id,
-          chatId,
-          role: 'assistant',
-          parts,
-          attachments: attachments ?? [],
-          createdAt: new Date(),
-          model: model ?? null,
-          parentId: parentId ?? undefined,
-        },
-      ],
+    await prisma.$transaction(async (tx) => {
+      // First, save the message
+      const existing = await tx.message.findMany({
+        where: { chatId },
+        select: { id: true, pathText: true, createdAt: true },
+      });
+
+      const pathById = new Map<string, string>();
+      const nextIndexByParent = new Map<string, number>();
+
+      let tailPath: string | null = null;
+      let tailTimestamp = -Infinity;
+
+      for (const row of existing) {
+        const pathText = row.pathText;
+        if (!pathText || !PATH_PATTERN.test(pathText)) {
+          continue;
+        }
+
+        pathById.set(row.id, pathText);
+
+        const parentPath = getParentPath(pathText);
+        const label = getLastSegment(pathText);
+        if (PATH_SEGMENT_PATTERN.test(label)) {
+          const parentKey = parentPath ?? ROOT_KEY;
+          const index = parseLabelIndex(label);
+          const nextIndex = nextIndexByParent.get(parentKey) ?? 0;
+          if (index + 1 > nextIndex) {
+            nextIndexByParent.set(parentKey, index + 1);
+          }
+        }
+
+        const createdAt =
+          row.createdAt instanceof Date
+            ? row.createdAt
+            : new Date(row.createdAt as unknown as string);
+        const timestamp = createdAt.getTime();
+        if (
+          timestamp > tailTimestamp ||
+          (timestamp === tailTimestamp &&
+            (!tailPath || pathText.localeCompare(tailPath) > 0))
+        ) {
+          tailTimestamp = timestamp;
+          tailPath = pathText;
+        }
+      }
+
+      // Determine parent path
+      let parentPath: string | null = null;
+      if (parentId) {
+        parentPath = pathById.get(parentId) ?? null;
+        if (!parentPath && !pathById.has(parentId)) {
+          parentPath = tailPath ?? null;
+        }
+      } else {
+        parentPath = tailPath ?? null;
+      }
+
+      // Calculate the new message's path
+      const parentKey = parentPath ?? ROOT_KEY;
+      const nextIndex = nextIndexByParent.get(parentKey) ?? 0;
+      const label = toBase36Label(nextIndex);
+      const path = parentPath ? `${parentPath}.${label}` : label;
+
+      // Insert the new message
+      await tx.$executeRaw(
+        PrismaRuntime.sql`
+          INSERT INTO "Message"
+            ("id", "chatId", "role", "parts", "attachments", "createdAt", "model", "path", "path_text")
+          VALUES (
+            ${id}::uuid,
+            ${chatId}::uuid,
+            'assistant',
+            ${JSON.stringify(parts ?? [])}::jsonb,
+            ${JSON.stringify(attachments ?? [])}::jsonb,
+            ${new Date()},
+            ${model ?? null},
+            ${path}::ltree,
+            ${path}
+          )
+          ON CONFLICT ("id") DO NOTHING
+        `
+      );
+
+      // If selectNewMessage is true, update the parent's selectedChildIndex
+      if (selectNewMessage && parentId && parentPath) {
+        // The new message's sibling index is nextIndex
+        await tx.message.update({
+          where: { id: parentId },
+          data: { selectedChildIndex: nextIndex },
+        });
+      } else if (selectNewMessage && !parentPath) {
+        // This is a root-level message, update the chat's rootMessageIndex
+        await tx.chat.update({
+          where: { id: chatId },
+          data: { rootMessageIndex: nextIndex },
+        });
+      }
+
+      // Update Chat's updatedAt timestamp
+      await tx.chat.update({
+        where: { id: chatId },
+        data: { updatedAt: new Date() },
+      });
     });
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -1108,13 +1202,13 @@ export async function updateBranchSelectionByChatId({
   chatId: string;
   userId: string;
   operation:
-    | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
-    | {
-        kind: 'child';
-        parentId: string;
-        selectedChildIndex: number | null;
-        childId?: string;
-      };
+  | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
+  | {
+    kind: 'child';
+    parentId: string;
+    selectedChildIndex: number | null;
+    childId?: string;
+  };
   expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   try {
@@ -1138,7 +1232,7 @@ export async function updateBranchSelectionByChatId({
       if (operation.kind === 'root') {
         let requestedIndex =
           operation.rootMessageIndex !== null &&
-          operation.rootMessageIndex !== undefined
+            operation.rootMessageIndex !== undefined
             ? Math.max(0, Math.trunc(operation.rootMessageIndex))
             : 0;
 
@@ -1230,7 +1324,7 @@ export async function updateBranchSelectionByChatId({
 
       let normalizedIndex =
         operation.selectedChildIndex === null ||
-        operation.selectedChildIndex === undefined
+          operation.selectedChildIndex === undefined
           ? 0
           : Math.max(0, Math.trunc(operation.selectedChildIndex));
 

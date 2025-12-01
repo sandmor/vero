@@ -474,16 +474,16 @@ export async function POST(request: Request) {
     const effectiveUserMessagePromise: Promise<ChatMessage> =
       regenerationContextPromise
         ? regenerationContextPromise.then((context) => {
-            const [userMessage] = convertToUIMessages([context.parent]);
-            if (!userMessage) {
-              throw new ChatSDKError(
-                'bad_request:chat',
-                'Failed to resolve user message for regeneration'
-              );
-            }
-            regenerationParentMessageId = userMessage.id;
-            return userMessage;
-          })
+          const [userMessage] = convertToUIMessages([context.parent]);
+          if (!userMessage) {
+            throw new ChatSDKError(
+              'bad_request:chat',
+              'Failed to resolve user message for regeneration'
+            );
+          }
+          regenerationParentMessageId = userMessage.id;
+          return userMessage;
+        })
         : Promise.resolve(requestUserMessage);
 
     // Regeneration replays an existing user turn; avoid duplicating it in persistence.
@@ -503,8 +503,8 @@ export async function POST(request: Request) {
         const streamIdPromise =
           streamId && streamContext
             ? createStreamId({ streamId, chatId: id }).catch((e) =>
-                console.warn('Failed to persist stream id (non-fatal)', e)
-              )
+              console.warn('Failed to persist stream id (non-fatal)', e)
+            )
             : Promise.resolve<void>(undefined);
 
         const [
@@ -564,20 +564,20 @@ export async function POST(request: Request) {
         const persistUserMessagePromise = skipUserPersistence
           ? Promise.resolve()
           : saveMessages({
-              messages: [
-                {
-                  chatId: id,
-                  id: effectiveUserMessage.id,
-                  role: 'user',
-                  parts: effectiveUserMessage.parts,
-                  attachments: [],
-                  createdAt: new Date(),
-                  parentId: lastPersistedDbMessage?.id,
-                },
-              ],
-            }).catch((e) => {
-              console.warn('Failed to persist user message (non-fatal)', e);
-            });
+            messages: [
+              {
+                chatId: id,
+                id: effectiveUserMessage.id,
+                role: 'user',
+                parts: effectiveUserMessage.parts,
+                attachments: [],
+                createdAt: new Date(),
+                parentId: lastPersistedDbMessage?.id,
+              },
+            ],
+          }).catch((e) => {
+            console.warn('Failed to persist user message (non-fatal)', e);
+          });
 
         const uiMessages = skipUserPersistence
           ? dbUiMessages
@@ -646,8 +646,8 @@ export async function POST(request: Request) {
           : normalizedAllowedTools === undefined
             ? [...allToolIds]
             : normalizedAllowedTools.filter((toolId) =>
-                allToolIdsSet.has(toolId)
-              );
+              allToolIdsSet.has(toolId)
+            );
 
         const basePromptParts = getDefaultSystemPromptParts();
         const promptResolution = buildPromptPartsFromConfig(
@@ -695,7 +695,7 @@ export async function POST(request: Request) {
           for (const message of promptComposition.messages) {
             const normalizedDepth =
               typeof message.depth === 'number' &&
-              Number.isFinite(message.depth)
+                Number.isFinite(message.depth)
                 ? Math.max(0, Math.floor(message.depth))
                 : 0;
 
@@ -836,7 +836,7 @@ export async function POST(request: Request) {
         dataStream.merge(
           result.toUIMessageStream({
             sendReasoning: true,
-            messageMetadata: ({}) => {
+            messageMetadata: ({ }) => {
               return {
                 model: selectedChatModel,
               };
@@ -868,6 +868,8 @@ export async function POST(request: Request) {
             attachments: [],
             model: selectedChatModel,
             parentId,
+            // When regenerating, update parent's selection to point to the new message
+            selectNewMessage: isRegeneration,
           });
         }
 

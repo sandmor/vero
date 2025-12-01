@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useMachine } from '@xstate/react';
 import { toast } from '@/components/toast';
 import type { ChatPreferences } from './use-chat-preferences';
-import { ChatSDKError, toChatError, type ChatError } from '@/lib/errors';
+import { ChatSDKError, toChatError } from '@/lib/errors';
 import type { ChatMessage, CustomUIDataTypes } from '@/lib/types';
 import type { MessageTreeResult } from '@/lib/db/schema';
 import type { AppUsage } from '@/lib/usage';
@@ -19,16 +19,15 @@ import {
 } from '@/lib/utils';
 import { buildEditedUserMessageParts } from '@/lib/message-editing';
 import type { VisibilityType } from '../visibility-selector';
-import { branchMessageAction, forkChatAction } from '@/app/(chat)/actions';
+import { branchMessageAction, forkChatAction, updateBranchSelection } from '@/app/(chat)/actions';
 import type React from 'react';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
-import { branchSwitchMachine } from '@/lib/state-machines/branch-switching.machine';
-import { treeSyncMachine } from '@/lib/state-machines/tree-sync.machine';
-import { regenerationMachine } from '@/lib/state-machines/regeneration.machine';
+import { chatOperationsMachine, type OperationType } from '@/lib/state-machines/chat-operations.machine';
 import {
   buildSelectionSnapshot,
   cloneSelectionSnapshot,
 } from '@/lib/utils/selection-snapshot';
+import type { BranchSelectionOperation } from '@/lib/utils/branch-planning';
 
 const IS_E2E = process.env.NEXT_PUBLIC_E2E === '1';
 
@@ -94,6 +93,7 @@ export function useChatMessaging({
     setSelection: assignSelection,
   } = selection;
 
+  // Track current state in refs for synchronous access
   const currentMessageTreeRef = useRef<MessageTreeResult | undefined>(
     initialMessageTree
   );
@@ -104,7 +104,6 @@ export function useChatMessaging({
       ? buildSelectionSnapshot(initialMessageTree)
       : { rootMessageIndex: null }
   );
-  const treeSyncRef = useRef<Promise<void> | null>(null);
 
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
@@ -186,7 +185,6 @@ export function useChatMessaging({
     },
     onFinish: () => {
       if (!chatHasStartedRef.current) {
-        // Only invalidate history for new chats to fetch the generated title
         queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
         markChatAsStarted();
       }
@@ -208,210 +206,127 @@ export function useChatMessaging({
     },
   });
 
+  // Track previous streaming state to detect transitions
   const streamingStateRef = useRef(isStreamingStatus(status));
 
+  // Keep refs in sync with state
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
-  const refreshMessageTree = useCallback(async () => {
+  // Fetch tree function for the machine
+  const fetchTree = useCallback(async () => {
     if (IS_E2E) {
-      return;
+      throw new Error('E2E mode bypasses tree fetch');
     }
-    if (treeSyncRef.current) {
-      return treeSyncRef.current;
-    }
-
-    const promise = (async () => {
-      try {
-        const { getMessageTreeAction } = await import('@/app/(chat)/actions');
-        const tree = await getMessageTreeAction({ chatId });
-        // Update via tree sync machine
-        sendTreeSync({ type: 'TREE_UPDATE_REQUESTED', tree });
-      } catch (error) {
-        console.error('Failed to refresh message tree', error);
-      } finally {
-        treeSyncRef.current = null;
-      }
-    })();
-
-    treeSyncRef.current = promise;
-    return promise;
+    const { getMessageTreeAction } = await import('@/app/(chat)/actions');
+    return await getMessageTreeAction({ chatId });
   }, [chatId]);
 
-  // Initialize tree sync machine
-  const [, sendTreeSync] = useMachine(treeSyncMachine, {
-    input: {
-      chatId,
-      currentTree: initialMessageTree,
-      selection: selectionRef.current,
-      onMessagesChange: setMessages,
-      onTreeChange: (tree) => {
-        currentMessageTreeRef.current = tree;
-      },
-      onSelectionChange: (selection) => {
-        selectionRef.current = selection;
-      },
-      fetchTree: async () => {
-        const { getMessageTreeAction } = await import('@/app/(chat)/actions');
-        return await getMessageTreeAction({ chatId });
-      },
-    },
-  });
-
-  // Initialize branch switch machine
-  const [, sendBranch, branchActor] = useMachine(branchSwitchMachine, {
-    input: {
-      chatId,
-      tree: currentMessageTreeRef.current,
-      selection: selectionRef.current,
-      previousMessages: messages,
-      onMessagesChange: setMessages,
-      onTreeChange: (tree) => {
-        currentMessageTreeRef.current = tree;
-      },
-      onRefreshTree: refreshMessageTree,
-    },
-  });
-
-  // Check if a branch switch is in progress
-  const ensureBranchReady = useCallback((): Promise<void> | null => {
-    const snapshot = branchActor.getSnapshot();
-
-    // If already idle, no waiting needed
-    if (snapshot.matches('idle')) {
-      return null;
-    }
-
-    // Branch switch is in progress - subscribe to state changes
-    return new Promise((resolve, reject) => {
-      const subscription = branchActor.subscribe((state) => {
-        if (state.matches('idle')) {
-          subscription.unsubscribe();
-          // Check if we ended in error state
-          if (state.context.error) {
-            reject(state.context.error);
-          } else {
-            resolve();
-          }
-        } else if (state.matches('rollingBack')) {
-          subscription.unsubscribe();
-          reject(state.context.error || new Error('Branch switch failed'));
-        }
+  // Persist branch selection function for the machine
+  const persistBranchSelection = useCallback(
+    async (
+      operation: BranchSelectionOperation,
+      snapshot: BranchSelectionSnapshot | null
+    ) => {
+      if (IS_E2E) return;
+      await updateBranchSelection({
+        chatId,
+        operation,
+        expectedSnapshot: snapshot ?? undefined,
       });
+    },
+    [chatId]
+  );
 
-      // Check immediately in case we already transitioned
-      const currentState = branchActor.getSnapshot();
-      if (currentState.matches('idle')) {
-        subscription.unsubscribe();
-        if (currentState.context.error) {
-          reject(currentState.context.error);
-        } else {
-          resolve();
-        }
-      }
-    });
-  }, [branchActor]);
-
-  const [regenerationState, sendRegeneration] = useMachine(
-    regenerationMachine,
+  // Initialize the unified chat operations machine
+  const [operationsState, sendOperations, operationsActor] = useMachine(
+    chatOperationsMachine,
     {
       input: {
-        regenerateFn: (messageId: string) => {
+        chatId,
+        initialTree: initialMessageTree,
+        initialSelection: selectionRef.current,
+        initialMessages,
+        onMessagesChange: setMessages,
+        onTreeChange: (tree) => {
+          currentMessageTreeRef.current = tree;
+        },
+        onSelectionChange: (selection) => {
+          selectionRef.current = selection;
+        },
+        fetchTree,
+        persistBranchSelection,
+        triggerRegenerate: (messageId: string) => {
           regenerate({ messageId });
         },
-        ensureBranchReadyFn: ensureBranchReady,
       },
     }
   );
 
-  // Sync tree machine context with current state
-  useEffect(() => {
-    sendTreeSync({
-      type: 'UPDATE_CONTEXT',
-      updates: {
-        selection: selectionRef.current,
-        currentTree: currentMessageTreeRef.current,
-      },
-    });
-  }, [sendTreeSync]);
-
-  // Sync branch machine context
-  useEffect(() => {
-    sendBranch({
-      type: 'UPDATE_CONTEXT',
-      updates: {
-        tree: currentMessageTreeRef.current,
-        selection: selectionRef.current,
-        previousMessages: messages,
-      },
-    });
-  }, [sendBranch, messages]);
-
-  // Handle streaming state changes
+  // Sync streaming state with the operations machine
   useEffect(() => {
     const isStreaming = isStreamingStatus(status);
     const wasStreaming = streamingStateRef.current;
 
     if (isStreaming && !wasStreaming) {
-      sendTreeSync({ type: 'STREAM_STARTED' });
-      sendRegeneration({ type: 'STREAM_STARTED' });
+      sendOperations({ type: 'STREAM_STARTED' });
     } else if (!isStreaming && wasStreaming) {
-      sendTreeSync({ type: 'STREAM_FINISHED' });
-      sendRegeneration({ type: 'STREAM_FINISHED' });
+      sendOperations({ type: 'STREAM_FINISHED' });
     }
 
     streamingStateRef.current = isStreaming;
-  }, [status, sendRegeneration, sendTreeSync]);
+  }, [status, sendOperations]);
 
-  // Handle regeneration completion - refresh tree to get proper sibling metadata
+  // Sync messages with the machine when they change externally
   useEffect(() => {
-    const regenerationMessageId = regenerationState.context.messageId;
-    const hasStarted = regenerationState.context.hasStarted;
+    sendOperations({ type: 'UPDATE_MESSAGES', messages });
+  }, [messages, sendOperations]);
 
-    if (!regenerationMessageId) {
-      return;
+  // Helper to check if operation machine is busy
+  const isOperationBusy = useCallback((): boolean => {
+    const snapshot = operationsActor.getSnapshot();
+    return snapshot.context.activeOperation !== 'idle';
+  }, [operationsActor]);
+
+  // Wait for any active operation to complete
+  const ensureOperationsReady = useCallback((): Promise<void> | null => {
+    const snapshot = operationsActor.getSnapshot();
+    
+    if (snapshot.context.activeOperation === 'idle' && !snapshot.context.isStreaming) {
+      return null;
     }
 
-    // Only act when regeneration has started and stream is no longer active
-    if (isStreamingStatus(status)) {
-      return;
-    }
-
-    if (!hasStarted) {
-      return;
-    }
-
-    // Regeneration completed - refresh the tree to get the new message with proper metadata
-    let cancelled = false;
-    (async () => {
-      try {
-        await refreshMessageTree();
-        if (!cancelled) {
-          sendRegeneration({ type: 'RESET' });
+    return new Promise((resolve, reject) => {
+      const subscription = operationsActor.subscribe((state) => {
+        if (
+          state.context.activeOperation === 'idle' &&
+          !state.context.isStreaming
+        ) {
+          subscription.unsubscribe();
+          if (state.context.syncError) {
+            reject(state.context.syncError);
+          } else {
+            resolve();
+          }
         }
-      } catch (error) {
-        if (!cancelled) {
-          console.error(
-            'Failed to refresh message tree after regeneration',
-            error
-          );
-          sendRegeneration({ type: 'RESET' });
+      });
+
+      // Check immediately in case we already transitioned
+      const currentState = operationsActor.getSnapshot();
+      if (
+        currentState.context.activeOperation === 'idle' &&
+        !currentState.context.isStreaming
+      ) {
+        subscription.unsubscribe();
+        if (currentState.context.syncError) {
+          reject(currentState.context.syncError);
+        } else {
+          resolve();
         }
       }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    regenerationState.context.messageId,
-    regenerationState.context.hasStarted,
-    status,
-    refreshMessageTree,
-    sendRegeneration,
-    queryClient,
-  ]);
+    });
+  }, [operationsActor]);
 
   const handleChatDeleted = useCallback(() => {
     if (chatDeletedRef.current) {
@@ -451,7 +366,8 @@ export function useChatMessaging({
           return { chatDeleted: true } as const;
         }
 
-        sendTreeSync({ type: 'SYNC_REQUESTED' });
+        // Request tree sync after deletion
+        sendOperations({ type: 'SYNC_TREE' });
 
         const currentMessages = messagesRef.current;
         const remainingIds = new Set(
@@ -475,7 +391,7 @@ export function useChatMessaging({
       handleChatDeleted,
       isReadonly,
       removeFromSelection,
-      sendTreeSync,
+      sendOperations,
     ]
   );
 
@@ -512,7 +428,8 @@ export function useChatMessaging({
           return;
         }
 
-        sendTreeSync({ type: 'SYNC_REQUESTED' });
+        // Request tree sync after deletion
+        sendOperations({ type: 'SYNC_TREE' });
         clearSelection();
 
         let successDescription = 'Messages deleted.';
@@ -543,7 +460,7 @@ export function useChatMessaging({
       getSelectedIds,
       handleChatDeleted,
       isReadonly,
-      sendTreeSync,
+      sendOperations,
       setMessages,
     ]
   );
@@ -606,25 +523,36 @@ export function useChatMessaging({
   const handleRegenerateAssistant = useCallback(
     async (assistantMessageId: string) => {
       if (isStreamingStatus(status)) {
-        return;
-      }
-      if (regenerationState.context.messageId !== null) {
+        toast({
+          type: 'error',
+          description:
+            'Finish generating the current response before regenerating.',
+        });
         return;
       }
 
-      sendRegeneration({ type: 'REGENERATE', messageId: assistantMessageId });
+      const currentOperation = operationsActor.getSnapshot().context.activeOperation;
+      if (currentOperation !== 'idle') {
+        toast({
+          type: 'error',
+          description: 'Please wait for the current operation to complete.',
+        });
+        return;
+      }
+
+      sendOperations({ type: 'REGENERATE', messageId: assistantMessageId });
     },
-    [regenerationState.context.messageId, sendRegeneration, status]
+    [operationsActor, sendOperations, status]
   );
 
   const stop = useCallback(async () => {
-    sendRegeneration({ type: 'CANCEL' });
+    sendOperations({ type: 'CANCEL' });
     await stopStream();
-  }, [sendRegeneration, stopStream]);
+  }, [sendOperations, stopStream]);
 
-  const sendMessageWithBranchGuard = useCallback<typeof sendMessage>(
+  const sendMessageWithGuard = useCallback<typeof sendMessage>(
     (payload) => {
-      const readiness = ensureBranchReady();
+      const readiness = ensureOperationsReady();
       if (!readiness) {
         return sendMessage(payload);
       }
@@ -633,17 +561,17 @@ export function useChatMessaging({
         .then(() => sendMessage(payload))
         .catch((error) => {
           console.warn(
-            'Skipping message send due to branch switch failure',
+            'Skipping message send due to pending operation',
             error
           );
           toast({
             type: 'error',
             description:
-              'Unable to switch to the selected response version. Message not sent.',
+              'Unable to send message while another operation is in progress.',
           });
         });
     },
-    [ensureBranchReady, sendMessage]
+    [ensureOperationsReady, sendMessage]
   );
 
   const handleEditMessage = useCallback(
@@ -661,7 +589,8 @@ export function useChatMessaging({
         throw new ChatSDKError('bad_request:chat');
       }
 
-      const readiness = ensureBranchReady();
+      // Wait for any pending operations
+      const readiness = ensureOperationsReady();
       if (readiness) {
         try {
           await readiness;
@@ -669,7 +598,7 @@ export function useChatMessaging({
           toast({
             type: 'error',
             description:
-              'Unable to update message while switching versions. Please try again.',
+              'Unable to update message while another operation is in progress.',
           });
           throw error;
         }
@@ -691,6 +620,7 @@ export function useChatMessaging({
         return;
       }
 
+      // Save previous state for rollback
       const previousMessages = [...currentMessages];
       const previousTree = currentMessageTreeRef.current;
       const previousSnapshot =
@@ -700,8 +630,7 @@ export function useChatMessaging({
       const previousSelectionIds = [...getSelectedIds()];
 
       if (targetMessage.role === 'user') {
-        // User edited a user message - treat this as sending a NEW message
-        // but preserve sibling metadata so user can see other versions
+        // User message edit - create branch, refresh tree, then send to trigger AI
         const removedSelectionIds = previousMessages
           .slice(targetIndex)
           .map((message) => message.id);
@@ -712,51 +641,57 @@ export function useChatMessaging({
         const editedParts = buildEditedUserMessageParts(targetMessage, trimmed);
 
         try {
-          // Step 1: Create a new branch with the edited text in the database
+          // Step 1: Create branch in database
           const { newMessageId } = await branchMessageAction({
             chatId,
             messageId,
             editedText: trimmed,
           });
 
-          // Reset selection - we're on a new branch
+          // Step 2: Reset selection state
           selectionRef.current = null;
           currentMessageTreeRef.current = undefined;
 
-          // Step 2: Refresh tree to get the new message WITH proper sibling metadata
-          // This is crucial - the tree has siblingsCount, siblingIndex, etc.
-          await refreshMessageTree();
-
-          // Step 3: Find the new message in the refreshed tree
-          const currentMessages = messagesRef.current;
-          const newMessageInTree = currentMessages.find(
-            (msg) => msg.id === newMessageId
+          // Step 3: Fetch fresh tree with new message
+          const newTree = await fetchTree();
+          
+          // Step 4: Update state with the new tree
+          sendOperations({ type: 'UPDATE_TREE', tree: newTree });
+          
+          // Step 5: Find the new message in the tree
+          const newMessageInTree = newTree.branch.find(
+            (node) => node.id === newMessageId
           );
-
-          // Step 4: Set up the UI state for sending
+          
+          // Step 6: Set up UI state for sending
           const truncatedMessages = previousMessages.slice(0, targetIndex);
-
+          
           if (newMessageInTree) {
-            // We have the full message with sibling metadata - use it!
-            // This ensures the UI shows "1 of N versions" correctly
-            setMessages([...truncatedMessages, newMessageInTree]);
+            // Use the message from tree which has proper sibling metadata
+            const { convertToUIMessages } = await import('@/lib/utils');
+            const [uiMessage] = convertToUIMessages([newMessageInTree]);
+            if (uiMessage) {
+              setMessages([...truncatedMessages, uiMessage]);
+            } else {
+              setMessages(truncatedMessages);
+            }
           } else {
-            // Fallback: just truncate
             setMessages(truncatedMessages);
           }
 
-          // Step 5: Send the message to trigger AI generation
-          // useChat will either:
-          // - See the message already exists and just trigger API call, OR
-          // - Add it to state (if fallback above)
-          // Either way, server handles duplicate via ON CONFLICT
+          // Step 7: Send message to trigger AI generation
           await sendMessage({
             id: newMessageId,
             role: 'user',
             parts: editedParts,
           });
 
-          // Step 6: After generation completes, post-stream sync ensures everything is in sync
+          // Notify machine that edit completed (will handle post-stream sync)
+          sendOperations({
+            type: 'EDIT_COMPLETE',
+            newMessageId,
+            role: 'user',
+          });
 
           toast({ type: 'success', description: 'Message updated.' });
         } catch (error) {
@@ -780,24 +715,24 @@ export function useChatMessaging({
         return;
       }
 
-      // Assistant message editing - create new version and switch to it
+      // Assistant message edit - create new version
       try {
-        // Branch the assistant message (creates new version in DB)
         const { newMessageId } = await branchMessageAction({
           chatId,
           messageId,
           editedText: trimmed,
         });
 
-        // Reset selection - we're switching to a new branch/version
+        // Reset selection state
         selectionRef.current = null;
         currentMessageTreeRef.current = undefined;
 
-        // Refresh tree to get the new branch structure with the new version
-        await refreshMessageTree();
-
-        // The tree refresh will automatically switch to the new version
-        // because it's the latest one created
+        // Notify machine to handle sync
+        sendOperations({
+          type: 'EDIT_COMPLETE',
+          newMessageId,
+          role: 'assistant',
+        });
 
         toast({ type: 'success', description: 'Message updated.' });
       } catch (error) {
@@ -821,46 +756,34 @@ export function useChatMessaging({
     [
       assignSelection,
       chatId,
-      ensureBranchReady,
+      ensureOperationsReady,
+      fetchTree,
       getSelectedIds,
       isReadonly,
-      queryClient,
       removeFromSelection,
-      sendMessageWithBranchGuard,
-      sendTreeSync,
+      sendMessage,
+      sendOperations,
       setMessages,
     ]
   );
 
   const handleNavigate = useCallback(
     (messageId: string, direction: 'next' | 'prev') => {
-      if (isStreamingStatus(status)) {
-        toast({
-          type: 'error',
-          description:
-            'Finish generating the current response before switching versions.',
-        });
-        return;
-      }
-
-      sendBranch({ type: 'NAVIGATE', messageId, direction });
+      sendOperations({ type: 'NAVIGATE', messageId, direction });
     },
-    [sendBranch, status]
+    [sendOperations]
   );
 
+  // Sync tree when messages contain unknown IDs (e.g., after external changes)
   useEffect(() => {
     if (isStreamingStatus(status)) {
-      return;
-    }
-
-    if (treeSyncRef.current) {
       return;
     }
 
     const tree = currentMessageTreeRef.current;
     if (!tree) {
       if (messages.length > 0) {
-        sendTreeSync({ type: 'SYNC_REQUESTED' });
+        sendOperations({ type: 'SYNC_TREE' });
       }
       return;
     }
@@ -869,10 +792,11 @@ export function useChatMessaging({
     const hasMissing = messages.some((message) => !knownIds.has(message.id));
 
     if (hasMissing) {
-      sendTreeSync({ type: 'SYNC_REQUESTED' });
+      sendOperations({ type: 'SYNC_TREE' });
     }
-  }, [messages, sendTreeSync, status]);
+  }, [messages, sendOperations, status]);
 
+  // Deduplicate messages (defensive)
   const dedupedMessages = useMemo(() => {
     const seenIds = new Set<string>();
     return messages.filter((message) => {
@@ -884,13 +808,15 @@ export function useChatMessaging({
     });
   }, [messages]);
 
+  // Compute disabled state from machine
   const disableRegenerate =
-    isStreamingStatus(status) || regenerationState.context.messageId !== null;
+    isStreamingStatus(status) ||
+    operationsState.context.activeOperation !== 'idle';
 
   return {
     messages: dedupedMessages,
     setMessages,
-    sendMessage: sendMessageWithBranchGuard,
+    sendMessage: sendMessageWithGuard,
     status,
     stop,
     resumeStream,
