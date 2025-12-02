@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CheckCircle2, ChevronDown, CircleAlert, Loader2 } from 'lucide-react';
+import { CheckCircle2, ChevronDown, CircleAlert } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ import { toast } from '@/components/toast';
 import { AnimatedButtonLabel } from '@/components/ui/animated-button';
 import { SUPPORTED_PROVIDERS, displayProviderName } from '@/lib/ai/registry';
 import { UserModelManager } from '@/components/shared/user-model-manager';
+import { DataExportImport } from '@/components/data-export-import';
 import type { UserPreferences } from '@/lib/db/schema';
 
 type FeedbackState = 'idle' | 'saved' | 'deleted' | 'error';
@@ -740,6 +741,14 @@ export function UserPreferencesEditor() {
             })}
           </CardContent>
         </Card>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1], delay: 0.2 }}
+      >
+        <DataExportImport />
       </motion.div>
     </div>
   );

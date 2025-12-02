@@ -143,7 +143,7 @@ export function SidebarUserNav({
             {canOpenSettings && (
               <DropdownMenuItem
                 className="cursor-pointer"
-                onSelect={() => router.push('/settings?tab=archive')}
+                onSelect={() => router.push('/settings')}
               >
                 Account & Settings
               </DropdownMenuItem>
