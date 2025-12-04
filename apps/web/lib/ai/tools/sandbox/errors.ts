@@ -30,6 +30,23 @@ export class WeatherAPIError extends SandboxError {
   }
 }
 
+export class FetchAPIError extends SandboxError {
+  public readonly statusCode?: number;
+  public readonly url?: string;
+
+  constructor(
+    message: string,
+    statusCode?: number,
+    url?: string,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = 'FetchAPIError';
+    this.statusCode = statusCode;
+    this.url = url;
+  }
+}
+
 export class ValidationError extends SandboxError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);

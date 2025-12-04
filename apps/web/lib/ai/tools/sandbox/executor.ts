@@ -16,6 +16,7 @@ import {
 } from './vm-utils';
 import {
   createWeatherBridge,
+  createFetchBridge,
   installApiBridges,
   extractLocationHints,
   type LocationHints,
@@ -145,11 +146,12 @@ export async function executeSandboxCode(
   try {
     // Install API bridges
     const weatherBridge = createWeatherBridge(deadline);
-    installApiBridges(vmContext, [weatherBridge]);
+    const fetchBridge = createFetchBridge(deadline);
+    installApiBridges(vmContext, [weatherBridge, fetchBridge]);
 
     logger.debug('API bridges installed', {
-      bridgeCount: 1,
-      functionName: weatherBridge.functionName,
+      bridgeCount: 2,
+      bridges: [weatherBridge.functionName, fetchBridge.functionName],
     });
 
     // Execute bootstrap script

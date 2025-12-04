@@ -5,7 +5,7 @@
 
 import type { VMContext } from './vm-utils';
 import { setContextValue, evaluateScript } from './vm-utils';
-import { fetchWeather, type WeatherCoordinates } from './external-apis';
+import { fetchWeather, fetchUrl, type FetchOptions } from './external-apis';
 import {
   coerceFiniteNumber,
   normalizeText,
@@ -111,6 +111,74 @@ export function createWeatherBridge(deadlineMs: number): ApiBridgeConfig {
 }
 
 /**
+ * Creates a fetch API bridge handler
+ */
+export function createFetchBridge(deadlineMs: number): ApiBridgeConfig {
+  const handler: BridgeHandler = async (vmContext, payload) => {
+    logger.debug('Fetch bridge called', { payload });
+    try {
+      if (!payload || typeof payload !== 'object') {
+        throw new ValidationError('Fetch payload must be an object with url property');
+      }
+
+      const payloadObj = payload as Record<string, unknown>;
+      const url = payloadObj.url;
+
+      if (typeof url !== 'string' || !url) {
+        throw new ValidationError('URL must be a non-empty string');
+      }
+
+      const options: FetchOptions = {};
+
+      if (typeof payloadObj.method === 'string') {
+        options.method = payloadObj.method;
+      }
+
+      if (payloadObj.headers && typeof payloadObj.headers === 'object') {
+        options.headers = {};
+        for (const [key, value] of Object.entries(payloadObj.headers)) {
+          if (typeof value === 'string') {
+            options.headers[key] = value;
+          }
+        }
+      }
+
+      if (typeof payloadObj.body === 'string') {
+        options.body = payloadObj.body;
+      }
+
+      const remaining = deadlineMs - Date.now();
+      if (remaining <= 0) {
+        throw new Error('Fetch request timed out before it could be sent');
+      }
+
+      logger.debug('Fetching URL', { url, options, remaining });
+      const result = await fetchUrl(url, options, remaining);
+      logger.debug('Fetch completed successfully', {
+        status: result.status,
+        bodyLength: result.body.length
+      });
+      return JSON.stringify(result);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to process fetch request';
+      logger.error('Fetch bridge error', {
+        message,
+        error: error instanceof Error ? error.stack : String(error),
+      });
+      throw error;
+    }
+  };
+
+  return {
+    functionName: '__virid_host_fetch__',
+    handler,
+  };
+}
+
+/**
  * Installs API bridges into the VM context
  * Exposes async bridge functions that return VM-native promises so sandbox code
  * can `await` host-side operations without leaking across realms
@@ -194,15 +262,15 @@ export function installApiBridges(
     const rejection =
       error instanceof Error
         ? {
-            message: error.message,
-            name: error.name,
-            stack: error.stack,
-          }
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+        }
         : {
-            message: String(error ?? 'Bridge error'),
-            name: 'Error',
-            stack: null,
-          };
+          message: String(error ?? 'Bridge error'),
+          name: 'Error',
+          stack: null,
+        };
 
     logger.error('Bridge handler error', {
       functionName,

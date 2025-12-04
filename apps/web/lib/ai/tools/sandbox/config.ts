@@ -51,5 +51,58 @@ export const WEATHER_CONFIG = {
   },
 } as const;
 
+export const FETCH_CONFIG = {
+  /** Maximum timeout for fetch requests in milliseconds */
+  REQUEST_TIMEOUT_MS: 10_000,
+
+  /** Maximum response body size in bytes (1 MB) */
+  MAX_RESPONSE_SIZE_BYTES: 1 * 1024 * 1024,
+
+  /** Allowed URL protocols */
+  ALLOWED_PROTOCOLS: ['https:', 'http:'] as readonly string[],
+
+  /** Blocked hostnames (localhost, internal networks, etc.) */
+  BLOCKED_HOSTS: [
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    '::1',
+    '[::1]',
+  ] as readonly string[],
+
+  /** Blocked IP ranges (private networks) - checked by prefix */
+  BLOCKED_IP_PREFIXES: [
+    '10.',
+    '172.16.',
+    '172.17.',
+    '172.18.',
+    '172.19.',
+    '172.20.',
+    '172.21.',
+    '172.22.',
+    '172.23.',
+    '172.24.',
+    '172.25.',
+    '172.26.',
+    '172.27.',
+    '172.28.',
+    '172.29.',
+    '172.30.',
+    '172.31.',
+    '192.168.',
+    '169.254.',
+    'fc00:',
+    'fd00:',
+    'fe80:',
+  ] as readonly string[],
+
+  /** Allowed HTTP methods */
+  ALLOWED_METHODS: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as readonly string[],
+
+  /** Maximum request body size in bytes (256 KB) */
+  MAX_REQUEST_BODY_SIZE_BYTES: 256 * 1024,
+} as const;
+
 export type SandboxConfig = typeof SANDBOX_CONFIG;
 export type WeatherConfig = typeof WEATHER_CONFIG;
+export type FetchConfig = typeof FETCH_CONFIG;
