@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "bun run --cwd apps/web dev",
     "build": "bun run --cwd apps/web build",
-    "test": "bun run --cwd apps/web test"
+    "test": "bun run --cwd apps/web test",
+    "format": "bun run --cwd apps/web format"
   },
   "workspaces": [
     "apps/*"

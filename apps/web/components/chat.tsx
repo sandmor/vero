@@ -46,28 +46,28 @@ const BULK_DELETE_OPTIONS: Array<{
   description: (count: number) => string;
   variant: 'secondary' | 'destructive';
 }> = [
-  {
-    mode: 'version',
-    label: 'Delete versions & branches',
-    description: (count) =>
-      `Remove the selected ${count === 1 ? 'version' : 'versions'} along with any messages in their branches.`,
-    variant: 'secondary',
-  },
-  {
-    mode: 'message-only',
-    label: 'Delete messages (keep following)',
-    description: () =>
-      'Keep downstream messages by reconnecting remaining content to the previous step.',
-    variant: 'secondary',
-  },
-  {
-    mode: 'message-with-following',
-    label: 'Delete messages & following',
-    description: (count) =>
-      `Remove the selected ${count === 1 ? 'message' : 'messages'} plus all alternate versions and later messages.`,
-    variant: 'destructive',
-  },
-];
+    {
+      mode: 'version',
+      label: 'Delete versions & branches',
+      description: (count) =>
+        `Remove the selected ${count === 1 ? 'version' : 'versions'} along with any messages in their branches.`,
+      variant: 'secondary',
+    },
+    {
+      mode: 'message-only',
+      label: 'Delete messages (keep following)',
+      description: () =>
+        'Keep downstream messages by reconnecting remaining content to the previous step.',
+      variant: 'secondary',
+    },
+    {
+      mode: 'message-with-following',
+      label: 'Delete messages & following',
+      description: (count) =>
+        `Remove the selected ${count === 1 ? 'message' : 'messages'} plus all alternate versions and later messages.`,
+      variant: 'destructive',
+    },
+  ];
 
 export function Chat({
   id,
@@ -182,6 +182,7 @@ export function Chat({
     handleDeleteSelected,
     handleForkMessage,
     handleEditMessage,
+    handleEditMessageOnly,
     handleRegenerateAssistant,
     handleNavigate,
     disableRegenerate,
@@ -353,6 +354,7 @@ export function Chat({
         onNavigate={handleNavigate}
         onForkMessage={handleForkMessage}
         onEditMessage={handleEditMessage}
+        onEditMessageOnly={handleEditMessageOnly}
         selectedModelId={preferences.currentModelId}
         status={status}
         disableRegenerate={disableRegenerate}

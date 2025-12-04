@@ -23,6 +23,7 @@ import {
   branchMessageAction,
   forkChatAction,
   updateBranchSelection,
+  updateMessageTextAction,
 } from '@/app/(chat)/actions';
 import type React from 'react';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
@@ -275,18 +276,35 @@ export function useChatMessaging({
     }
   );
 
-  // Debug: Log state machine transitions
+  // Debug: Log state machine transitions and invalidate cache when operations complete
   useEffect(() => {
+    let previousOperation: string = 'idle';
     const subscription = operationsActor.subscribe((state) => {
-      console.log(
-        'Chat Operations State:',
-        JSON.stringify(state.value),
-        '| Active Operation:',
-        state.context.activeOperation
-      );
+      const currentOperation = state.context.activeOperation;
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(
+          'Chat Operations State:',
+          JSON.stringify(state.value),
+          '| Active Operation:',
+          currentOperation
+        );
+      }
+
+      // Invalidate bootstrap cache when a mutating operation completes
+      // This ensures the updated messages are fetched on reload
+      if (
+        previousOperation !== 'idle' &&
+        currentOperation === 'idle' &&
+        !state.context.isStreaming
+      ) {
+        queryClient.invalidateQueries({
+          queryKey: ['chat', 'bootstrap', chatId],
+        });
+      }
+      previousOperation = currentOperation;
     });
     return () => subscription.unsubscribe();
-  }, [operationsActor]);
+  }, [chatId, operationsActor, queryClient]);
 
   // Sync streaming state with the operations machine
   useEffect(() => {
@@ -769,6 +787,109 @@ export function useChatMessaging({
     ]
   );
 
+  // Edit a message without triggering regeneration (for user messages)
+  // or without creating a new version (for both user and assistant messages)
+  // Updates the message text in place.
+  const handleEditMessageOnly = useCallback(
+    async (messageId: string, editedText: string) => {
+      if (isReadonly) {
+        return;
+      }
+
+      const trimmed = editedText.trim();
+      if (!trimmed) {
+        toast({
+          type: 'error',
+          description: 'Message cannot be empty.',
+        });
+        throw new ChatSDKError('bad_request:chat');
+      }
+
+      // Wait for any pending operations
+      const readiness = ensureOperationsReady();
+      if (readiness) {
+        try {
+          await readiness;
+        } catch (error) {
+          toast({
+            type: 'error',
+            description:
+              'Unable to update message while another operation is in progress.',
+          });
+          throw error;
+        }
+      }
+
+      const currentMessages = messagesRef.current;
+      const targetIndex = currentMessages.findIndex(
+        (message) => message.id === messageId
+      );
+
+      if (targetIndex === -1) {
+        toast({ type: 'error', description: 'Message not found.' });
+        throw new ChatSDKError('not_found:chat');
+      }
+
+      const targetMessage = currentMessages[targetIndex];
+      const existingText = getTextFromMessage(targetMessage).trim();
+      if (existingText === trimmed) {
+        return;
+      }
+
+      // Save previous state for rollback
+      const previousMessages = [...currentMessages];
+
+      // Optimistically update the message in local state
+      const updatedParts = targetMessage.parts.map((part) => {
+        if (part.type === 'text') {
+          return { ...part, text: trimmed };
+        }
+        return part;
+      });
+      // If no text part existed, add one
+      const hasTextPart = targetMessage.parts.some(
+        (part) => part.type === 'text'
+      );
+      const finalParts = hasTextPart
+        ? updatedParts
+        : [...updatedParts, { type: 'text' as const, text: trimmed }];
+
+      setMessages((current) =>
+        current.map((msg) =>
+          msg.id === messageId ? { ...msg, parts: finalParts } : msg
+        )
+      );
+
+      // Update message text in place (no new version created)
+      try {
+        await updateMessageTextAction({
+          chatId,
+          messageId,
+          editedText: trimmed,
+        });
+
+        // Invalidate the bootstrap query cache so the updated message is fetched on reload
+        queryClient.invalidateQueries({
+          queryKey: ['chat', 'bootstrap', chatId],
+        });
+
+        toast({ type: 'success', description: 'Message updated.' });
+      } catch (error) {
+        // Rollback on error
+        setMessages(previousMessages);
+
+        if (error instanceof ChatSDKError) {
+          toast({ type: 'error', description: error.message });
+        } else {
+          toast({ type: 'error', description: 'Failed to update message.' });
+        }
+
+        throw error;
+      }
+    },
+    [chatId, ensureOperationsReady, isReadonly, queryClient, setMessages]
+  );
+
   const handleNavigate = useCallback(
     (messageId: string, direction: 'next' | 'prev') => {
       sendOperations({ type: 'NAVIGATE', messageId, direction });
@@ -830,6 +951,7 @@ export function useChatMessaging({
     handleDeleteSelected,
     handleForkMessage,
     handleEditMessage,
+    handleEditMessageOnly,
     handleRegenerateAssistant,
     handleNavigate,
     disableRegenerate,

@@ -11,6 +11,7 @@ import {
   getChatById,
   getMessagesByChatId,
   branchMessageWithEdit,
+  updateMessageText,
   updateBranchSelectionByChatId,
   updateChatVisiblityById,
 } from '@/lib/db/queries';
@@ -99,13 +100,13 @@ export async function updateBranchSelection({
 }: {
   chatId: string;
   operation:
-    | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
-    | {
-        kind: 'child';
-        parentId: string;
-        selectedChildIndex: number | null;
-        childId?: string;
-      };
+  | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
+  | {
+    kind: 'child';
+    parentId: string;
+    selectedChildIndex: number | null;
+    childId?: string;
+  };
   expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   if (IS_E2E) {
@@ -190,4 +191,30 @@ export async function getMessageTreeAction({ chatId }: { chatId: string }) {
   if (chat.userId !== session.user.id) throw new Error('Forbidden');
 
   return getMessagesByChatId({ id: chatId });
+}
+
+/**
+ * Updates a message's text content in place without creating a new version/branch.
+ */
+export async function updateMessageTextAction({
+  chatId,
+  messageId,
+  editedText,
+}: {
+  chatId: string;
+  messageId: string;
+  editedText: string;
+}) {
+  if (IS_E2E) {
+    return { messageId } as const;
+  }
+
+  const session = await requireSession();
+
+  return updateMessageText({
+    chatId,
+    messageId,
+    userId: session.user.id,
+    editedText,
+  });
 }

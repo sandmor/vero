@@ -27,6 +27,7 @@ type MessagesProps = {
   onNavigate?: (messageId: string, direction: 'next' | 'prev') => void;
   onForkMessage?: (messageId: string) => void;
   onEditMessage?: (messageId: string, text: string) => Promise<void>;
+  onEditMessageOnly?: (messageId: string, text: string) => Promise<void>;
   allowedModels?: import('@/lib/ai/models').ChatModelOption[];
 };
 
@@ -43,6 +44,7 @@ function MessagesComponent({
   onNavigate,
   onForkMessage,
   onEditMessage,
+  onEditMessageOnly,
   disableRegenerate,
   allowedModels,
 }: MessagesProps) {
@@ -100,6 +102,7 @@ function MessagesComponent({
               onNavigate={onNavigate}
               onForkMessage={onForkMessage}
               onEditMessage={onEditMessage}
+              onEditMessageOnly={onEditMessageOnly}
               disableRegenerate={disableRegenerate}
               allowedModels={allowedModels}
             />
@@ -146,6 +149,7 @@ const areMessagesPropsEqual = (prev: MessagesProps, next: MessagesProps) => {
   if (prev.onNavigate !== next.onNavigate) return false;
   if (prev.onForkMessage !== next.onForkMessage) return false;
   if (prev.onEditMessage !== next.onEditMessage) return false;
+  if (prev.onEditMessageOnly !== next.onEditMessageOnly) return false;
   if (prev.allowedModels !== next.allowedModels) return false;
   return true;
 };

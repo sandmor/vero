@@ -511,6 +511,100 @@ export async function branchMessageWithEdit({
   }
 }
 
+/**
+ * Updates a message's text content in place without creating a new version.
+ * This preserves the message's position in the tree and does not affect branches.
+ */
+export async function updateMessageText({
+  chatId,
+  messageId,
+  userId,
+  editedText,
+}: {
+  chatId: string;
+  messageId: string;
+  userId: string;
+  editedText: string;
+}) {
+  const trimmed = editedText.trim();
+  if (!trimmed) {
+    throw new ChatSDKError('bad_request:database', 'Edited text required');
+  }
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const [chat, message] = await Promise.all([
+        tx.chat.findUnique({
+          where: { id: chatId },
+          select: { userId: true },
+        }),
+        tx.message.findUnique({
+          where: { id: messageId },
+          select: {
+            id: true,
+            chatId: true,
+            parts: true,
+          },
+        }),
+      ]);
+
+      if (!chat) {
+        throw new ChatSDKError('not_found:database', 'Chat not found');
+      }
+
+      if (chat.userId !== userId) {
+        throw new ChatSDKError(
+          'forbidden:database',
+          'Chat ownership mismatch when updating message'
+        );
+      }
+
+      if (!message || message.chatId !== chatId) {
+        throw new ChatSDKError(
+          'bad_request:database',
+          'Message does not belong to the specified chat'
+        );
+      }
+
+      // Build updated parts: keep all non-text parts, replace/add text part
+      const existingParts = (message.parts as unknown[]) ?? [];
+      const nonTextParts = existingParts.filter(
+        (part: unknown) =>
+          typeof part === 'object' &&
+          part !== null &&
+          'type' in part &&
+          (part as { type: unknown }).type !== 'text'
+      );
+      const newParts = [...nonTextParts, { type: 'text', text: trimmed }];
+
+      // Update the message's parts in place
+      const res = await tx.$executeRaw(
+        PrismaRuntime.sql`
+          UPDATE "Message"
+          SET "parts" = ${JSON.stringify(newParts)}::jsonb
+          WHERE "id" = ${messageId}::uuid
+        `
+      );
+
+      // Update Chat's updatedAt timestamp
+      await tx.chat.update({
+        where: { id: chatId },
+        data: { updatedAt: new Date() },
+      });
+
+      return { messageId } as const;
+    });
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      throw error;
+    }
+    throw new ChatSDKError(
+      'bad_request:database',
+      'Failed to update message text'
+    );
+  }
+}
+
 export async function saveAssistantMessage({
   id,
   chatId,
@@ -1249,13 +1343,13 @@ export async function updateBranchSelectionByChatId({
   chatId: string;
   userId: string;
   operation:
-    | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
-    | {
-        kind: 'child';
-        parentId: string;
-        selectedChildIndex: number | null;
-        childId?: string;
-      };
+  | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
+  | {
+    kind: 'child';
+    parentId: string;
+    selectedChildIndex: number | null;
+    childId?: string;
+  };
   expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   try {
@@ -1279,7 +1373,7 @@ export async function updateBranchSelectionByChatId({
       if (operation.kind === 'root') {
         let requestedIndex =
           operation.rootMessageIndex !== null &&
-          operation.rootMessageIndex !== undefined
+            operation.rootMessageIndex !== undefined
             ? Math.max(0, Math.trunc(operation.rootMessageIndex))
             : 0;
 
@@ -1371,7 +1465,7 @@ export async function updateBranchSelectionByChatId({
 
       let normalizedIndex =
         operation.selectedChildIndex === null ||
-        operation.selectedChildIndex === undefined
+          operation.selectedChildIndex === undefined
           ? 0
           : Math.max(0, Math.trunc(operation.selectedChildIndex));
 

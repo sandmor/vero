@@ -150,28 +150,28 @@ export function PureMessageActions({
       description: string;
       variant: 'secondary' | 'destructive';
     }> = [
-      {
-        mode: 'version',
-        label: 'Delete version & branch',
-        description:
-          'Remove this message version along with any descendants in its branch.',
-        variant: 'secondary',
-      },
-      {
-        mode: 'message-only',
-        label: 'Delete message (keep following)',
-        description:
-          'Keep downstream messages by lifting them up to the previous step.',
-        variant: 'secondary',
-      },
-      {
-        mode: 'message-with-following',
-        label: 'Delete message & following',
-        description:
-          'Remove this message plus all alternate versions and later messages.',
-        variant: 'destructive',
-      },
-    ];
+        {
+          mode: 'version',
+          label: 'Delete version & branch',
+          description:
+            'Remove this message version along with any descendants in its branch.',
+          variant: 'secondary',
+        },
+        {
+          mode: 'message-only',
+          label: 'Delete message (keep following)',
+          description:
+            'Keep downstream messages by lifting them up to the previous step.',
+          variant: 'secondary',
+        },
+        {
+          mode: 'message-with-following',
+          label: 'Delete message & following',
+          description:
+            'Remove this message plus all alternate versions and later messages.',
+          variant: 'destructive',
+        },
+      ];
 
     return (
       <AlertDialog
@@ -317,6 +317,9 @@ export const MessageActions = memo(
       return false;
     }
     if (prevProps.onFork !== nextProps.onFork) {
+      return false;
+    }
+    if (prevProps.siblingsBadge !== nextProps.siblingsBadge) {
       return false;
     }
 

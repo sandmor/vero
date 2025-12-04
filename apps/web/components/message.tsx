@@ -42,6 +42,7 @@ const PurePreviewMessage = ({
   isSelectionMode,
   onForkMessage,
   onEditMessage,
+  onEditMessageOnly,
   allowedModels,
 }: {
   chatId: string;
@@ -61,6 +62,7 @@ const PurePreviewMessage = ({
   isSelectionMode?: boolean;
   onForkMessage?: (messageId: string) => void;
   onEditMessage?: (messageId: string, text: string) => Promise<void>;
+  onEditMessageOnly?: (messageId: string, text: string) => Promise<void>;
   allowedModels?: ChatModelOption[];
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
@@ -258,6 +260,13 @@ const PurePreviewMessage = ({
                             }
                             await onEditMessage(message.id, nextText);
                           }}
+                          onSubmitWithoutRegenerate={
+                            onEditMessageOnly
+                              ? async (nextText) => {
+                                await onEditMessageOnly(message.id, nextText);
+                              }
+                              : undefined
+                          }
                         />
                       </div>
                     </div>
@@ -380,6 +389,8 @@ export const PreviewMessage = memo(
     if (prevProps.onNavigate !== nextProps.onNavigate) return false;
     if (prevProps.onForkMessage !== nextProps.onForkMessage) return false;
     if (prevProps.onEditMessage !== nextProps.onEditMessage) return false;
+    if (prevProps.onEditMessageOnly !== nextProps.onEditMessageOnly)
+      return false;
     if (!equal(prevProps.allowedModels, nextProps.allowedModels)) return false;
 
     // otherwise skip rerender

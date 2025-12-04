@@ -18,14 +18,18 @@ export type MessageEditorProps = {
   message: ChatMessage;
   setMode: Dispatch<SetStateAction<'view' | 'edit'>>;
   onSubmit: (nextText: string) => Promise<void>;
+  onSubmitWithoutRegenerate?: (nextText: string) => Promise<void>;
 };
 
 export function MessageEditor({
   message,
   setMode,
   onSubmit,
+  onSubmitWithoutRegenerate,
 }: MessageEditorProps) {
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submittingType, setSubmittingType] = useState<'save' | 'send' | null>(
+    null
+  );
 
   const [draftContent, setDraftContent] = useState<string>(
     getTextFromMessage(message)
@@ -69,10 +73,41 @@ export function MessageEditor({
         >
           Cancel
         </Button>
+        {onSubmitWithoutRegenerate && (
+          <Button
+            className="h-fit px-3 py-2"
+            data-testid="message-editor-save-only-button"
+            disabled={submittingType !== null}
+            onClick={async () => {
+              const trimmed = draftContent.trim();
+              if (!trimmed) {
+                toast({
+                  type: 'error',
+                  description: 'Message cannot be empty.',
+                });
+                return;
+              }
+
+              setSubmittingType('save');
+              try {
+                await onSubmitWithoutRegenerate(trimmed);
+                setMode('view');
+              } catch (err) {
+                console.error('Edit failed', err);
+                // Stay in edit mode on failure
+              } finally {
+                setSubmittingType(null);
+              }
+            }}
+            variant="secondary"
+          >
+            {submittingType === 'save' ? 'Saving...' : 'Save only'}
+          </Button>
+        )}
         <Button
           className="h-fit px-3 py-2"
           data-testid="message-editor-send-button"
-          disabled={isSubmitting}
+          disabled={submittingType !== null}
           onClick={async () => {
             const trimmed = draftContent.trim();
             if (!trimmed) {
@@ -83,7 +118,7 @@ export function MessageEditor({
               return;
             }
 
-            setIsSubmitting(true);
+            setSubmittingType('send');
             setMode('view');
             try {
               await onSubmit(trimmed);
@@ -91,12 +126,12 @@ export function MessageEditor({
               console.error('Edit failed', err);
               setMode('edit'); // Re-enable edit mode on failure
             } finally {
-              setIsSubmitting(false);
+              setSubmittingType(null);
             }
           }}
           variant="default"
         >
-          {isSubmitting ? 'Sending...' : 'Send'}
+          {submittingType === 'send' ? 'Sending...' : 'Send'}
         </Button>
       </div>
     </div>
