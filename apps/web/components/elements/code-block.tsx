@@ -43,7 +43,7 @@ export const CodeBlock = ({
       {...props}
     >
       <div className="relative">
-        {/* @ts-expect-error - react-syntax-highlighter types are not compatible with React 19 */}
+        {/* @ts-ignore - react-syntax-highlighter types may not be compatible with React 19 */}
         <SyntaxHighlighter
           className="overflow-hidden dark:hidden"
           codeTagProps={{
@@ -70,7 +70,7 @@ export const CodeBlock = ({
         >
           {code}
         </SyntaxHighlighter>
-        {/* @ts-expect-error - react-syntax-highlighter types are not compatible with React 19 */}
+        {/* @ts-ignore - react-syntax-highlighter types may not be compatible with React 19 */}
         <SyntaxHighlighter
           className="hidden overflow-hidden dark:block"
           codeTagProps={{
