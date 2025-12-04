@@ -97,7 +97,15 @@ export const FETCH_CONFIG = {
   ] as readonly string[],
 
   /** Allowed HTTP methods */
-  ALLOWED_METHODS: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as readonly string[],
+  ALLOWED_METHODS: [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'HEAD',
+    'OPTIONS',
+  ] as readonly string[],
 
   /** Maximum request body size in bytes (256 KB) */
   MAX_REQUEST_BODY_SIZE_BYTES: 256 * 1024,

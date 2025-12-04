@@ -396,63 +396,110 @@ export async function branchMessageWithEdit({
   }
 
   try {
-    const [chat, pivot] = await Promise.all([
-      prisma.chat.findUnique({
+    return await prisma.$transaction(async (tx) => {
+      const [chat, pivot] = await Promise.all([
+        tx.chat.findUnique({
+          where: { id: chatId },
+          select: { userId: true },
+        }),
+        tx.message.findUnique({
+          where: { id: pivotMessageId },
+          select: {
+            id: true,
+            chatId: true,
+            role: true,
+            attachments: true,
+            model: true,
+            pathText: true,
+          },
+        }),
+      ]);
+
+      if (!chat) {
+        throw new ChatSDKError('not_found:database', 'Chat not found');
+      }
+
+      if (chat.userId !== userId) {
+        throw new ChatSDKError(
+          'forbidden:database',
+          'Chat ownership mismatch when branching edited message'
+        );
+      }
+
+      if (!pivot || pivot.chatId !== chatId) {
+        throw new ChatSDKError(
+          'bad_request:database',
+          'Message does not belong to the specified chat'
+        );
+      }
+
+      const parentPath = pivot.pathText ? getParentPath(pivot.pathText) : null;
+
+      // Find the next available sibling index under the parent
+      const siblingPaths = await getDirectChildrenPaths(tx, chatId, parentPath);
+      let nextIndex = 0;
+      for (const siblingPath of siblingPaths) {
+        const label = getLastSegment(siblingPath);
+        if (PATH_SEGMENT_PATTERN.test(label)) {
+          const index = parseLabelIndex(label);
+          if (index + 1 > nextIndex) {
+            nextIndex = index + 1;
+          }
+        }
+      }
+
+      const newMessageId = randomUUID();
+      const label = toBase36Label(nextIndex);
+      const path = parentPath ? `${parentPath}.${label}` : label;
+
+      // Insert the new message
+      await tx.$executeRaw(
+        PrismaRuntime.sql`
+          INSERT INTO "Message"
+            ("id", "chatId", "role", "parts", "attachments", "createdAt", "model", "path", "path_text")
+          VALUES (
+            ${newMessageId}::uuid,
+            ${chatId}::uuid,
+            ${pivot.role},
+            ${JSON.stringify([{ type: 'text', text: trimmed }])}::jsonb,
+            ${JSON.stringify(pivot.attachments ?? [])}::jsonb,
+            ${new Date()},
+            ${pivot.model ?? null},
+            ${path}::ltree,
+            ${path}
+          )
+        `
+      );
+
+      // Update the parent's selectedChildIndex to select this new branch
+      if (parentPath) {
+        // Find the parent message by path and update its selectedChildIndex
+        await tx.$executeRaw(
+          PrismaRuntime.sql`
+            UPDATE "Message"
+            SET "selectedChildIndex" = ${nextIndex}
+            WHERE "chatId" = ${chatId}::uuid
+              AND "path_text" = ${parentPath}
+          `
+        );
+      } else {
+        // This is a root-level message, update the chat's rootMessageIndex
+        await tx.chat.update({
+          where: { id: chatId },
+          data: { rootMessageIndex: nextIndex },
+        });
+      }
+
+      // Update Chat's updatedAt timestamp
+      await tx.chat.update({
         where: { id: chatId },
-        select: { userId: true },
-      }),
-      prisma.message.findUnique({
-        where: { id: pivotMessageId },
-        select: {
-          id: true,
-          chatId: true,
-          role: true,
-          attachments: true,
-          model: true,
-          pathText: true,
-        },
-      }),
-    ]);
+        data: { updatedAt: new Date() },
+      });
 
-    if (!chat) {
-      throw new ChatSDKError('not_found:database', 'Chat not found');
-    }
-
-    if (chat.userId !== userId) {
-      throw new ChatSDKError(
-        'forbidden:database',
-        'Chat ownership mismatch when branching edited message'
-      );
-    }
-
-    if (!pivot || pivot.chatId !== chatId) {
-      throw new ChatSDKError(
-        'bad_request:database',
-        'Message does not belong to the specified chat'
-      );
-    }
-
-    const newMessageId = randomUUID();
-    const parentPath = pivot.pathText ? getParentPath(pivot.pathText) : null;
-
-    await saveMessages({
-      messages: [
-        {
-          id: newMessageId,
-          chatId,
-          role: pivot.role,
-          parts: [{ type: 'text', text: trimmed }],
-          attachments: pivot.attachments ?? [],
-          createdAt: new Date(),
-          model: pivot.model ?? null,
-          parentPath,
-        },
-      ],
+      return {
+        newMessageId,
+      } as const;
     });
-
-    return {
-      newMessageId,
-    } as const;
   } catch (error) {
     if (error instanceof ChatSDKError) {
       throw error;

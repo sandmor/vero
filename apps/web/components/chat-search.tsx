@@ -704,8 +704,8 @@ export function ChatSearch({
                               className={cn(
                                 'w-full text-left px-2 py-1.5 text-sm rounded-sm hover:bg-accent',
                                 dateFilter?.after?.getTime() ===
-                                preset.getFilter().after?.getTime() &&
-                                'bg-accent'
+                                  preset.getFilter().after?.getTime() &&
+                                  'bg-accent'
                               )}
                             >
                               {preset.label}

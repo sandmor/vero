@@ -4,7 +4,12 @@
  */
 
 import { WEATHER_CONFIG, SANDBOX_CONFIG, FETCH_CONFIG } from './config';
-import { WeatherAPIError, FetchAPIError, TimeoutError, ValidationError } from './errors';
+import {
+  WeatherAPIError,
+  FetchAPIError,
+  TimeoutError,
+  ValidationError,
+} from './errors';
 
 export interface WeatherCoordinates {
   latitude: number;
@@ -115,7 +120,9 @@ function validateFetchUrl(urlString: string): URL {
   // Check blocked IP prefixes
   for (const prefix of FETCH_CONFIG.BLOCKED_IP_PREFIXES) {
     if (hostname.startsWith(prefix)) {
-      throw new ValidationError(`Access to private network addresses is not allowed`);
+      throw new ValidationError(
+        `Access to private network addresses is not allowed`
+      );
     }
   }
 

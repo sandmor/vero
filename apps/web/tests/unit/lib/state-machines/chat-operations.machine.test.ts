@@ -1,16 +1,19 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { createActor, fromPromise } from 'xstate';
-import { chatOperationsMachine, type ChatOperationsInput } from '@/lib/state-machines/chat-operations.machine';
+import {
+  chatOperationsMachine,
+  type ChatOperationsInput,
+} from '@/lib/state-machines/chat-operations.machine';
 import type { MessageTreeResult, MessageTreeNode } from '@/lib/db/schema';
 import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 
 // Mock external dependencies
 mock.module('@/app/(chat)/actions', () => ({
-  updateBranchSelection: async () => { },
+  updateBranchSelection: async () => {},
 }));
 
 mock.module('@/components/toast', () => ({
-  toast: () => { },
+  toast: () => {},
 }));
 
 // Mock data helpers
@@ -103,12 +106,12 @@ const createMockInput = (
   initialTree: createMockTree(),
   initialSelection: createMockSelection(),
   initialMessages: [],
-  onMessagesChange: () => { },
-  onTreeChange: () => { },
-  onSelectionChange: () => { },
+  onMessagesChange: () => {},
+  onTreeChange: () => {},
+  onSelectionChange: () => {},
   fetchTree: async () => createMockTree(),
-  persistBranchSelection: async () => { },
-  triggerRegenerate: () => { },
+  persistBranchSelection: async () => {},
+  triggerRegenerate: () => {},
   ...overrides,
 });
 
@@ -397,7 +400,9 @@ describe('chatOperationsMachine', () => {
 
       // No tree fetch yet - server hasn't received the streamed response
       expect(fetchTreeCallCount).toBe(0);
-      expect(actor.getSnapshot().value).toEqual({ editing: 'waitingForStream' });
+      expect(actor.getSnapshot().value).toEqual({
+        editing: 'waitingForStream',
+      });
 
       // Simulate streaming lifecycle
       actor.send({ type: 'STREAM_STARTED' });
@@ -431,7 +436,9 @@ describe('chatOperationsMachine', () => {
       });
 
       await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(actor.getSnapshot().value).toEqual({ editing: 'waitingForStream' });
+      expect(actor.getSnapshot().value).toEqual({
+        editing: 'waitingForStream',
+      });
 
       actor.send({ type: 'STREAM_STARTED' });
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -483,7 +490,7 @@ describe('chatOperationsMachine', () => {
     it('should rollback on branch switch failure', async () => {
       // Suppress expected console.error from logError action
       const originalConsoleError = console.error;
-      console.error = () => { };
+      console.error = () => {};
 
       let messagesChangedCount = 0;
       let rejectPersist: (err: Error) => void;
@@ -541,7 +548,7 @@ describe('chatOperationsMachine', () => {
         }),
         {
           input: createMockInput({
-            triggerRegenerate: () => { },
+            triggerRegenerate: () => {},
           }),
         }
       );
@@ -578,7 +585,7 @@ describe('chatOperationsMachine', () => {
         }),
         {
           input: createMockInput({
-            triggerRegenerate: () => { },
+            triggerRegenerate: () => {},
           }),
         }
       );

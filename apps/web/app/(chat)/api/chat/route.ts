@@ -310,9 +310,8 @@ export async function POST(request: Request) {
 
       // Apply initial settings preset (agent base + user overrides) in one place.
       try {
-        const { applyInitialSettingsPreset } = await import(
-          '@/lib/db/chat-settings'
-        );
+        const { applyInitialSettingsPreset } =
+          await import('@/lib/db/chat-settings');
         let base: any | null = null;
         if (agentId) {
           try {

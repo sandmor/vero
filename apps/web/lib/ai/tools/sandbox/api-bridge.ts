@@ -118,7 +118,9 @@ export function createFetchBridge(deadlineMs: number): ApiBridgeConfig {
     logger.debug('Fetch bridge called', { payload });
     try {
       if (!payload || typeof payload !== 'object') {
-        throw new ValidationError('Fetch payload must be an object with url property');
+        throw new ValidationError(
+          'Fetch payload must be an object with url property'
+        );
       }
 
       const payloadObj = payload as Record<string, unknown>;
@@ -156,7 +158,7 @@ export function createFetchBridge(deadlineMs: number): ApiBridgeConfig {
       const result = await fetchUrl(url, options, remaining);
       logger.debug('Fetch completed successfully', {
         status: result.status,
-        bodyLength: result.body.length
+        bodyLength: result.body.length,
       });
       return JSON.stringify(result);
     } catch (error) {
@@ -262,15 +264,15 @@ export function installApiBridges(
     const rejection =
       error instanceof Error
         ? {
-          message: error.message,
-          name: error.name,
-          stack: error.stack,
-        }
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+          }
         : {
-          message: String(error ?? 'Bridge error'),
-          name: 'Error',
-          stack: null,
-        };
+            message: String(error ?? 'Bridge error'),
+            name: 'Error',
+            stack: null,
+          };
 
     logger.error('Bridge handler error', {
       functionName,

@@ -101,10 +101,10 @@ export type ChatOperationsEvents =
   | { type: 'REGENERATE'; messageId: string }
   // Edit operations
   | {
-    type: 'EDIT_COMPLETE';
-    newMessageId: string;
-    role: 'user' | 'assistant';
-  }
+      type: 'EDIT_COMPLETE';
+      newMessageId: string;
+      role: 'user' | 'assistant';
+    }
   // Streaming lifecycle
   | { type: 'STREAM_STARTED' }
   | { type: 'STREAM_FINISHED' }
@@ -114,10 +114,10 @@ export type ChatOperationsEvents =
   // Context updates
   | { type: 'UPDATE_MESSAGES'; messages: ChatMessage[] }
   | {
-    type: 'UPDATE_TREE';
-    tree: MessageTreeResult;
-    selection?: BranchSelectionSnapshot;
-  }
+      type: 'UPDATE_TREE';
+      tree: MessageTreeResult;
+      selection?: BranchSelectionSnapshot;
+    }
   // Control
   | { type: 'CANCEL' }
   | { type: 'RESET' };
@@ -708,11 +708,7 @@ export const chatOperationsMachine = setup({
             },
             onError: {
               target: '#chatOperations.idle',
-              actions: [
-                'clearBranchPlan',
-                'clearActiveOperation',
-                'logError',
-              ],
+              actions: ['clearBranchPlan', 'clearActiveOperation', 'logError'],
             },
           },
 

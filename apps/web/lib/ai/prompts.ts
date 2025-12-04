@@ -149,8 +149,8 @@ IMPORTANT: Follow these custom instructions from the user:
   isEnabled: ({ variables }) =>
     Boolean(
       variables?.userName ||
-        variables?.userOccupation ||
-        variables?.userCustomInstructions
+      variables?.userOccupation ||
+      variables?.userCustomInstructions
     ),
   prepare: ({ variables }) => ({
     userName: variables?.userName || '',
