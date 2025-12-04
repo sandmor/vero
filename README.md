@@ -1,6 +1,6 @@
 <h1 align="center">Virid Chat</h1>
 
-Advanced multimodal AI chat application built with Next.js 15 (App Router), React 19, Prisma & PostgreSQL. It features a persistent memory archive, tier‑aware model registry, runtime model capability introspection, and granular administrative controls.
+Advanced multimodal AI chat application built with Next.js 16 (App Router), React 19, Prisma & PostgreSQL. It features advanced chat branching and message versioning, tier‑aware model registry, runtime model capability introspection, and granular administrative controls.
 
 <p align="center">
   <a href="#features"><strong>Features</strong></a> ·
@@ -22,7 +22,8 @@ Advanced multimodal AI chat application built with Next.js 15 (App Router), Reac
 
 - **Multimodal Conversations**: Text plus model-dependent support for image/file/audio (auto-derived from model capabilities)
 - **Live Streaming**: Incremental token + tool call streaming via AI SDK (`ai` v5)
-- **Conversation Lineage**: Fork chats from any message (parent/fork metadata persisted in `Chat` table)
+- **Conversation Lineage**: Fork chats from any message to create new independent conversation trees (parent/fork metadata persisted in `Chat` table)
+- **Message Branching & Versioning**: Seamlessly switch between message edits and regenerations within the same chat. The system tracks a tree of message versions (`ltree`), allowing you to explore different conversation paths without losing context.
 - **Auto-Resume**: Recent context & pinned archive memory automatically reattached on reload
 - **Token Bucket Rate Limiting**: Per-tier configurable capacity/refill stored in `Tier` + per-user runtime state in `UserRateLimit`
 - **Guest & Auth Modes**: Seamless anonymous upgrade path without losing context
@@ -174,7 +175,7 @@ Administrative interface for system management:
 
 ### Frontend
 
-- Next.js 15 (App Router, React 19)
+- Next.js 16 (App Router, React 19)
 - TypeScript + strict type surfaces
 - Tailwind CSS v4 + shadcn/ui + Radix primitives
 - Framer Motion for transitions
@@ -209,11 +210,13 @@ Administrative interface for system management:
 
 ### Prerequisites
 
-- Node.js 18+ (or Bun runtime) — Bun v1.1.x recommended
+- Node.js 18+ (or Bun runtime) — Bun v1.3.0 recommended
 - PostgreSQL database (local, Docker, or Neon)
 - (Optional) Redis if extending caching strategies (not required for baseline)
 
 ### Setup
+
+The project is structured as a monorepo. The main application is located in `apps/web`. The root `package.json` provides convenience scripts to run commands in the web app.
 
 ```bash
 # 1. Install dependencies

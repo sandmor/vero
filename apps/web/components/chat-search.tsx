@@ -564,7 +564,7 @@ export function ChatSearch({
           {/* Search input with suggestions */}
           <div className="relative">
             <motion.div
-              className="relative"
+              className="relative rounded-md"
               initial={false}
               animate={{
                 boxShadow: shouldExpand
@@ -572,7 +572,6 @@ export function ChatSearch({
                   : '0 0 0 0px transparent',
               }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              style={{ borderRadius: '0.375rem' }}
             >
               <Search
                 className={cn(
@@ -705,8 +704,8 @@ export function ChatSearch({
                               className={cn(
                                 'w-full text-left px-2 py-1.5 text-sm rounded-sm hover:bg-accent',
                                 dateFilter?.after?.getTime() ===
-                                  preset.getFilter().after?.getTime() &&
-                                  'bg-accent'
+                                preset.getFilter().after?.getTime() &&
+                                'bg-accent'
                               )}
                             >
                               {preset.label}

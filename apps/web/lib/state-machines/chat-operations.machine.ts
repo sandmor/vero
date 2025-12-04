@@ -101,10 +101,10 @@ export type ChatOperationsEvents =
   | { type: 'REGENERATE'; messageId: string }
   // Edit operations
   | {
-      type: 'EDIT_COMPLETE';
-      newMessageId: string;
-      role: 'user' | 'assistant';
-    }
+    type: 'EDIT_COMPLETE';
+    newMessageId: string;
+    role: 'user' | 'assistant';
+  }
   // Streaming lifecycle
   | { type: 'STREAM_STARTED' }
   | { type: 'STREAM_FINISHED' }
@@ -114,10 +114,10 @@ export type ChatOperationsEvents =
   // Context updates
   | { type: 'UPDATE_MESSAGES'; messages: ChatMessage[] }
   | {
-      type: 'UPDATE_TREE';
-      tree: MessageTreeResult;
-      selection?: BranchSelectionSnapshot;
-    }
+    type: 'UPDATE_TREE';
+    tree: MessageTreeResult;
+    selection?: BranchSelectionSnapshot;
+  }
   // Control
   | { type: 'CANCEL' }
   | { type: 'RESET' };
@@ -609,16 +609,22 @@ export const chatOperationsMachine = setup({
         ],
 
         EDIT_COMPLETE: {
-          target: 'editing.syncing',
+          target: 'editing.routing',
           actions: ['saveRollbackState', 'storeEditTarget'],
         },
 
         STREAM_STARTED: {
           actions: 'markStreamStarted',
+          // Re-enter idle to trigger always transitions
+          target: 'idle',
+          reenter: true,
         },
 
         STREAM_FINISHED: {
           actions: 'markStreamFinished',
+          // Re-enter idle to trigger always transitions (for tree sync)
+          target: 'idle',
+          reenter: true,
         },
 
         SYNC_TREE: {
@@ -704,7 +710,6 @@ export const chatOperationsMachine = setup({
               target: '#chatOperations.idle',
               actions: [
                 'clearBranchPlan',
-                'clearPendingNavigation',
                 'clearActiveOperation',
                 'logError',
               ],
@@ -825,39 +830,64 @@ export const chatOperationsMachine = setup({
           },
         },
       },
+
+      on: {
+        STREAM_STARTED: {
+          actions: 'markStreamStarted',
+        },
+        STREAM_FINISHED: {
+          actions: 'markStreamFinished',
+        },
+      },
     },
 
     editing: {
-      initial: 'syncing',
+      initial: 'routing',
 
       states: {
+        // Route based on edit type - user edits skip initial sync
+        routing: {
+          always: [
+            // For user edits, skip initial sync and wait for stream
+            // The server hasn't received the new message yet
+            {
+              guard: ({ context }) => context.activeOperation === 'edit-user',
+              target: 'waitingForStream',
+            },
+            // For assistant edits, sync immediately
+            {
+              target: 'syncing',
+            },
+          ],
+        },
+
         syncing: {
           invoke: {
             src: 'fetchAndApplyTree',
             input: ({ context }) => ({
               fetchTree: context.fetchTree,
             }),
-            onDone: [
-              // For user edits, we need to wait for streaming to complete
-              {
-                guard: ({ context }) => context.activeOperation === 'edit-user',
-                target: 'waitingForStream',
-                actions: 'applyFetchedTree',
-              },
-              // For assistant edits, we're done
-              {
-                target: '#chatOperations.idle',
-                actions: [
-                  'applyFetchedTree',
-                  'clearEditState',
-                  'clearActiveOperation',
-                  'clearRollbackState',
-                ],
-              },
-            ],
+            onDone: {
+              target: '#chatOperations.idle',
+              actions: [
+                'applyFetchedTree',
+                'clearEditState',
+                'clearActiveOperation',
+                'clearRollbackState',
+              ],
+            },
             onError: {
               target: '#chatOperations.idle',
               actions: ['clearEditState', 'clearActiveOperation', 'logError'],
+            },
+          },
+
+          on: {
+            STREAM_STARTED: {
+              actions: 'markStreamStarted',
+            },
+            STREAM_FINISHED: {
+              actions: 'markStreamFinished',
             },
           },
         },
@@ -913,6 +943,12 @@ export const chatOperationsMachine = setup({
           on: {
             NAVIGATE: {
               actions: 'storePendingNavigation',
+            },
+            STREAM_STARTED: {
+              actions: 'markStreamStarted',
+            },
+            STREAM_FINISHED: {
+              actions: 'markStreamFinished',
             },
           },
         },

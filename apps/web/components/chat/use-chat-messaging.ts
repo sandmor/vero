@@ -26,10 +26,7 @@ import {
 } from '@/app/(chat)/actions';
 import type React from 'react';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
-import {
-  chatOperationsMachine,
-  type OperationType,
-} from '@/lib/state-machines/chat-operations.machine';
+import { chatOperationsMachine } from '@/lib/state-machines/chat-operations.machine';
 import {
   buildSelectionSnapshot,
   cloneSelectionSnapshot,
@@ -222,9 +219,16 @@ export function useChatMessaging({
   }, [messages]);
 
   // Fetch tree function for the machine
-  const fetchTree = useCallback(async () => {
+  const fetchTree = useCallback(async (): Promise<MessageTreeResult> => {
     if (IS_E2E) {
-      throw new Error('E2E mode bypasses tree fetch');
+      // In E2E mode, return the current tree state from the machine
+      // This is a no-op fetch since we can't call the server
+      const currentTree = currentMessageTreeRef.current;
+      if (currentTree) {
+        return currentTree;
+      }
+      // If no tree is available, return an empty tree
+      return { tree: [], nodes: [], branch: [], rootMessageIndex: null };
     }
     const { getMessageTreeAction } = await import('@/app/(chat)/actions');
     return await getMessageTreeAction({ chatId });
@@ -270,6 +274,19 @@ export function useChatMessaging({
       },
     }
   );
+
+  // Debug: Log state machine transitions
+  useEffect(() => {
+    const subscription = operationsActor.subscribe((state) => {
+      console.log(
+        'Chat Operations State:',
+        JSON.stringify(state.value),
+        '| Active Operation:',
+        state.context.activeOperation
+      );
+    });
+    return () => subscription.unsubscribe();
+  }, [operationsActor]);
 
   // Sync streaming state with the operations machine
   useEffect(() => {
@@ -638,7 +655,7 @@ export function useChatMessaging({
       const previousSelectionIds = [...getSelectedIds()];
 
       if (targetMessage.role === 'user') {
-        // User message edit - create branch, refresh tree, then send to trigger AI
+        // User message edit - create branch, then send new message to trigger AI
         const removedSelectionIds = previousMessages
           .slice(targetIndex)
           .map((message) => message.id);
@@ -656,45 +673,22 @@ export function useChatMessaging({
             editedText: trimmed,
           });
 
-          // Step 2: Reset selection state
+          // Step 2: Reset selection state and truncate messages
           selectionRef.current = null;
           currentMessageTreeRef.current = undefined;
-
-          // Step 3: Fetch fresh tree with new message
-          const newTree = await fetchTree();
-
-          // Step 4: Update state with the new tree
-          sendOperations({ type: 'UPDATE_TREE', tree: newTree });
-
-          // Step 5: Find the new message in the tree
-          const newMessageInTree = newTree.branch.find(
-            (node) => node.id === newMessageId
-          );
-
-          // Step 6: Set up UI state for sending
           const truncatedMessages = previousMessages.slice(0, targetIndex);
+          setMessages(truncatedMessages);
 
-          if (newMessageInTree) {
-            // Use the message from tree which has proper sibling metadata
-            const { convertToUIMessages } = await import('@/lib/utils');
-            const [uiMessage] = convertToUIMessages([newMessageInTree]);
-            if (uiMessage) {
-              setMessages([...truncatedMessages, uiMessage]);
-            } else {
-              setMessages(truncatedMessages);
-            }
-          } else {
-            setMessages(truncatedMessages);
-          }
-
-          // Step 7: Send message to trigger AI generation
+          // Step 3: Send message to trigger AI generation
+          // The useChat hook will add this message to the messages array
           await sendMessage({
             id: newMessageId,
             role: 'user',
             parts: editedParts,
           });
 
-          // Notify machine that edit completed (will handle post-stream sync)
+          // Step 4: Notify machine that edit completed
+          // The machine will sync the tree after streaming finishes
           sendOperations({
             type: 'EDIT_COMPLETE',
             newMessageId,
@@ -819,6 +813,7 @@ export function useChatMessaging({
   // Compute disabled state from machine
   const disableRegenerate =
     isStreamingStatus(status) ||
+    operationsState.context.isStreaming ||
     operationsState.context.activeOperation !== 'idle';
 
   return {

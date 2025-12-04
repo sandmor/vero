@@ -497,7 +497,8 @@ function SortablePromptBlockCard({
   return (
     <motion.div
       ref={setNodeRef}
-      style={{ ...style, zIndex: isDragging ? 50 : undefined }}
+      style={style as React.CSSProperties}
+      className={isDragging ? 'z-50' : undefined}
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -508,7 +509,7 @@ function SortablePromptBlockCard({
         className={cn(
           'border-border/70 bg-background transition-shadow',
           isDragging &&
-            'scale-[0.98] border-dashed opacity-40 shadow-xl ring-2 ring-primary/40',
+          'scale-[0.98] border-dashed opacity-40 shadow-xl ring-2 ring-primary/40',
           isActive && !isDragging && 'ring-2 ring-primary/30'
         )}
       >

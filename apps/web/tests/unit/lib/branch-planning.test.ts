@@ -50,8 +50,10 @@ describe('planBranchSwitch', () => {
 
     expect(plan).not.toBeNull();
     expect(plan?.operation.kind).toBe('root');
-    expect(plan?.operation.rootMessageIndex).toBe(1);
-    expect(plan?.operation.childId).toBe('msg-2');
+    if (plan?.operation.kind === 'root') {
+      expect(plan.operation.rootMessageIndex).toBe(1);
+      expect(plan.operation.childId).toBe('msg-2');
+    }
   });
 
   it('plans a prev branch switch with childId for nested nodes', () => {
@@ -81,8 +83,10 @@ describe('planBranchSwitch', () => {
 
     expect(plan).not.toBeNull();
     expect(plan?.operation.kind).toBe('child');
-    expect(plan?.operation.parentId).toBe('root');
-    expect(plan?.operation.selectedChildIndex).toBe(0);
-    expect(plan?.operation.childId).toBe('child-1');
+    if (plan?.operation.kind === 'child') {
+      expect(plan.operation.parentId).toBe('root');
+      expect(plan.operation.selectedChildIndex).toBe(0);
+      expect(plan.operation.childId).toBe('child-1');
+    }
   });
 });

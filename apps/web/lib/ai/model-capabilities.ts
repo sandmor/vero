@@ -1,5 +1,5 @@
 import { prisma } from '../db/prisma';
-import type { ProviderInfo, ProviderModel } from '@tokenlens/core';
+import type { ProviderInfo, ProviderModel } from 'tokenlens/core';
 import type { SupportedProvider } from './registry';
 import { getTier } from './tiers';
 import { Prisma } from '../../generated/prisma-client/client';
@@ -257,25 +257,25 @@ export function parseOpenRouterCapabilities(
   // Parse pricing information from OpenRouter
   const pricing: ModelPricing | null = model.pricing
     ? {
-        prompt:
-          typeof model.pricing.prompt === 'string'
-            ? Number.parseFloat(model.pricing.prompt) * 1_000_000
-            : typeof model.pricing.prompt === 'number'
-              ? model.pricing.prompt * 1_000_000
-              : undefined,
-        completion:
-          typeof model.pricing.completion === 'string'
-            ? Number.parseFloat(model.pricing.completion) * 1_000_000
-            : typeof model.pricing.completion === 'number'
-              ? model.pricing.completion * 1_000_000
-              : undefined,
-        image:
-          typeof model.pricing.image === 'string'
-            ? Number.parseFloat(model.pricing.image)
-            : typeof model.pricing.image === 'number'
-              ? model.pricing.image
-              : undefined,
-      }
+      prompt:
+        typeof model.pricing.prompt === 'string'
+          ? Number.parseFloat(model.pricing.prompt) * 1_000_000
+          : typeof model.pricing.prompt === 'number'
+            ? model.pricing.prompt * 1_000_000
+            : undefined,
+      completion:
+        typeof model.pricing.completion === 'string'
+          ? Number.parseFloat(model.pricing.completion) * 1_000_000
+          : typeof model.pricing.completion === 'number'
+            ? model.pricing.completion * 1_000_000
+            : undefined,
+      image:
+        typeof model.pricing.image === 'string'
+          ? Number.parseFloat(model.pricing.image)
+          : typeof model.pricing.image === 'number'
+            ? model.pricing.image
+            : undefined,
+    }
     : null;
 
   return {

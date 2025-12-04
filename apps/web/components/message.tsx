@@ -371,6 +371,7 @@ export const PreviewMessage = memo(
       nextProps.message.metadata?.siblingsCount
     )
       return false;
+    if (prevProps.disableRegenerate !== nextProps.disableRegenerate) return false;
     if (prevProps.isSelected !== nextProps.isSelected) return false;
     if (prevProps.isSelectionMode !== nextProps.isSelectionMode) return false;
     if (prevProps.onToggleSelectMessage !== nextProps.onToggleSelectMessage)

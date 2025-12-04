@@ -1,16 +1,16 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { createActor, fromPromise } from 'xstate';
-import { chatOperationsMachine } from '@/lib/state-machines/chat-operations.machine';
+import { chatOperationsMachine, type ChatOperationsInput } from '@/lib/state-machines/chat-operations.machine';
 import type { MessageTreeResult, MessageTreeNode } from '@/lib/db/schema';
 import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 
 // Mock external dependencies
 mock.module('@/app/(chat)/actions', () => ({
-  updateBranchSelection: async () => {},
+  updateBranchSelection: async () => { },
 }));
 
 mock.module('@/components/toast', () => ({
-  toast: () => {},
+  toast: () => { },
 }));
 
 // Mock data helpers
@@ -29,6 +29,7 @@ const createMockTree = (): MessageTreeResult => {
     siblingIndex: 0,
     siblingsCount: 1,
     selectedChildIndex: 0,
+    depth: 0,
     children: [],
   };
   const msg1: MessageTreeNode = {
@@ -43,7 +44,8 @@ const createMockTree = (): MessageTreeResult => {
     parentPath: '0',
     siblingIndex: 0,
     siblingsCount: 3,
-    selectedChildIndex: null,
+    selectedChildIndex: 0,
+    depth: 1,
     children: [],
   };
   const msg2: MessageTreeNode = {
@@ -58,7 +60,8 @@ const createMockTree = (): MessageTreeResult => {
     parentPath: '0',
     siblingIndex: 1,
     siblingsCount: 3,
-    selectedChildIndex: null,
+    selectedChildIndex: 0,
+    depth: 1,
     children: [],
   };
   const msg3: MessageTreeNode = {
@@ -73,7 +76,8 @@ const createMockTree = (): MessageTreeResult => {
     parentPath: '0',
     siblingIndex: 2,
     siblingsCount: 3,
-    selectedChildIndex: null,
+    selectedChildIndex: 0,
+    depth: 1,
     children: [],
   };
 
@@ -93,18 +97,18 @@ const createMockSelection = (): BranchSelectionSnapshot => ({
 });
 
 const createMockInput = (
-  overrides: Partial<Parameters<typeof chatOperationsMachine.provide>[0]> = {}
-) => ({
+  overrides: Partial<ChatOperationsInput> = {}
+): ChatOperationsInput => ({
   chatId: 'test-chat',
   initialTree: createMockTree(),
   initialSelection: createMockSelection(),
   initialMessages: [],
-  onMessagesChange: () => {},
-  onTreeChange: () => {},
-  onSelectionChange: () => {},
+  onMessagesChange: () => { },
+  onTreeChange: () => { },
+  onSelectionChange: () => { },
   fetchTree: async () => createMockTree(),
-  persistBranchSelection: async () => {},
-  triggerRegenerate: () => {},
+  persistBranchSelection: async () => { },
+  triggerRegenerate: () => { },
   ...overrides,
 });
 
@@ -219,7 +223,7 @@ describe('chatOperationsMachine', () => {
   describe('regeneration', () => {
     it('should transition to regeneration.starting on REGENERATE event', async () => {
       let regenerateCalled = false;
-      let regenerateMessageId: string | null = null;
+      let regenerateMessageId = '' as string | null;
 
       const actor = createActor(chatOperationsMachine, {
         input: createMockInput({
@@ -330,14 +334,14 @@ describe('chatOperationsMachine', () => {
   });
 
   describe('edit operations', () => {
-    it('should handle assistant edit completion', async () => {
-      let fetchTreeCalled = false;
+    it('should sync tree immediately for assistant edits', async () => {
+      let fetchTreeCallCount = 0;
 
       const actor = createActor(
         chatOperationsMachine.provide({
           actors: {
             fetchAndApplyTree: fromPromise(async () => {
-              fetchTreeCalled = true;
+              fetchTreeCallCount++;
               return createMockTree();
             }),
           },
@@ -357,12 +361,13 @@ describe('chatOperationsMachine', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      expect(fetchTreeCalled).toBe(true);
+      // Assistant edits sync immediately since no streaming follows
+      expect(fetchTreeCallCount).toBe(1);
       expect(actor.getSnapshot().value).toBe('idle');
       expect(actor.getSnapshot().context.activeOperation).toBe('idle');
     });
 
-    it('should handle user edit and wait for stream', async () => {
+    it('should defer tree sync for user edits until streaming completes', async () => {
       let fetchTreeCallCount = 0;
 
       const actor = createActor(
@@ -381,7 +386,7 @@ describe('chatOperationsMachine', () => {
 
       actor.start();
 
-      // User edit triggers initial sync
+      // User edit triggers AI response, so we must wait for streaming
       actor.send({
         type: 'EDIT_COMPLETE',
         newMessageId: 'new-msg-id',
@@ -390,17 +395,50 @@ describe('chatOperationsMachine', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Should have fetched tree once and be waiting for stream
-      expect(fetchTreeCallCount).toBe(1);
+      // No tree fetch yet - server hasn't received the streamed response
+      expect(fetchTreeCallCount).toBe(0);
+      expect(actor.getSnapshot().value).toEqual({ editing: 'waitingForStream' });
 
-      // Simulate streaming
+      // Simulate streaming lifecycle
       actor.send({ type: 'STREAM_STARTED' });
       actor.send({ type: 'STREAM_FINISHED' });
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Should have fetched tree again after stream finished (final sync)
-      expect(fetchTreeCallCount).toBe(2);
+      // Now tree is fetched with complete data
+      expect(fetchTreeCallCount).toBe(1);
+      expect(actor.getSnapshot().value).toBe('idle');
+    });
+
+    it('should transition through streaming state during user edit', async () => {
+      const actor = createActor(
+        chatOperationsMachine.provide({
+          actors: {
+            fetchAndApplyTree: fromPromise(async () => createMockTree()),
+          },
+        }),
+        {
+          input: createMockInput(),
+        }
+      );
+
+      actor.start();
+
+      actor.send({
+        type: 'EDIT_COMPLETE',
+        newMessageId: 'new-msg-id',
+        role: 'user',
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(actor.getSnapshot().value).toEqual({ editing: 'waitingForStream' });
+
+      actor.send({ type: 'STREAM_STARTED' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(actor.getSnapshot().value).toEqual({ editing: 'streaming' });
+
+      actor.send({ type: 'STREAM_FINISHED' });
+      await new Promise((resolve) => setTimeout(resolve, 50));
       expect(actor.getSnapshot().value).toBe('idle');
     });
   });
@@ -443,6 +481,10 @@ describe('chatOperationsMachine', () => {
 
   describe('error handling', () => {
     it('should rollback on branch switch failure', async () => {
+      // Suppress expected console.error from logError action
+      const originalConsoleError = console.error;
+      console.error = () => { };
+
       let messagesChangedCount = 0;
       let rejectPersist: (err: Error) => void;
       const persistPromise = new Promise<void>((_, reject) => {
@@ -483,6 +525,216 @@ describe('chatOperationsMachine', () => {
       // Should have rolled back (called onMessagesChange again)
       expect(messagesChangedCount).toBe(2);
       expect(actor.getSnapshot().value).toBe('idle');
+
+      // Restore console.error
+      console.error = originalConsoleError;
+    });
+  });
+
+  describe('regeneration lifecycle', () => {
+    it('should complete full regeneration cycle and return to idle', async () => {
+      const actor = createActor(
+        chatOperationsMachine.provide({
+          actors: {
+            fetchAndApplyTree: fromPromise(async () => createMockTree()),
+          },
+        }),
+        {
+          input: createMockInput({
+            triggerRegenerate: () => { },
+          }),
+        }
+      );
+
+      actor.start();
+      expect(actor.getSnapshot().context.activeOperation).toBe('idle');
+
+      // Start regeneration
+      actor.send({ type: 'REGENERATE', messageId: 'msg-1' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(actor.getSnapshot().context.activeOperation).toBe('regeneration');
+
+      // Streaming starts
+      actor.send({ type: 'STREAM_STARTED' });
+      expect(actor.getSnapshot().context.isStreaming).toBe(true);
+
+      // Streaming ends
+      actor.send({ type: 'STREAM_FINISHED' });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should be fully back to idle with all state cleared
+      expect(actor.getSnapshot().value).toBe('idle');
+      expect(actor.getSnapshot().context.activeOperation).toBe('idle');
+      expect(actor.getSnapshot().context.isStreaming).toBe(false);
+      expect(actor.getSnapshot().context.regenerationMessageId).toBe(null);
+    });
+
+    it('should handle rapid stream finish after regenerate', async () => {
+      const actor = createActor(
+        chatOperationsMachine.provide({
+          actors: {
+            fetchAndApplyTree: fromPromise(async () => createMockTree()),
+          },
+        }),
+        {
+          input: createMockInput({
+            triggerRegenerate: () => { },
+          }),
+        }
+      );
+
+      actor.start();
+      actor.send({ type: 'REGENERATE', messageId: 'msg-1' });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Stream finishes without explicit STREAM_STARTED (very fast response)
+      actor.send({ type: 'STREAM_FINISHED' });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(actor.getSnapshot().value).toBe('idle');
+      expect(actor.getSnapshot().context.activeOperation).toBe('idle');
+    });
+  });
+
+  describe('tree synchronization', () => {
+    it('should sync tree after streaming completes in idle state', async () => {
+      let fetchTreeCallCount = 0;
+      const updatedTree = createMockTree();
+      updatedTree.nodes[1].siblingsCount = 5;
+
+      const actor = createActor(
+        chatOperationsMachine.provide({
+          actors: {
+            fetchAndApplyTree: fromPromise(async () => {
+              fetchTreeCallCount++;
+              return updatedTree;
+            }),
+          },
+        }),
+        {
+          input: createMockInput(),
+        }
+      );
+
+      actor.start();
+      expect(actor.getSnapshot().context.pendingTreeSync).toBe(false);
+
+      // New message streaming
+      actor.send({ type: 'STREAM_STARTED' });
+      expect(actor.getSnapshot().context.pendingTreeSync).toBe(true);
+
+      actor.send({ type: 'STREAM_FINISHED' });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Tree should be synced with updated data
+      expect(fetchTreeCallCount).toBe(1);
+      expect(actor.getSnapshot().context.pendingTreeSync).toBe(false);
+      expect(actor.getSnapshot().context.tree?.nodes[1].siblingsCount).toBe(5);
+    });
+
+    it('should handle SYNC_TREE request', async () => {
+      let fetchTreeCalled = false;
+
+      const actor = createActor(
+        chatOperationsMachine.provide({
+          actors: {
+            fetchAndApplyTree: fromPromise(async () => {
+              fetchTreeCalled = true;
+              return createMockTree();
+            }),
+          },
+        }),
+        {
+          input: createMockInput(),
+        }
+      );
+
+      actor.start();
+      actor.send({ type: 'SYNC_TREE' });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(fetchTreeCalled).toBe(true);
+      expect(actor.getSnapshot().value).toBe('idle');
+    });
+
+    it('should not interfere with other states when streaming events occur', async () => {
+      const actor = createActor(
+        chatOperationsMachine.provide({
+          actors: {
+            persistSelection: fromPromise(async () => {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }),
+            fetchAndApplyTree: fromPromise(async () => createMockTree()),
+          },
+        }),
+        {
+          input: createMockInput(),
+        }
+      );
+
+      actor.start();
+
+      // Start branch switch
+      actor.send({ type: 'NAVIGATE', messageId: 'msg-1', direction: 'next' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Streaming events during branch switch should update context but not break flow
+      actor.send({ type: 'STREAM_STARTED' });
+      actor.send({ type: 'STREAM_FINISHED' });
+
+      expect(actor.getSnapshot().context.isStreaming).toBe(false);
+      // Machine should still be in branch switch state (not crashed)
+      expect(actor.getSnapshot().value).not.toBe('idle');
+    });
+  });
+
+  describe('operation blocking', () => {
+    it('should prevent concurrent operations', async () => {
+      const actor = createActor(
+        chatOperationsMachine.provide({
+          actors: {
+            persistSelection: fromPromise(async () => {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }),
+            fetchAndApplyTree: fromPromise(async () => createMockTree()),
+          },
+        }),
+        {
+          input: createMockInput(),
+        }
+      );
+
+      actor.start();
+
+      // Start navigation
+      actor.send({ type: 'NAVIGATE', messageId: 'msg-1', direction: 'next' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const stateBeforeRegenerate = actor.getSnapshot().value;
+
+      // Try regeneration while navigating - should be blocked
+      actor.send({ type: 'REGENERATE', messageId: 'msg-1' });
+
+      // State should not change to regeneration
+      expect(actor.getSnapshot().value).toEqual(stateBeforeRegenerate);
+    });
+
+    it('should block navigation during active streaming', () => {
+      const actor = createActor(chatOperationsMachine, {
+        input: createMockInput(),
+      });
+
+      actor.start();
+      actor.send({ type: 'STREAM_STARTED' });
+
+      // Navigation during streaming should be blocked
+      actor.send({ type: 'NAVIGATE', messageId: 'msg-1', direction: 'next' });
+
+      // Should still be in idle (navigation blocked)
+      expect(actor.getSnapshot().value).toBe('idle');
+      expect(actor.getSnapshot().context.pendingNavigation).toBe(null);
     });
   });
 });
