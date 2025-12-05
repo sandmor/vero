@@ -126,11 +126,11 @@ export function PureMessageActions({
         </AnimatePresence>
 
         {hasSiblings && (
-          <div className="flex items-center bg-background border border-border/60 rounded-md shadow-sm h-7">
+          <div className="flex items-center bg-background border border-border/60 rounded-xl shadow-sm h-7">
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-l-md rounded-r-none hover:bg-muted"
+              className="h-7 w-7 rounded-l-xl rounded-r-none hover:bg-muted"
               onClick={() => onNavigate?.('prev')}
               disabled={activeIndex === 0}
             >
@@ -142,7 +142,7 @@ export function PureMessageActions({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-r-md rounded-l-none hover:bg-muted"
+              className="h-7 w-7 rounded-r-xl rounded-l-none hover:bg-muted"
               onClick={() => onNavigate?.('next')}
               disabled={activeIndex === totalVersions - 1}
             >
