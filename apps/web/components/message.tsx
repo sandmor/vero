@@ -1,6 +1,6 @@
 'use client';
 import equal from 'fast-deep-equal';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Fragment, memo, useCallback, useState } from 'react';
 import type { ChatMessage } from '@/lib/types';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
@@ -14,7 +14,6 @@ import { MessageActions } from './message-actions';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
 import { PreviewAttachment } from './preview-attachment';
-import { MessageVersionPicker } from './message-version-picker';
 import {
   EmptyMessagePlaceholder,
   LoadingDots,
@@ -44,6 +43,7 @@ const PurePreviewMessage = ({
   onEditMessage,
   onEditMessageOnly,
   allowedModels,
+  isExpanded,
 }: {
   chatId: string;
   message: ChatMessage;
@@ -64,6 +64,7 @@ const PurePreviewMessage = ({
   onEditMessage?: (messageId: string, text: string) => Promise<void>;
   onEditMessageOnly?: (messageId: string, text: string) => Promise<void>;
   allowedModels?: ChatModelOption[];
+  isExpanded?: boolean;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const {
@@ -76,11 +77,17 @@ const PurePreviewMessage = ({
   const hasTextPart = firstTextIndex !== -1;
 
   const messageBubbleClass = cn(
-    'w-full max-w-full break-words rounded-2xl border border-border/60 px-5 py-4 text-left text-base leading-relaxed transition-colors',
+    'w-full max-w-full break-words text-left text-base leading-relaxed transition-colors',
+    'px-5 py-4'
+  );
+
+  const bubbleContainerClass = cn(
+    'flex flex-col w-full rounded-2xl border border-border/60 overflow-hidden',
     message.role === 'user'
       ? 'bg-primary/5 text-foreground dark:bg-primary/15'
       : 'bg-muted text-foreground/90 dark:bg-muted/40'
   );
+
   let inlineReasoningAttached = false;
   const inlineReasoningTrimmed = inlineReasoningText.trim();
   const hasInlineReasoning = inlineReasoningTrimmed.length > 0;
@@ -91,14 +98,6 @@ const PurePreviewMessage = ({
     },
     [message.id, onNavigate]
   );
-  const siblingsPicker =
-    message.metadata?.siblingsCount && message.metadata.siblingsCount > 1 ? (
-      <MessageVersionPicker
-        activeIndex={message.metadata.siblingIndex}
-        onNavigate={handleNavigate}
-        total={message.metadata.siblingsCount}
-      />
-    ) : null;
 
   return (
     <motion.div
@@ -165,59 +164,25 @@ const PurePreviewMessage = ({
             </div>
           )}
 
-          {shouldShowPlaceholder ? (
-            <EmptyMessagePlaceholder
-              className="min-h-6"
-              isLoading={isLoading}
-            />
-          ) : (
-            parts.map((part, index) => {
-              const { type } = part;
-              const key = `message-${message.id}-part-${index}`;
+          <div className={bubbleContainerClass}>
+            {shouldShowPlaceholder ? (
+              <div className="px-5 py-4">
+                <EmptyMessagePlaceholder
+                  className="min-h-6"
+                  isLoading={isLoading}
+                />
+              </div>
+            ) : (
+              parts.map((part, index) => {
+                const { type } = part;
+                const key = `message-${message.id}-part-${index}`;
 
-              if (type === 'file') {
-                return null;
-              }
-
-              if (type === 'reasoning') {
-                if (hasTextPart && index < firstTextIndex) {
+                if (type === 'file') {
                   return null;
                 }
 
-                return (
-                  <div key={key}>
-                    <MessageContent
-                      className={messageBubbleClass}
-                      data-testid="message-content"
-                    >
-                      <MessageReasoning
-                        appearance="inline"
-                        isLoading={isLoading}
-                        reasoning={
-                          typeof part.text === 'string' ? part.text : ''
-                        }
-                      />
-                    </MessageContent>
-                  </div>
-                );
-              }
-
-              if (type === 'text') {
-                if (typeof part.text !== 'string') {
-                  return null;
-                }
-
-                if (mode === 'view') {
-                  const shouldIncludeReasoning =
-                    message.role === 'assistant' &&
-                    !inlineReasoningAttached &&
-                    hasInlineReasoning;
-
-                  if (shouldIncludeReasoning) {
-                    inlineReasoningAttached = true;
-                  }
-
-                  if (!part.text.trim() && !shouldIncludeReasoning) {
+                if (type === 'reasoning') {
+                  if (hasTextPart && index < firstTextIndex) {
                     return null;
                   }
 
@@ -227,121 +192,170 @@ const PurePreviewMessage = ({
                         className={messageBubbleClass}
                         data-testid="message-content"
                       >
-                        {shouldIncludeReasoning ? (
-                          <MessageReasoning
-                            appearance="inline"
-                            isLoading={isLoading}
-                            reasoning={inlineReasoningTrimmed}
-                          />
-                        ) : null}
-                        {part.text.trim().length > 0 ? (
-                          <Response>{sanitizeText(part.text)}</Response>
-                        ) : null}
+                        <MessageReasoning
+                          appearance="inline"
+                          isLoading={isLoading}
+                          reasoning={
+                            typeof part.text === 'string' ? part.text : ''
+                          }
+                        />
                       </MessageContent>
                     </div>
                   );
                 }
 
-                if (mode === 'edit' && index === firstTextIndex) {
+                if (type === 'text') {
+                  if (typeof part.text !== 'string') {
+                    return null;
+                  }
+
                   return (
-                    <div
-                      className="flex w-full flex-row items-start gap-3"
-                      key={key}
-                    >
-                      <div className="size-8" />
-                      <div className="min-w-0 flex-1">
-                        <MessageEditor
-                          key={message.id}
-                          message={message}
-                          setMode={setMode}
-                          onSubmit={async (nextText) => {
-                            if (!onEditMessage) {
-                              return;
-                            }
-                            await onEditMessage(message.id, nextText);
-                          }}
-                          onSubmitWithoutRegenerate={
-                            onEditMessageOnly
-                              ? async (nextText) => {
-                                await onEditMessageOnly(message.id, nextText);
-                              }
-                              : undefined
-                          }
-                        />
-                      </div>
+                    <div key={key} className="w-full">
+                      <AnimatePresence mode="wait" initial={false}>
+                        {mode === 'view' ? (
+                          <motion.div
+                            key="view"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.15 }}
+                          >
+                            <MessageContent
+                              className={messageBubbleClass}
+                              data-testid="message-content"
+                            >
+                              {message.role === 'assistant' &&
+                                !inlineReasoningAttached &&
+                                hasInlineReasoning && (
+                                  <MessageReasoning
+                                    appearance="inline"
+                                    isLoading={isLoading}
+                                    reasoning={inlineReasoningTrimmed}
+                                  />
+                                )}
+                              {part.text.trim().length > 0 ? (
+                                <Response>{sanitizeText(part.text)}</Response>
+                              ) : null}
+                            </MessageContent>
+                          </motion.div>
+                        ) : (
+                          index === firstTextIndex && (
+                            <motion.div
+                              key="edit"
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.15 }}
+                              className="flex w-full flex-row items-start gap-3 px-5 py-4"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <MessageEditor
+                                  key={message.id}
+                                  message={message}
+                                  setMode={setMode}
+                                  onSubmit={async (nextText) => {
+                                    if (!onEditMessage) {
+                                      return;
+                                    }
+                                    await onEditMessage(message.id, nextText);
+                                  }}
+                                  onSubmitWithoutRegenerate={
+                                    onEditMessageOnly
+                                      ? async (nextText) => {
+                                          await onEditMessageOnly(
+                                            message.id,
+                                            nextText
+                                          );
+                                        }
+                                      : undefined
+                                  }
+                                />
+                              </div>
+                            </motion.div>
+                          )
+                        )}
+                      </AnimatePresence>
                     </div>
                   );
                 }
 
+                if (isToolPart(part)) {
+                  const toolNode = renderToolPart(part, {
+                    isReadonly,
+                  });
+
+                  return toolNode ? (
+                    <div key={key} className="px-5 py-2">
+                      {toolNode}
+                    </div>
+                  ) : null;
+                }
+
                 return null;
-              }
+              })
+            )}
 
-              if (isToolPart(part)) {
-                const toolNode = renderToolPart(part, {
-                  isReadonly,
-                });
-
-                return toolNode ? (
-                  <Fragment key={key}>{toolNode}</Fragment>
-                ) : null;
-              }
-
-              return null;
-            })
-          )}
-
-          {!isReadonly && (
-            <MessageActions
-              chatId={chatId}
-              isLoading={isLoading}
-              key={`action-${message.id}`}
-              message={message}
-              setMode={setMode}
-              onRegenerate={onRegenerateAssistant}
-              disableRegenerate={disableRegenerate}
-              onDelete={onDeleteMessage}
-              onToggleSelect={onToggleSelectMessage}
-              isSelected={Boolean(isSelected)}
-              isSelectionMode={Boolean(isSelectionMode)}
-              modelBadge={(() => {
-                if (message.role !== 'assistant' || !message.metadata?.model) {
-                  return null;
-                }
-                const raw = message.metadata.model as string;
-                let name = '';
-                let isBYOK = false;
-                if (allowedModels && allowedModels.length > 0) {
-                  const found = allowedModels.find((m) => m.id === raw);
-                  if (found) {
-                    name = found.name;
-                    isBYOK = Boolean(found.isBYOK);
+            {!isReadonly && (
+              <MessageActions
+                chatId={chatId}
+                isLoading={isLoading}
+                key={`action-${message.id}`}
+                message={message}
+                setMode={setMode}
+                onRegenerate={onRegenerateAssistant}
+                disableRegenerate={disableRegenerate}
+                onDelete={onDeleteMessage}
+                onToggleSelect={onToggleSelectMessage}
+                isSelected={Boolean(isSelected)}
+                isSelectionMode={Boolean(isSelectionMode)}
+                modelBadge={(() => {
+                  if (
+                    message.role !== 'assistant' ||
+                    !message.metadata?.model
+                  ) {
+                    return null;
                   }
-                }
-                if (!name) {
-                  try {
-                    const derived = deriveChatModel(raw);
-                    name =
-                      derived?.name ?? raw.split(':').slice(1).join(':') ?? raw;
-                  } catch {
-                    const parts = raw.split(':');
-                    name = parts.length > 1 ? parts.slice(1).join(':') : raw;
+                  const raw = message.metadata.model as string;
+                  let name = '';
+                  let isBYOK = false;
+                  if (allowedModels && allowedModels.length > 0) {
+                    const found = allowedModels.find((m) => m.id === raw);
+                    if (found) {
+                      name = found.name;
+                      isBYOK = Boolean(found.isBYOK);
+                    }
                   }
-                }
-                return (
-                  <span className="flex items-center gap-2 rounded-full bg-muted/30 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                    <span className="truncate">{name}</span>
-                    {isBYOK && (
-                      <span className="rounded-full border border-primary/40 bg-primary/10 px-1 text-[9px] font-semibold uppercase tracking-wide text-primary">
-                        BYOK
-                      </span>
-                    )}
-                  </span>
-                );
-              })()}
-              siblingsBadge={siblingsPicker}
-              onFork={onForkMessage}
-            />
-          )}
+                  if (!name) {
+                    try {
+                      const derived = deriveChatModel(raw);
+                      name =
+                        derived?.name ??
+                        raw.split(':').slice(1).join(':') ??
+                        raw;
+                    } catch {
+                      const parts = raw.split(':');
+                      name = parts.length > 1 ? parts.slice(1).join(':') : raw;
+                    }
+                  }
+                  return (
+                    <span className="flex items-center gap-2 rounded-full bg-muted/30 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      <span className="truncate">{name}</span>
+                      {isBYOK && (
+                        <span className="rounded-full border border-primary/40 bg-primary/10 px-1 text-[9px] font-semibold uppercase tracking-wide text-primary">
+                          BYOK
+                        </span>
+                      )}
+                    </span>
+                  );
+                })()}
+                siblingIndex={message.metadata?.siblingIndex}
+                siblingsCount={message.metadata?.siblingsCount}
+                onNavigate={handleNavigate}
+                onFork={onForkMessage}
+                isExpanded={isExpanded}
+              />
+            )}
+          </div>
         </div>
       </div>
     </motion.div>
@@ -392,6 +406,7 @@ export const PreviewMessage = memo(
     if (prevProps.onEditMessageOnly !== nextProps.onEditMessageOnly)
       return false;
     if (!equal(prevProps.allowedModels, nextProps.allowedModels)) return false;
+    if (prevProps.isExpanded !== nextProps.isExpanded) return false;
 
     // otherwise skip rerender
     return true;

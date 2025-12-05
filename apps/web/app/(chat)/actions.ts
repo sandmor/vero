@@ -100,13 +100,13 @@ export async function updateBranchSelection({
 }: {
   chatId: string;
   operation:
-  | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
-  | {
-    kind: 'child';
-    parentId: string;
-    selectedChildIndex: number | null;
-    childId?: string;
-  };
+    | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
+    | {
+        kind: 'child';
+        parentId: string;
+        selectedChildIndex: number | null;
+        childId?: string;
+      };
   expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   if (IS_E2E) {

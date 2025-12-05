@@ -1,6 +1,6 @@
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { ArrowDownIcon } from 'lucide-react';
-import { memo, useEffect } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useMessages } from '@/hooks/use-messages';
 import type { ChatMessage } from '@/lib/types';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
@@ -58,6 +58,24 @@ function MessagesComponent({
     status,
   });
 
+  const MOBILE_BREAKPOINT = 768;
+
+  const [isExpanded, setIsExpanded] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth > MOBILE_BREAKPOINT;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsExpanded(window.innerWidth > MOBILE_BREAKPOINT);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   useEffect(() => {
     if (status === 'submitted') {
       requestAnimationFrame(() => {
@@ -105,6 +123,7 @@ function MessagesComponent({
               onEditMessageOnly={onEditMessageOnly}
               disableRegenerate={disableRegenerate}
               allowedModels={allowedModels}
+              isExpanded={isExpanded}
             />
           ))}
 

@@ -1,13 +1,21 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useState } from 'react';
 import { toast } from 'sonner';
-import { useMutation } from '@tanstack/react-query';
 import { useCopyToClipboard } from 'usehooks-ts';
 import type { ChatMessage } from '@/lib/types';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
-import { cn } from '@/lib/utils';
-import { Action, Actions } from './elements/actions';
-import { Copy, GitBranchPlus, Pencil, RotateCcw, Trash2 } from 'lucide-react';
-import { ChatSDKError } from '@/lib/errors';
+import {
+  Copy,
+  GitBranchPlus,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  CheckSquare,
+  Square,
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,9 +25,20 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { getTextFromMessage } from '@/lib/utils';
 
 export function PureMessageActions({
   chatId,
@@ -29,12 +48,15 @@ export function PureMessageActions({
   onRegenerate,
   disableRegenerate,
   modelBadge,
-  siblingsBadge,
   onDelete,
   onToggleSelect,
   isSelected,
   isSelectionMode,
   onFork,
+  siblingIndex,
+  siblingsCount,
+  onNavigate,
+  isExpanded,
 }: {
   chatId: string;
   message: ChatMessage;
@@ -43,7 +65,6 @@ export function PureMessageActions({
   onRegenerate?: (assistantMessageId: string) => void;
   disableRegenerate?: boolean;
   modelBadge?: React.ReactNode;
-  siblingsBadge?: React.ReactNode;
   onDelete?: (
     messageId: string,
     mode: MessageDeletionMode
@@ -52,276 +73,295 @@ export function PureMessageActions({
   isSelected?: boolean;
   isSelectionMode?: boolean;
   onFork?: (messageId: string) => void;
+  siblingIndex?: number;
+  siblingsCount?: number;
+  onNavigate?: (direction: 'prev' | 'next') => void;
+  isExpanded?: boolean;
 }) {
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [_, copyToClipboard] = useCopyToClipboard();
 
-  type DeleteMode = MessageDeletionMode;
-
-  const deleteMutation = useMutation<
-    { chatDeleted: boolean },
-    ChatSDKError | Error,
-    { mode: DeleteMode }
-  >({
-    mutationFn: async ({ mode }) => {
-      if (!onDelete) {
-        throw new ChatSDKError('bad_request:api');
-      }
-      const result = await onDelete(message.id, mode);
-      return result ?? { chatDeleted: false };
-    },
-    onError: (error) => {
-      if (error instanceof ChatSDKError) {
-        toast.error(error.message);
-        return;
-      }
-      toast.error('Failed to delete message.');
-    },
-    onSuccess: (data, variables) => {
-      let successDescription = 'Message deleted.';
-      if (data?.chatDeleted) {
-        successDescription = 'Chat deleted.';
-      } else if (variables.mode === 'message-with-following') {
-        successDescription = 'Message and following deleted.';
-      } else if (variables.mode === 'message-only') {
-        successDescription = 'Message deleted; following preserved.';
-      } else if (variables.mode === 'version') {
-        successDescription = 'Version branch deleted.';
-      }
-      toast.success(successDescription);
-      setIsDeleteDialogOpen(false);
-    },
-  });
-
-  const textFromParts = message.parts
-    ?.filter((part) => part.type === 'text')
-    .map((part) => part.text)
-    .join('\n')
-    .trim();
-
-  const handleCopy = async () => {
-    if (!textFromParts) {
-      toast.error("There's no text to copy!");
-      return;
-    }
-
-    await copyToClipboard(textFromParts);
-    toast.success('Copied to clipboard!');
+  const handleCopy = () => {
+    const text = getTextFromMessage(message);
+    copyToClipboard(text);
+    toast.success('Copied to clipboard');
   };
 
-  const handleDelete = useCallback(
-    (mode: DeleteMode) => {
-      deleteMutation.mutate({ mode });
-    },
-    [deleteMutation]
-  );
-
-  const SelectionIndicator = ({ checked }: { checked: boolean }) => (
-    <span
-      aria-hidden="true"
-      className={cn(
-        'block h-4 w-4 rounded-[4px] border transition-colors',
-        checked
-          ? 'border-primary bg-primary'
-          : 'border-muted-foreground/40 bg-transparent'
-      )}
-    />
-  );
-
-  const handleDeleteDialogToggle = useCallback(
-    (open: boolean) => {
-      if (deleteMutation.isPending) {
-        return;
-      }
-      setIsDeleteDialogOpen(open);
-    },
-    [deleteMutation.isPending]
-  );
-
-  const renderDeleteAction = () => {
-    if (!onDelete) {
-      return null;
-    }
-
-    const deleteOptions: Array<{
-      mode: DeleteMode;
-      label: string;
-      description: string;
-      variant: 'secondary' | 'destructive';
-    }> = [
-        {
-          mode: 'version',
-          label: 'Delete version & branch',
-          description:
-            'Remove this message version along with any descendants in its branch.',
-          variant: 'secondary',
-        },
-        {
-          mode: 'message-only',
-          label: 'Delete message (keep following)',
-          description:
-            'Keep downstream messages by lifting them up to the previous step.',
-          variant: 'secondary',
-        },
-        {
-          mode: 'message-with-following',
-          label: 'Delete message & following',
-          description:
-            'Remove this message plus all alternate versions and later messages.',
-          variant: 'destructive',
-        },
-      ];
-
-    return (
-      <AlertDialog
-        open={isDeleteDialogOpen}
-        onOpenChange={handleDeleteDialogToggle}
-      >
-        <AlertDialogTrigger asChild>
-          <Action
-            disabled={deleteMutation.isPending}
-            tooltip={deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-          >
-            <Trash2 size={16} />
-          </Action>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete message?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Choose how this deletion should affect alternate versions and
-              downstream messages in the current branch.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="mt-2 flex flex-col gap-3">
-            {deleteOptions.map((option) => (
-              <AlertDialogAction
-                key={option.mode}
-                className={cn(
-                  buttonVariants({ variant: option.variant }),
-                  'flex h-auto w-full flex-col items-start justify-start gap-1 rounded-xl border px-4 py-3 text-left text-sm leading-relaxed whitespace-normal break-words transition-colors',
-                  option.variant === 'secondary'
-                    ? 'border-border/60 bg-muted/40 hover:bg-muted/60 dark:bg-muted/20 dark:hover:bg-muted/40'
-                    : 'border-destructive/50 bg-destructive/90 text-destructive-foreground hover:bg-destructive'
-                )}
-                disabled={deleteMutation.isPending}
-                onClick={(event) => {
-                  event.preventDefault();
-                  handleDelete(option.mode);
-                }}
-              >
-                <span className="font-medium leading-tight">
-                  {option.label}
-                </span>
-                <span
-                  className={cn(
-                    'text-xs leading-snug',
-                    option.variant === 'destructive'
-                      ? 'text-destructive-foreground/90'
-                      : 'text-muted-foreground'
-                  )}
-                >
-                  {option.description}
-                </span>
-              </AlertDialogAction>
-            ))}
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>
-              Cancel
-            </AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    );
-  };
+  const hasSiblings = siblingsCount !== undefined && siblingsCount > 1;
+  const activeIndex = siblingIndex ?? 0;
+  const totalVersions = siblingsCount ?? 1;
 
   if (isLoading) {
     return null;
   }
 
   return (
-    <div className="flex items-center gap-2 mr-auto">
-      <Actions>
-        <div className="relative">
-          {onToggleSelect && (
-            <Action
-              aria-pressed={isSelected}
-              onClick={() => onToggleSelect(message.id)}
-              tooltip={isSelected ? 'Deselect' : 'Select'}
+    <motion.div
+      className="flex flex-row justify-between items-center bg-muted/30 border-t border-border/50 px-2 py-1.5 select-none"
+      layout
+    >
+      <div className="flex items-center gap-2">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {isSelectionMode && onToggleSelect && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, width: 0 }}
+              animate={{ opacity: 1, scale: 1, width: 'auto' }}
+              exit={{ opacity: 0, scale: 0.8, width: 0 }}
+              className="mr-1"
             >
-              <SelectionIndicator checked={Boolean(isSelected)} />
-            </Action>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => onToggleSelect(message.id)}
+              >
+                {isSelected ? (
+                  <CheckSquare className="h-4 w-4 text-primary" />
+                ) : (
+                  <Square className="h-4 w-4 text-muted-foreground" />
+                )}
+              </Button>
+            </motion.div>
           )}
+        </AnimatePresence>
 
-          {renderDeleteAction()}
-
-          <Action onClick={handleCopy} tooltip="Copy">
-            <Copy size={16} />
-          </Action>
-
-          {setMode && (
-            <Action onClick={() => setMode('edit')} tooltip="Edit">
-              <Pencil size={16} />
-            </Action>
-          )}
-
-          {onFork && (
-            <Action onClick={() => onFork(message.id)} tooltip="Fork">
-              <GitBranchPlus size={16} />
-            </Action>
-          )}
-
-          {onRegenerate && message.role === 'assistant' && (
-            <Action
-              onClick={() => !disableRegenerate && onRegenerate(message.id)}
-              tooltip={disableRegenerate ? 'Regenerating…' : 'Regenerate'}
-              disabled={disableRegenerate}
+        {hasSiblings && (
+          <div className="flex items-center bg-background border border-border/60 rounded-md shadow-sm h-7">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-l-md rounded-r-none hover:bg-muted"
+              onClick={() => onNavigate?.('prev')}
+              disabled={activeIndex === 0}
             >
-              <RotateCcw size={16} />
-            </Action>
-          )}
-        </div>
-      </Actions>
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <span className="text-[10px] font-medium text-muted-foreground px-2 min-w-[3ch] text-center">
+              {activeIndex + 1}/{totalVersions}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-r-md rounded-l-none hover:bg-muted"
+              onClick={() => onNavigate?.('next')}
+              disabled={activeIndex === totalVersions - 1}
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
+        {modelBadge}
+      </div>
 
-      {modelBadge || siblingsBadge ? (
-        <div className="flex items-center gap-2">
-          {modelBadge}
-          {siblingsBadge}
-        </div>
-      ) : null}
-    </div>
+      <div className="flex items-center gap-1">
+        {message.role === 'assistant' && onRegenerate && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => onRegenerate(message.id)}
+                disabled={disableRegenerate}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Regenerate</TooltipContent>
+          </Tooltip>
+        )}
+
+        {message.role === 'user' && setMode && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => setMode('edit')}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit</TooltipContent>
+          </Tooltip>
+        )}
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={handleCopy}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Copy</TooltipContent>
+        </Tooltip>
+
+        <AnimatePresence mode="popLayout" initial={false}>
+          {isExpanded ? (
+            <motion.div
+              key="expanded-actions"
+              initial={{ opacity: 0, x: -20, width: 0 }}
+              animate={{ opacity: 1, x: 0, width: 'auto' }}
+              exit={{ opacity: 0, x: -20, width: 0 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              className="flex items-center gap-1 overflow-hidden"
+            >
+              {onToggleSelect && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => onToggleSelect(message.id)}
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="h-3.5 w-3.5" />
+                      ) : (
+                        <Square className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Select</TooltipContent>
+                </Tooltip>
+              )}
+
+              {onFork && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => onFork(message.id)}
+                    >
+                      <GitBranchPlus className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Fork</TooltipContent>
+                </Tooltip>
+              )}
+
+              {onDelete && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Delete</TooltipContent>
+                </Tooltip>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="collapsed-actions"
+              initial={{ opacity: 0, x: 20, width: 0 }}
+              animate={{ opacity: 1, x: 0, width: 'auto' }}
+              exit={{ opacity: 0, x: 20, width: 0 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              className="overflow-hidden"
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  >
+                    <Menu className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {onToggleSelect && (
+                    <DropdownMenuItem
+                      onClick={() => onToggleSelect(message.id)}
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="mr-2 h-4 w-4" />
+                      ) : (
+                        <Square className="mr-2 h-4 w-4" />
+                      )}
+                      <span>Select</span>
+                    </DropdownMenuItem>
+                  )}
+                  {onFork && (
+                    <DropdownMenuItem onClick={() => onFork(message.id)}>
+                      <GitBranchPlus className="mr-2 h-4 w-4" />
+                      <span>Fork</span>
+                    </DropdownMenuItem>
+                  )}
+                  {onDelete && (
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setShowDeleteDialog(true)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      <span>Delete</span>
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete this
+              message and remove it from our servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (onDelete) {
+                  await onDelete(message.id, 'message-only');
+                }
+                setShowDeleteDialog(false);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </motion.div>
   );
 }
 
 export const MessageActions = memo(
   PureMessageActions,
   (prevProps, nextProps) => {
-    if (prevProps.onDelete !== nextProps.onDelete) {
+    if (prevProps.onDelete !== nextProps.onDelete) return false;
+    if (prevProps.onToggleSelect !== nextProps.onToggleSelect) return false;
+    if (prevProps.disableRegenerate !== nextProps.disableRegenerate)
       return false;
-    }
-    if (prevProps.onToggleSelect !== nextProps.onToggleSelect) {
-      return false;
-    }
-    if (prevProps.disableRegenerate !== nextProps.disableRegenerate) {
-      return false;
-    }
-    if (prevProps.isSelected !== nextProps.isSelected) {
-      return false;
-    }
-    if (prevProps.isSelectionMode !== nextProps.isSelectionMode) {
-      return false;
-    }
-    if (prevProps.isLoading !== nextProps.isLoading) {
-      return false;
-    }
-    if (prevProps.onFork !== nextProps.onFork) {
-      return false;
-    }
-    if (prevProps.siblingsBadge !== nextProps.siblingsBadge) {
-      return false;
-    }
+    if (prevProps.isSelected !== nextProps.isSelected) return false;
+    if (prevProps.isSelectionMode !== nextProps.isSelectionMode) return false;
+    if (prevProps.isLoading !== nextProps.isLoading) return false;
+    if (prevProps.onFork !== nextProps.onFork) return false;
+    if (prevProps.siblingIndex !== nextProps.siblingIndex) return false;
+    if (prevProps.siblingsCount !== nextProps.siblingsCount) return false;
+    if (prevProps.onNavigate !== nextProps.onNavigate) return false;
+    if (prevProps.modelBadge !== nextProps.modelBadge) return false;
+    if (prevProps.isExpanded !== nextProps.isExpanded) return false;
 
     return true;
   }

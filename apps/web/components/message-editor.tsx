@@ -13,6 +13,14 @@ import { getTextFromMessage } from '@/lib/utils';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { toast } from './toast';
+import { ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
 export type MessageEditorProps = {
   message: ChatMessage;
@@ -63,9 +71,9 @@ export function MessageEditor({
         value={draftContent}
       />
 
-      <div className="flex flex-row justify-end gap-2">
+      <div className="flex flex-row justify-end gap-3">
         <Button
-          className="h-fit px-3 py-2"
+          className="h-9 px-4 py-2"
           onClick={() => {
             setMode('view');
           }}
@@ -73,10 +81,13 @@ export function MessageEditor({
         >
           Cancel
         </Button>
-        {onSubmitWithoutRegenerate && (
+        <div className="inline-flex items-center rounded-md shadow-sm">
           <Button
-            className="h-fit px-3 py-2"
-            data-testid="message-editor-save-only-button"
+            className={cn(
+              'h-9 rounded-r-none border-r-0 px-4 py-2 focus:z-10',
+              onSubmitWithoutRegenerate ? 'rounded-r-none' : ''
+            )}
+            data-testid="message-editor-send-button"
             disabled={submittingType !== null}
             onClick={async () => {
               const trimmed = draftContent.trim();
@@ -88,51 +99,61 @@ export function MessageEditor({
                 return;
               }
 
-              setSubmittingType('save');
+              setSubmittingType('send');
+              setMode('view');
               try {
-                await onSubmitWithoutRegenerate(trimmed);
-                setMode('view');
+                await onSubmit(trimmed);
               } catch (err) {
                 console.error('Edit failed', err);
-                // Stay in edit mode on failure
+                setMode('edit');
               } finally {
                 setSubmittingType(null);
               }
             }}
-            variant="secondary"
+            variant="default"
           >
-            {submittingType === 'save' ? 'Saving...' : 'Save only'}
+            {submittingType === 'send' ? 'Sending...' : 'Submit'}
           </Button>
-        )}
-        <Button
-          className="h-fit px-3 py-2"
-          data-testid="message-editor-send-button"
-          disabled={submittingType !== null}
-          onClick={async () => {
-            const trimmed = draftContent.trim();
-            if (!trimmed) {
-              toast({
-                type: 'error',
-                description: 'Message cannot be empty.',
-              });
-              return;
-            }
+          {onSubmitWithoutRegenerate && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  className="h-9 rounded-l-none border-l border-primary-foreground/20 px-2 py-2"
+                  disabled={submittingType !== null}
+                  variant="default"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={async () => {
+                    const trimmed = draftContent.trim();
+                    if (!trimmed) {
+                      toast({
+                        type: 'error',
+                        description: 'Message cannot be empty.',
+                      });
+                      return;
+                    }
 
-            setSubmittingType('send');
-            setMode('view');
-            try {
-              await onSubmit(trimmed);
-            } catch (err) {
-              console.error('Edit failed', err);
-              setMode('edit'); // Re-enable edit mode on failure
-            } finally {
-              setSubmittingType(null);
-            }
-          }}
-          variant="default"
-        >
-          {submittingType === 'send' ? 'Sending...' : 'Send'}
-        </Button>
+                    setSubmittingType('save');
+                    try {
+                      await onSubmitWithoutRegenerate(trimmed);
+                      setMode('view');
+                    } catch (err) {
+                      console.error('Edit failed', err);
+                    } finally {
+                      setSubmittingType(null);
+                    }
+                  }}
+                >
+                  Update Text Only
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
     </div>
   );
