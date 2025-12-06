@@ -135,6 +135,7 @@ export function PureMessageActions({
               disabled={activeIndex === 0}
             >
               <ChevronLeft className="h-3.5 w-3.5" />
+              <span className="sr-only">View previous version</span>
             </Button>
             <span className="text-[10px] font-medium text-muted-foreground px-2 min-w-[3ch] text-center">
               {activeIndex + 1}/{totalVersions}
@@ -147,6 +148,7 @@ export function PureMessageActions({
               disabled={activeIndex === totalVersions - 1}
             >
               <ChevronRight className="h-3.5 w-3.5" />
+              <span className="sr-only">View next version</span>
             </Button>
           </div>
         )}
@@ -165,6 +167,7 @@ export function PureMessageActions({
                 disabled={disableRegenerate}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
+                <span className="sr-only">Regenerate</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>Regenerate</TooltipContent>
@@ -181,6 +184,7 @@ export function PureMessageActions({
                 onClick={() => setMode('edit')}
               >
                 <Pencil className="h-3.5 w-3.5" />
+                <span className="sr-only">Edit</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>Edit</TooltipContent>
@@ -196,6 +200,7 @@ export function PureMessageActions({
               onClick={handleCopy}
             >
               <Copy className="h-3.5 w-3.5" />
+              <span className="sr-only">Copy</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent>Copy</TooltipContent>
@@ -225,6 +230,7 @@ export function PureMessageActions({
                       ) : (
                         <Square className="h-3.5 w-3.5" />
                       )}
+                      <span className="sr-only">Select</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Select</TooltipContent>
@@ -241,6 +247,7 @@ export function PureMessageActions({
                       onClick={() => onFork(message.id)}
                     >
                       <GitBranchPlus className="h-3.5 w-3.5" />
+                      <span className="sr-only">Fork</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Fork</TooltipContent>
@@ -257,6 +264,7 @@ export function PureMessageActions({
                       onClick={() => setShowDeleteDialog(true)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
+                      <span className="sr-only">Delete</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Delete</TooltipContent>
@@ -280,6 +288,7 @@ export function PureMessageActions({
                     className="h-7 w-7 text-muted-foreground hover:text-foreground"
                   >
                     <Menu className="h-3.5 w-3.5" />
+                    <span className="sr-only">More actions</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

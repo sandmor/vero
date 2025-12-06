@@ -353,7 +353,7 @@ test('navigating between assistant versions updates the visible response', async
   await expect(assistantMessage).toContainText(
     'Alternative iteration focused on a mentor-led onboarding cohort.'
   );
-  await expect(assistantMessage.getByText('2 / 2')).toBeVisible();
+  await expect(assistantMessage.getByText('2/2')).toBeVisible();
 
   const previousButton = assistantMessage.getByRole('button', {
     name: 'View previous version',
@@ -363,7 +363,7 @@ test('navigating between assistant versions updates the visible response', async
   await expect(assistantMessage).toContainText(
     'Initial response outlining a structured onboarding workshop.'
   );
-  await expect(assistantMessage.getByText('1 / 2')).toBeVisible();
+  await expect(assistantMessage.getByText('1/2')).toBeVisible();
 
   const totalChatRequests = await page.evaluate(
     () => window.__testMocks?.chatRequests.length ?? 0
@@ -378,5 +378,5 @@ test('navigating between assistant versions updates the visible response', async
   await expect(assistantMessage).toContainText(
     'Alternative iteration focused on a mentor-led onboarding cohort.'
   );
-  await expect(assistantMessage.getByText('2 / 2')).toBeVisible();
+  await expect(assistantMessage.getByText('2/2')).toBeVisible();
 });
