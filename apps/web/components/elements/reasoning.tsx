@@ -35,6 +35,7 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   duration?: number;
+  onCollapse?: () => void;
 };
 
 const AUTO_CLOSE_DELAY = 500;
@@ -48,6 +49,7 @@ export const Reasoning = memo(
     defaultOpen = true,
     onOpenChange,
     duration: durationProp,
+    onCollapse,
     children,
     ...props
   }: ReasoningProps) => {
@@ -81,13 +83,21 @@ export const Reasoning = memo(
       if (defaultOpen && !isStreaming && isOpen && !hasAutoClosedRef) {
         // Add a small delay before closing to allow user to see the content
         const timer = setTimeout(() => {
+          onCollapse?.();
           setIsOpen(false);
           setHasAutoClosedRef(true);
         }, AUTO_CLOSE_DELAY);
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosedRef]);
+    }, [
+      isStreaming,
+      isOpen,
+      defaultOpen,
+      setIsOpen,
+      hasAutoClosedRef,
+      onCollapse,
+    ]);
 
     const handleOpenChange = (newOpen: boolean) => {
       setIsOpen(newOpen);

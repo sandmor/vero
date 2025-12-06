@@ -20,7 +20,8 @@ export function MessageReasoning({
   reasoning,
   appearance = 'default',
   className,
-}: MessageReasoningProps) {
+  onCollapse,
+}: MessageReasoningProps & { onCollapse?: () => void }) {
   const [hasBeenStreaming, setHasBeenStreaming] = useState(isLoading);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export function MessageReasoning({
       data-testid="message-reasoning"
       defaultOpen={hasBeenStreaming}
       isStreaming={isLoading}
+      onCollapse={onCollapse}
     >
       <ReasoningTrigger />
       <ReasoningContent>{reasoning}</ReasoningContent>

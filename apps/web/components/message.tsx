@@ -44,6 +44,7 @@ const PurePreviewMessage = ({
   onEditMessageOnly,
   allowedModels,
   isExpanded,
+  onReasoningCollapse,
 }: {
   chatId: string;
   message: ChatMessage;
@@ -65,6 +66,7 @@ const PurePreviewMessage = ({
   onEditMessageOnly?: (messageId: string, text: string) => Promise<void>;
   allowedModels?: ChatModelOption[];
   isExpanded?: boolean;
+  onReasoningCollapse?: () => void;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const {
@@ -198,6 +200,7 @@ const PurePreviewMessage = ({
                           reasoning={
                             typeof part.text === 'string' ? part.text : ''
                           }
+                          onCollapse={onReasoningCollapse}
                         />
                       </MessageContent>
                     </div>
@@ -231,6 +234,7 @@ const PurePreviewMessage = ({
                                     appearance="inline"
                                     isLoading={isLoading}
                                     reasoning={inlineReasoningTrimmed}
+                                    onCollapse={onReasoningCollapse}
                                   />
                                 )}
                               {part.text.trim().length > 0 ? (
@@ -407,6 +411,8 @@ export const PreviewMessage = memo(
       return false;
     if (!equal(prevProps.allowedModels, nextProps.allowedModels)) return false;
     if (prevProps.isExpanded !== nextProps.isExpanded) return false;
+    if (prevProps.onReasoningCollapse !== nextProps.onReasoningCollapse)
+      return false;
 
     // otherwise skip rerender
     return true;
