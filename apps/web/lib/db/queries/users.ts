@@ -1,4 +1,4 @@
-import { prisma } from '../prisma';
+import { prisma } from '@virid/db';
 import { ChatSDKError } from '../../errors';
 import type { User } from '../schema';
 

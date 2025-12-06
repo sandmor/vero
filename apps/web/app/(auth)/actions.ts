@@ -2,7 +2,7 @@
 
 import { z } from 'zod';
 import { clerkClient } from '@clerk/nextjs/server';
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 import { getUser } from '@/lib/db/queries';
 
 const authFormSchema = z.object({

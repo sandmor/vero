@@ -1,6 +1,6 @@
 generator client {
   provider        = "prisma-client"
-  output          = "../generated/prisma-client"
+  output          = "../generated/client"
   previewFeatures = ["postgresqlExtensions"]
 }
 
@@ -146,10 +146,6 @@ model Message {
   @@index([chatId, pathText])
   @@map("Message")
 }
-
-
-
-
 
 model Stream {
   id        String   @id @default(uuid()) @db.Uuid

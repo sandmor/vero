@@ -7,7 +7,7 @@ import {
   normalizeModelId,
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 import type { ChatSettings, Chat, DBMessage } from '@/lib/db/schema';
 import type {
   BranchSelectionSnapshot,

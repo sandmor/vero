@@ -1,6 +1,6 @@
-import { prisma } from './prisma';
+import { prisma } from '@virid/db';
 import type { ChatSettings } from './schema';
-import type { Prisma } from '../../generated/prisma-client/client';
+import type { Prisma } from '@virid/db';
 import { ChatSDKError } from '../errors';
 import { normalizeChatToolIds } from '../ai/tool-ids';
 

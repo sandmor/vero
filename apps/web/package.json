@@ -11,13 +11,7 @@
     "format": "prettier --write .",
     "test": "bun test",
     "test:unit": "bun test",
-    "test:e2e": "playwright test",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio",
-    "db:push": "prisma db push",
-    "db:pull": "prisma db pull",
-    "db:check": "prisma validate"
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.44",
@@ -38,8 +32,6 @@
     "@openrouter/ai-sdk-provider": "^1.4.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/api-logs": "^0.208.0",
-    "@prisma/adapter-pg": "^7.1.0",
-    "@prisma/client": "^7.1.0",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-icons": "^1.3.2",
@@ -78,7 +70,6 @@
     "next-themes": "^0.4.6",
     "orderedmap": "^2.1.1",
     "papaparse": "^5.5.3",
-    "pg": "8.16.3",
     "prosemirror-example-setup": "^1.2.3",
     "prosemirror-inputrules": "^1.5.1",
     "prosemirror-markdown": "^1.13.2",
@@ -110,7 +101,8 @@
     "usehooks-ts": "^3.1.1",
     "xstate": "^5.24.0",
     "zod": "^4.1.13",
-    "zustand": "^5.0.9"
+    "zustand": "^5.0.9",
+    "@virid/db": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
@@ -139,7 +131,6 @@
     "jsdom": "^27.2.0",
     "postcss": "^8.5.6",
     "prettier": "^3.7.4",
-    "prisma": "^7.1.0",
     "tailwindcss": "^4.1.17",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

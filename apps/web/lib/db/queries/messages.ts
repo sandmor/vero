@@ -1,7 +1,7 @@
-import { Prisma as PrismaRuntime } from '../../../generated/prisma-client/client';
+import { Prisma as PrismaRuntime } from '@virid/db';
 import { randomUUID } from 'crypto';
-import type { Prisma } from '../../../generated/prisma-client/client';
-import { prisma } from '../prisma';
+import type { Prisma } from '@virid/db';
+import { prisma } from '@virid/db';
 import { ChatSDKError } from '../../errors';
 import type { DBMessage, MessageTreeNode, MessageTreeResult } from '../schema';
 import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';

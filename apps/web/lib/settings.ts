@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 
 type Settings = {
   maxMessageLength: number;

@@ -2,7 +2,7 @@ import { CatalogRefreshButton } from '@/components/admin/catalog-refresh-button'
 import { TierCard, type TierActionState } from '@/components/admin/tier-card';
 import { ensureModelCapabilities } from '@/lib/ai/model-capabilities';
 import { getTier, invalidateTierCache } from '@/lib/ai/tiers';
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 import { revalidatePath } from 'next/cache';
 
 async function updateTierAction(

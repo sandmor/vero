@@ -1,4 +1,4 @@
-import { prisma } from '../db/prisma';
+import { prisma } from '@virid/db';
 import { ChatSDKError } from '../errors';
 
 export type TokenBucketConfig = {

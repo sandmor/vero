@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import AgentEditor, { type AgentEditorAgent } from '@/components/agent-editor';
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 import { getAppSession } from '@/lib/auth/session';
 import { getTierForUserType } from '@/lib/ai/tiers';
 import { resolveChatModelOptions } from '@/lib/ai/models.server';

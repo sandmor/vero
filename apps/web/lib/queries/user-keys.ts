@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 import { SUPPORTED_PROVIDERS } from '@/lib/ai/registry';
 
 export type UserByokProviderSelection = {

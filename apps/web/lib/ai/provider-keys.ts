@@ -1,5 +1,5 @@
 import { cache } from 'react';
-import { prisma } from '../db/prisma';
+import { prisma } from '@virid/db';
 
 // Fallback environment variable names per provider
 const ENV_MAP: Record<string, string[]> = {

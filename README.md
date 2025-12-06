@@ -216,20 +216,29 @@ Administrative interface for system management:
 
 ### Setup
 
-The project is structured as a monorepo. The main application is located in `apps/web`. The root `package.json` provides convenience scripts to run commands in the web app.
+The project is structured as a monorepo with:
+
+- `apps/web` - Main Next.js application
+- `packages/db` - Shared database package (`@virid/db`)
+
+The root `package.json` provides convenience scripts to run commands across packages.
 
 ```bash
 # 1. Install dependencies
 bun install
 
-# 2. (First time) Push schema & generate client
+# 2. Set up database environment
+# Create packages/db/.env (or root .env) with DATABASE_URL
+# See packages/db/.env.example for template
+
+# 3. (First time) Push schema & generate client
 bun run db:push      # Applies schema without creating a migration (dev convenience)
-bun run db:generate  # Generates client to ./generated/prisma-client
+bun run db:generate  # Generates Prisma client to packages/db/generated/client
 
 # Alternatively create an initial migration (idempotent if already created)
 bun run db:migrate   # prisma migrate dev --name init
 
-# 3. Start dev server (Next.js + streaming)
+# 4. Start dev server (Next.js + streaming)
 bun run dev
 ```
 

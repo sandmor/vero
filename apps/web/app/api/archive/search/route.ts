@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
 import { ChatSDKError } from '@/lib/errors';
 import { searchArchiveEntries } from '@/lib/db/queries';
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 
 // Simple search + pagination for archive entries
 // Query params: q (text), tags (csv), mode (any|all), cursor (createdAt ISO or id fallback), limit (default 20)

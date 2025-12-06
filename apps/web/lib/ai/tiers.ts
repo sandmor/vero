@@ -1,5 +1,5 @@
 import type { UserType } from '@/lib/auth/types';
-import { prisma } from '../db/prisma';
+import { prisma } from '@virid/db';
 
 export type TierRecord = {
   id: string;

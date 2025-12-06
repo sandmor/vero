@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 import { requireAdmin } from '@/lib/auth/admin';
 import { revalidatePath } from 'next/cache';
 

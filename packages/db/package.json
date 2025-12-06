@@ -1,0 +1,31 @@
+{
+  "name": "@virid/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:pull": "prisma db pull",
+    "db:studio": "prisma studio",
+    "db:check": "prisma validate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.1.0",
+    "@prisma/client": "^7.1.0",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "dotenv": "^17.2.3",
+    "prisma": "^7.1.0",
+    "typescript": "^5.9.3"
+  }
+}

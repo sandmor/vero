@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db/prisma';
+import { prisma } from '@virid/db';
 import { SettingsEditor } from '@/components/admin/settings-editor';
 
 export const dynamic = 'force-dynamic';
