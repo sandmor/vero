@@ -321,6 +321,13 @@ bun run db:generate
 bun run db:studio
 ```
 
+### Monorepo build workflow
+
+- `bun run build` builds in dependency order: shared db package → web app → realtime gateway.
+- `bun run build:web` builds only the web app (Vercel-friendly); it runs the db build first via the web `prebuild` hook.
+- `bun run build:gateway` builds only the realtime gateway (also runs the db build first).
+- `bun run build:db` builds the shared db package and runs `prisma generate` so generated clients stay in sync.
+
 If you plan to enforce tier overrides or seed model capabilities manually, insert rows into `Tier` and `Model` tables (Prisma Studio or SQL). Missing rows fall back to hardcoded safe defaults so the app can boot cold.
 
 ### Testing
@@ -348,7 +355,8 @@ If you plan to enforce tier overrides or seed model capabilities manually, inser
    - Neon for PostgreSQL
    - Upstash for Redis
    - Vercel Blob for file storage
-4. Deploy automatically on push
+4. Use `bun run build:web` as the Vercel build command so only the web app (and its db dependency) is built
+5. Deploy automatically on push
 
 ### Manual Deployment
 

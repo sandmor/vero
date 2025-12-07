@@ -4,7 +4,9 @@
   "scripts": {
     "dev": "bun run --cwd apps/web dev",
     "dev:gateway": "bun run --cwd apps/realtime-gateway start:dev",
-    "build": "bun run --filter '*' build",
+    "build": "bun run build:db && bun run build:web && bun run build:gateway",
+    "build:web": "bun run --cwd apps/web build",
+    "build:db": "bun run --cwd packages/db build",
     "build:gateway": "bun run --cwd apps/realtime-gateway build",
     "test": "bun run --cwd apps/web test",
     "format": "bun run --cwd apps/web format",
