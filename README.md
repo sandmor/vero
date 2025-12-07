@@ -220,6 +220,7 @@ Administrative interface for system management:
 The project is structured as a monorepo with:
 
 - `apps/web` - Main Next.js application
+- `apps/realtime-gateway` - WebSocket gateway for chat notifications
 - `packages/db` - Shared database package (`@virid/db`)
 
 The root `package.json` provides convenience scripts to run commands across packages.
@@ -228,9 +229,10 @@ The root `package.json` provides convenience scripts to run commands across pack
 # 1. Install dependencies
 bun install
 
-# 2. Set up database environment
-# Create packages/db/.env (or root .env) with DATABASE_URL
-# See packages/db/.env.example for template
+# 2. Set up environment variables
+# Web app: copy apps/web/.env.example to apps/web/.env.local (or .env) and fill in values.
+# Realtime gateway (optional): copy apps/realtime-gateway/.env.example to apps/realtime-gateway/.env.
+# Database tools: create packages/db/.env with DATABASE_URL for Prisma CLI.
 
 # 3. (First time) Push schema & generate client
 bun run db:push      # Applies schema without creating a migration (dev convenience)
@@ -241,13 +243,21 @@ bun run db:migrate   # prisma migrate dev --name init
 
 # 4. Start dev server (Next.js + streaming)
 bun run dev
+
+# 5. (Optional) Start Realtime Gateway
+# Enables live chat updates across tabs/devices. Without it, the app still works but
+# relies on page refreshes/polling for new messages.
+# Run in a separate terminal:
+cd apps/realtime-gateway
+bun install
+bun run start:dev
 ```
 
 Navigate to http://localhost:3000.
 
 ### Environment Variables
 
-Create `.env.local` (loaded by Next.js) and ensure `DATABASE_URL` is present when invoking Prisma CLI.
+Create `apps/web/.env.local` (or `.env`) for the Next app and ensure `DATABASE_URL` is present when invoking Prisma CLI. The Next app loads env vars from its own directory even when started via the monorepo root scripts.
 
 #### Essential
 
@@ -255,6 +265,7 @@ Create `.env.local` (loaded by Next.js) and ensure `DATABASE_URL` is present whe
 | -------------------------- | ------------------------------------------------------------------------------------------ |
 | `AUTH_SECRET`              | Guest session encryption key                                                               |
 | `NEXT_PUBLIC_APP_BASE_URL` | Base URL for metadata / OAuth redirects                                                    |
+| `NEXT_PUBLIC_APP_URL`      | Alias used in some code paths; keep in sync with `NEXT_PUBLIC_APP_BASE_URL`                |
 | `DATABASE_URL`             | PostgreSQL connection string                                                               |
 | `OPENROUTER_API_KEY`       | OpenRouter API key (model catalog + routing)                                               |
 | `CACHE_ENCRYPTION_SECRET`  | A 32-byte, base64-encoded secret used to derive encryption keys for the client-side cache. |
@@ -268,16 +279,32 @@ Create `.env.local` (loaded by Next.js) and ensure `DATABASE_URL` is present whe
 
 #### Optional
 
-| Variable                       | Purpose                                            |
-| ------------------------------ | -------------------------------------------------- |
-| `REDIS_URL`                    | (Pluggable) Redis caching / future rate control    |
-| `BLOB_READ_WRITE_TOKEN`        | Vercel Blob storage token                          |
-| `OPENAI_API_KEY`               | Direct OpenAI API access (bypassing OpenRouter)    |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini API access                           |
-| `ADMIN_USER_ID`                | Hard admin (takes precedence over email)           |
-| `ADMIN_EMAIL`                  | Fallback admin identity (bootstrap)                |
-| `DEFAULT_CHAT_MODEL`           | Default model for new chats and fallback           |
-| `TITLE_GENERATION_MODEL`       | Override model for automatic chat title generation |
+| Variable                           | Purpose                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| `GUEST_SECRET`                     | Dedicated guest cookie signing secret; falls back to `AUTH_SECRET` if omitted |
+| `OPENAI_API_KEY`                   | Direct OpenAI API access (bypassing OpenRouter)                               |
+| `GOOGLE_GENERATIVE_AI_API_KEY`     | Direct Gemini API access                                                      |
+| `GOOGLE_API_KEY`                   | Alternate env name for direct Gemini access (either works)                    |
+| `DEFAULT_CHAT_MODEL`               | Default model for new chats and fallback                                      |
+| `TITLE_GENERATION_MODEL`           | Override model for automatic chat title generation                            |
+| `ARTIFACT_GENERATION_MODEL`        | Override model for artifact generation flows                                  |
+| `GUEST_MODELS`                     | Comma-separated fallback guest tier model list                                |
+| `REGULAR_MODELS`                   | Comma-separated fallback regular tier model list                              |
+| `REDIS_URL`                        | (Pluggable) Redis caching / future rate control                               |
+| `BLOB_READ_WRITE_TOKEN`            | Vercel Blob storage token                                                     |
+| `ADMIN_USER_ID`                    | Hard admin (takes precedence over email)                                      |
+| `ADMIN_EMAIL`                      | Fallback admin identity (bootstrap)                                           |
+| `NEXT_PUBLIC_DISABLE_SOCIAL_AUTH`  | Set to 1 to hide social auth buttons; omit or 0 to allow                      |
+| `NEXT_PUBLIC_REALTIME_GATEWAY_URL` | WebSocket URL for realtime updates (enable only when the gateway is running)  |
+
+#### Realtime Gateway (`apps/realtime-gateway/.env`) — optional service
+
+| Variable                | Purpose                                                       |
+| :---------------------- | :------------------------------------------------------------ |
+| `PORT`                  | Gateway port (default: 3001)                                  |
+| `DATABASE_URL_UNPOOLED` | **Unpooled** PostgreSQL connection string for `LISTEN/NOTIFY` |
+| `CLERK_SECRET_KEY`      | Clerk Back-end API Key for token verification                 |
+| `CORS_ORIGINS`          | Allowed origins (e.g. `http://localhost:3000`)                |
 
 ### Database Setup
 

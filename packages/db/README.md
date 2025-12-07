@@ -18,13 +18,13 @@ This package is used internally within the monorepo. Add it as a dependency to y
 
 ### Environment Variables
 
-Create a `.env` file in `packages/db/` or the monorepo root with:
+Create a `.env` file in `packages/db/` with:
 
 ```bash
 DATABASE_URL="postgresql://user:password@localhost:5432/virid?schema=public"
 ```
 
-See `.env.example` for a template.
+The app-specific env files live alongside each app (e.g., `apps/web/.env.local`). This package reads only `packages/db/.env` (and `.env.local`) when running Prisma commands.
 
 ### Generate Prisma Client
 

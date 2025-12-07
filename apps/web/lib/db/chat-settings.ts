@@ -3,6 +3,7 @@ import type { ChatSettings } from './schema';
 import type { Prisma } from '@virid/db';
 import { ChatSDKError } from '../errors';
 import { normalizeChatToolIds } from '../ai/tool-ids';
+import { notifyOnChatUpdated } from '@/lib/realtime/notify';
 
 // Default empty settings object (do not persist unless mutations occur)
 const EMPTY: ChatSettings = {};
@@ -33,20 +34,36 @@ export async function getChatSettings(chatId: string): Promise<ChatSettings> {
 
 export async function updateChatSettings(
   chatId: string,
-  mutate: (prev: ChatSettings) => ChatSettings | Partial<ChatSettings>
+  mutate: (prev: ChatSettings) => ChatSettings | Partial<ChatSettings>,
+  userId?: string
 ): Promise<ChatSettings> {
+  // Ownership check: if userId provided, verify ownership before updating
+  if (userId) {
+    const existing = await prisma.chat.findUnique({ where: { id: chatId }, select: { userId: true } });
+    if (!existing) {
+      throw new ChatSDKError('not_found:database', 'Chat not found');
+    }
+    if (existing.userId !== userId) {
+      throw new ChatSDKError('forbidden:database', 'Not authorized to update this chat');
+    }
+  }
   // Read existing (tolerate parse errors)
   const prev = await getChatSettings(chatId);
   const nextPatch = mutate(prev);
   const next: ChatSettings = { ...prev, ...nextPatch };
   try {
-    await prisma.chat.update({
+    const updated = await prisma.chat.update({
       where: { id: chatId },
       data: {
         settings: next as unknown as Prisma.InputJsonValue,
         updatedAt: new Date(),
       },
+      select: { userId: true },
     });
+    // Notify realtime gateway (best-effort, non-blocking)
+    if (userId || updated.userId) {
+      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => { });
+    }
   } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
@@ -96,12 +113,27 @@ export async function setModelId(chatId: string, modelId: string | undefined) {
   });
 }
 
-export async function updateChatAgent(chatId: string, agentId: string | null) {
+export async function updateChatAgent(chatId: string, agentId: string | null, userId?: string) {
   try {
-    await prisma.chat.update({
+    // Ownership check: if userId provided, verify ownership before updating
+    if (userId) {
+      const existing = await prisma.chat.findUnique({ where: { id: chatId }, select: { userId: true } });
+      if (!existing) {
+        throw new ChatSDKError('not_found:database', 'Chat not found');
+      }
+      if (existing.userId !== userId) {
+        throw new ChatSDKError('forbidden:database', 'Not authorized to update this chat');
+      }
+    }
+    const updated = await prisma.chat.update({
       where: { id: chatId },
       data: { agentId, updatedAt: new Date() },
+      select: { userId: true },
     });
+    // Notify realtime gateway (best-effort, non-blocking)
+    if (userId || updated.userId) {
+      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => { });
+    }
   } catch (_error) {
     throw new ChatSDKError(
       'bad_request:database',
@@ -135,11 +167,23 @@ export async function applyInitialSettingsPreset({
   chatId,
   base,
   overrides,
+  userId,
 }: {
   chatId: string;
   base: any | null | undefined; // agent.settings JSON stored
   overrides: SettingsOverrideInput;
+  userId?: string;
 }) {
+  // Ownership check: if userId provided, verify ownership before updating
+  if (userId) {
+    const existing = await prisma.chat.findUnique({ where: { id: chatId }, select: { userId: true } });
+    if (!existing) {
+      throw new ChatSDKError('not_found:database', 'Chat not found');
+    }
+    if (existing.userId !== userId) {
+      throw new ChatSDKError('forbidden:database', 'Not authorized to update this chat');
+    }
+  }
   // Start from a safe normalized object
   const merged: any = base && typeof base === 'object' ? { ...base } : {};
 
@@ -183,10 +227,16 @@ export async function applyInitialSettingsPreset({
     }
   }
 
-  await prisma.chat.update({
+  const updated = await prisma.chat.update({
     where: { id: chatId },
     data: { settings: merged, updatedAt: new Date() },
+    select: { userId: true },
   });
+
+  // Notify realtime gateway (best-effort, non-blocking)
+  if (userId || updated.userId) {
+    notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => { });
+  }
 
   return merged as ChatSettings;
 }

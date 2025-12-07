@@ -5,7 +5,10 @@
     "outDir": "./dist",
     "declaration": true,
     "declarationMap": true,
-    "composite": true
+    "composite": true,
+    "noEmit": false,
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
   },
   "include": ["src/**/*", "generated/**/*"],
   "exclude": ["node_modules", "dist"]

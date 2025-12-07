@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "bun run --cwd apps/web dev",
-    "build": "bun run --cwd apps/web build",
+    "dev:gateway": "bun run --cwd apps/realtime-gateway start:dev",
+    "build": "bun run --filter '*' build",
+    "build:gateway": "bun run --cwd apps/realtime-gateway build",
     "test": "bun run --cwd apps/web test",
     "format": "bun run --cwd apps/web format",
     "db:generate": "bun run --cwd packages/db db:generate",

@@ -58,7 +58,7 @@ export async function PATCH(request: Request) {
     await setModelId(body.chatId, modelId);
   }
   if (body.agentId !== undefined) {
-    await updateChatAgent(body.chatId, body.agentId);
+    await updateChatAgent(body.chatId, body.agentId, session.user.id);
   }
   const settings = await getChatSettings(body.chatId);
   return Response.json({ settings }, { status: 200 });

@@ -18,7 +18,7 @@ export async function PATCH(
     }
 
     const { chatId } = await params;
-    await updateChatTitleById({ chatId, title });
+    await updateChatTitleById({ chatId, title, userId: session.user.id });
 
     return NextResponse.json({ success: true });
   } catch (error) {

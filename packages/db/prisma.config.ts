@@ -5,9 +5,15 @@ import { defineConfig, env } from "prisma/config";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Load .env from packages/db or monorepo root
-config({ path: resolve(__dirname, ".env") }); // packages/db/.env
-config({ path: resolve(__dirname, "../../.env") }); // root/.env
+// Load env only from this package to avoid relying on monorepo root files
+const envFiles: Array<{ path: string; override?: boolean }> = [
+  { path: resolve(__dirname, ".env") },
+  { path: resolve(__dirname, ".env.local"), override: true },
+];
+
+for (const entry of envFiles) {
+  config({ path: entry.path, override: entry.override });
+}
 
 export default defineConfig({
   schema: "prisma/schema.prisma",

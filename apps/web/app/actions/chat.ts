@@ -90,7 +90,8 @@ export async function updateChatVisibility({
   if (IS_E2E) {
     return;
   }
-  await updateChatVisiblityById({ chatId, visibility });
+  const session = await requireSession();
+  await updateChatVisiblityById({ chatId, visibility, userId: session.user.id });
 }
 
 export async function updateBranchSelection({

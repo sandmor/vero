@@ -12,6 +12,12 @@ import {
   type SaveMessageInput,
 } from './messages';
 import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
+import {
+  notifyOnChatCreated,
+  notifyOnChatUpdated,
+  notifyOnChatDeleted,
+  notifyOnChatsDeleted,
+} from '@/lib/realtime/notify';
 
 export async function saveChat({
   id,
@@ -38,18 +44,23 @@ export async function saveChat({
         agentId,
       },
     });
+    // Notify realtime gateway (best-effort, non-blocking)
+    notifyOnChatCreated(userId, id).catch(() => { });
     return;
   } catch (_error) {
     throw new ChatSDKError('bad_request:database', 'Failed to save chat');
   }
 }
 
-export async function deleteChatById({ id }: { id: string }): Promise<Chat> {
+export async function deleteChatById({ id, userId }: { id: string; userId?: string }): Promise<Chat> {
   try {
     // Fetch chat first to get userId for tombstone
     const chat = await prisma.chat.findUnique({ where: { id } });
     if (!chat) {
       throw new ChatSDKError('not_found:database', 'Chat not found');
+    }
+    if (userId && chat.userId !== userId) {
+      throw new ChatSDKError('forbidden:database', 'Not authorized to delete this chat');
     }
 
     await prisma.message.deleteMany({ where: { chatId: id } });
@@ -66,6 +77,8 @@ export async function deleteChatById({ id }: { id: string }): Promise<Chat> {
     const { lastContext, visibility, ...rest } = deleted as typeof deleted & {
       visibility: string;
     };
+    // Notify realtime gateway (best-effort, non-blocking)
+    notifyOnChatDeleted(chat.userId, id).catch(() => { });
     return {
       ...rest,
       visibility: visibility as Chat['visibility'],
@@ -123,6 +136,9 @@ export async function deleteChatsByIds({
         })),
       }),
     ]);
+
+    // Notify realtime gateway (best-effort, non-blocking)
+    notifyOnChatsDeleted(userId, targetIds).catch(() => { });
 
     return { deletedIds: targetIds };
   } catch (_error) {
@@ -470,8 +486,8 @@ export async function searchChats({
     const agents =
       agentIds.length > 0
         ? await prisma.agent.findMany({
-            where: { id: { in: agentIds } },
-          })
+          where: { id: { in: agentIds } },
+        })
         : [];
     const agentMap = new Map(agents.map((a) => [a.id, a]));
 
@@ -533,15 +549,31 @@ export async function getChatById({
 export async function updateChatVisiblityById({
   chatId,
   visibility,
+  userId,
 }: {
   chatId: string;
   visibility: 'private' | 'public';
+  userId?: string;
 }) {
   try {
-    await prisma.chat.update({
+    if (userId) {
+      const existing = await prisma.chat.findUnique({ where: { id: chatId }, select: { userId: true } });
+      if (!existing) {
+        throw new ChatSDKError('not_found:database', 'Chat not found');
+      }
+      if (existing.userId !== userId) {
+        throw new ChatSDKError('forbidden:database', 'Not authorized to update this chat');
+      }
+    }
+    const updated = await prisma.chat.update({
       where: { id: chatId },
       data: { visibility, updatedAt: new Date() },
+      select: { userId: true },
     });
+    // Notify realtime gateway (best-effort, non-blocking)
+    if (userId || updated.userId) {
+      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => { });
+    }
     return;
   } catch (_error) {
     throw new ChatSDKError(
@@ -554,15 +586,31 @@ export async function updateChatVisiblityById({
 export async function updateChatTitleById({
   chatId,
   title,
+  userId,
 }: {
   chatId: string;
   title: string;
+  userId?: string;
 }) {
   try {
-    await prisma.chat.update({
+    if (userId) {
+      const existing = await prisma.chat.findUnique({ where: { id: chatId }, select: { userId: true } });
+      if (!existing) {
+        throw new ChatSDKError('not_found:database', 'Chat not found');
+      }
+      if (existing.userId !== userId) {
+        throw new ChatSDKError('forbidden:database', 'Not authorized to update this chat');
+      }
+    }
+    const updated = await prisma.chat.update({
       where: { id: chatId },
       data: { title, updatedAt: new Date() },
+      select: { userId: true },
     });
+    // Notify realtime gateway (best-effort, non-blocking)
+    if (userId || updated.userId) {
+      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => { });
+    }
     return;
   } catch (_error) {
     throw new ChatSDKError(
@@ -667,6 +715,8 @@ export async function forkChat({
           : {}),
       } as any,
     });
+    // Notify realtime gateway about the new forked chat (best-effort, non-blocking)
+    notifyOnChatCreated(userId, newChatId).catch(() => { });
 
     let lastReplayedId: string | undefined;
 
@@ -686,7 +736,7 @@ export async function forkChat({
               : new Date(original.createdAt),
           model:
             typeof original.model === 'string' &&
-            original.model.trim().length > 0
+              original.model.trim().length > 0
               ? original.model
               : null,
           parentId: replayMessages.length
@@ -727,9 +777,9 @@ export async function forkChat({
         if (candidate.role === 'user') {
           const textParts = Array.isArray(candidate.parts)
             ? (candidate.parts as any[])
-                .filter((p) => p && p.type === 'text')
-                .map((p) => p.text)
-                .join('\n')
+              .filter((p) => p && p.type === 'text')
+              .map((p) => p.text)
+              .join('\n')
             : undefined;
           previousUserText = textParts || '';
           break;
@@ -760,6 +810,8 @@ export async function forkChat({
               where: { id: newChatId },
               data: { title: realTitle, updatedAt: new Date() },
             });
+            // Notify realtime gateway about title update (best-effort)
+            notifyOnChatUpdated(userId, newChatId).catch(() => { });
           }
         }
       } catch (e) {

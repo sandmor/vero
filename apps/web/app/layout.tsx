@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from '@/components/theme-provider';
 import { EncryptedCacheProvider } from '@/components/encrypted-cache-provider';
+import { RealtimeProvider } from '@/components/realtime-provider';
 
 import './globals.css';
 import { ClerkProvider } from '@clerk/nextjs';
@@ -86,7 +87,9 @@ export default function RootLayout({
           <Toaster position="top-center" />
           <ClerkProvider>
             <QueryProvider>
-              <EncryptedCacheProvider>{children}</EncryptedCacheProvider>
+              <EncryptedCacheProvider>
+                <RealtimeProvider>{children}</RealtimeProvider>
+              </EncryptedCacheProvider>
             </QueryProvider>
           </ClerkProvider>
         </ThemeProvider>
