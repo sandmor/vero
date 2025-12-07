@@ -59,6 +59,9 @@ const isDevEnvironment = process.env.NODE_ENV !== 'production';
 const RATE_LIMIT_LIMIT = isDevEnvironment ? 100 : 60; // 60 requests per window
 const RATE_LIMIT_WINDOW_MS = isDevEnvironment ? 60_000 : 60_000; // 1 minute window
 
+// Sliding window to account for clock skew and transaction latency
+const SYNC_SKEW_WINDOW_MS = 5000;
+
 export async function POST(request: NextRequest) {
   const session = await getAppSession();
 
@@ -111,7 +114,8 @@ export async function POST(request: NextRequest) {
   if (lastSyncedAt) {
     const parsed = Date.parse(lastSyncedAt);
     if (!Number.isNaN(parsed)) {
-      lastSyncDate = new Date(parsed);
+      // Apply sliding window to catch updates that might have been missed due to skew/latency
+      lastSyncDate = new Date(parsed - SYNC_SKEW_WINDOW_MS);
     }
   }
 
