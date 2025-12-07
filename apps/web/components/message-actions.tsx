@@ -1,8 +1,10 @@
-import { memo, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { useCopyToClipboard } from 'usehooks-ts';
 import type { ChatMessage } from '@/lib/types';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
+import { cn } from '@/lib/utils';
+import { buttonVariants } from '@/components/ui/button';
 import {
   Copy,
   GitBranchPlus,
@@ -39,6 +41,35 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { getTextFromMessage } from '@/lib/utils';
+
+const DELETE_MESSAGE_OPTIONS: Array<{
+  mode: MessageDeletionMode;
+  label: string;
+  description: string;
+  variant: 'secondary' | 'destructive';
+}> = [
+    {
+      mode: 'version',
+      label: 'Delete version & branch',
+      description:
+        'Remove this version along with any messages in its branch.',
+      variant: 'secondary',
+    },
+    {
+      mode: 'message-only',
+      label: 'Delete message (keep following)',
+      description:
+        'Keep downstream messages by reconnecting remaining content to the previous step.',
+      variant: 'secondary',
+    },
+    {
+      mode: 'message-with-following',
+      label: 'Delete message & following',
+      description:
+        'Remove this message plus all alternate versions and later messages.',
+      variant: 'destructive',
+    },
+  ];
 
 export function PureMessageActions({
   chatId,
@@ -79,7 +110,32 @@ export function PureMessageActions({
   isExpanded?: boolean;
 }) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [_, copyToClipboard] = useCopyToClipboard();
+
+  const handleDeleteConfirm = useCallback(
+    async (mode: MessageDeletionMode) => {
+      if (!onDelete) return;
+      setIsDeleting(true);
+      try {
+        await onDelete(message.id, mode);
+        setShowDeleteDialog(false);
+      } catch (_error) {
+        // Errors are surfaced via toast notifications
+      } finally {
+        setIsDeleting(false);
+      }
+    },
+    [message.id, onDelete]
+  );
+
+  const handleDialogOpenChange = useCallback(
+    (open: boolean) => {
+      if (isDeleting) return;
+      setShowDeleteDialog(open);
+    },
+    [isDeleting]
+  );
 
   const handleCopy = () => {
     const text = getTextFromMessage(message);
@@ -102,7 +158,7 @@ export function PureMessageActions({
     >
       <div className="flex items-center gap-2">
         <AnimatePresence mode="popLayout" initial={false}>
-          {isSelectionMode && onToggleSelect && (
+          {isSelectionMode && !isExpanded && onToggleSelect && (
             <motion.div
               initial={{ opacity: 0, scale: 0.8, width: 0 }}
               animate={{ opacity: 1, scale: 1, width: 'auto' }}
@@ -326,28 +382,50 @@ export function PureMessageActions({
         </AnimatePresence>
       </div>
 
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <AlertDialog open={showDeleteDialog} onOpenChange={handleDialogOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this message?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete this
-              message and remove it from our servers.
+              Choose how deletion should treat alternate versions and downstream
+              messages.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="mt-3 flex flex-col gap-3">
+            {DELETE_MESSAGE_OPTIONS.map((option) => (
+              <AlertDialogAction
+                key={option.mode}
+                className={cn(
+                  buttonVariants({ variant: option.variant }),
+                  'flex h-auto w-full flex-col items-start justify-start gap-1 rounded-xl border px-4 py-3 text-left text-sm leading-relaxed whitespace-normal wrap-break-word transition-colors',
+                  option.variant === 'secondary'
+                    ? 'border-border/60 bg-muted/40 hover:bg-muted/60 dark:bg-muted/20 dark:hover:bg-muted/40'
+                    : 'border-destructive/50 bg-destructive/90 text-destructive-foreground hover:bg-destructive'
+                )}
+                disabled={isDeleting}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void handleDeleteConfirm(option.mode);
+                }}
+              >
+                <span className="font-medium leading-tight">
+                  {option.label}
+                </span>
+                <span
+                  className={cn(
+                    'text-xs leading-snug',
+                    option.variant === 'destructive'
+                      ? 'text-destructive-foreground/90'
+                      : 'text-muted-foreground'
+                  )}
+                >
+                  {option.description}
+                </span>
+              </AlertDialogAction>
+            ))}
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={async () => {
-                if (onDelete) {
-                  await onDelete(message.id, 'message-only');
-                }
-                setShowDeleteDialog(false);
-              }}
-            >
-              Delete
-            </AlertDialogAction>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

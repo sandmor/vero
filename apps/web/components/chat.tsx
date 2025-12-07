@@ -14,7 +14,7 @@ import type {
 } from '@/lib/db/schema';
 import type { Attachment, ChatMessage } from '@/lib/types';
 import type { AppUsage } from '@/lib/usage';
-import { cn, convertToUIMessages } from '@/lib/utils';
+import { convertToUIMessages } from '@/lib/utils';
 
 import { useDataStreamDispatch } from './data-stream-provider';
 import { Messages } from './messages';
@@ -22,7 +22,7 @@ import { MultimodalInput } from './multimodal-input';
 import { toast } from './toast';
 import type { VisibilityType } from './visibility-selector';
 import type { AgentPreset } from '@/types/agent';
-import { Button, buttonVariants } from './ui/button';
+import { Button } from './ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,38 +36,8 @@ import {
 import type { ChatModelOption } from '@/lib/ai/models';
 import { useChatPreferences } from './chat/use-chat-preferences';
 import { useChatMessaging } from './chat/use-chat-messaging';
-import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { buildMessageTree } from '@/lib/utils/message-tree';
 import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
-
-const BULK_DELETE_OPTIONS: Array<{
-  mode: MessageDeletionMode;
-  label: string;
-  description: (count: number) => string;
-  variant: 'secondary' | 'destructive';
-}> = [
-  {
-    mode: 'version',
-    label: 'Delete versions & branches',
-    description: (count) =>
-      `Remove the selected ${count === 1 ? 'version' : 'versions'} along with any messages in their branches.`,
-    variant: 'secondary',
-  },
-  {
-    mode: 'message-only',
-    label: 'Delete messages (keep following)',
-    description: () =>
-      'Keep downstream messages by reconnecting remaining content to the previous step.',
-    variant: 'secondary',
-  },
-  {
-    mode: 'message-with-following',
-    label: 'Delete messages & following',
-    description: (count) =>
-      `Remove the selected ${count === 1 ? 'message' : 'messages'} plus all alternate versions and later messages.`,
-    variant: 'destructive',
-  },
-];
 
 export function Chat({
   id,
@@ -210,9 +180,9 @@ export function Chat({
   );
 
   const handleBulkDeleteConfirm = useCallback(
-    async (mode: MessageDeletionMode) => {
+    async () => {
       try {
-        await handleDeleteSelected(mode);
+        await handleDeleteSelected('version');
         setIsBulkDeleteDialogOpen(false);
       } catch (_error) {
         // Errors are surfaced by handleDeleteSelected via toast notifications.
@@ -398,47 +368,24 @@ export function Chat({
                   {selectedCount === 1 ? '' : 's'}?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  Choose how bulk deletion should treat alternate versions and
-                  downstream messages.
+                  This action cannot be undone. The selected messages and their
+                  branches will be permanently deleted.
                 </AlertDialogDescription>
               </AlertDialogHeader>
-              <div className="mt-3 flex flex-col gap-3">
-                {BULK_DELETE_OPTIONS.map((option) => (
-                  <AlertDialogAction
-                    key={option.mode}
-                    className={cn(
-                      buttonVariants({ variant: option.variant }),
-                      'flex h-auto w-full flex-col items-start justify-start gap-1 rounded-xl border px-4 py-3 text-left text-sm leading-relaxed whitespace-normal wrap-break-word transition-colors',
-                      option.variant === 'secondary'
-                        ? 'border-border/60 bg-muted/40 hover:bg-muted/60 dark:bg-muted/20 dark:hover:bg-muted/40'
-                        : 'border-destructive/50 bg-destructive/90 text-destructive-foreground hover:bg-destructive'
-                    )}
-                    disabled={isBulkDeleting}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      void handleBulkDeleteConfirm(option.mode);
-                    }}
-                  >
-                    <span className="font-medium leading-tight">
-                      {option.label}
-                    </span>
-                    <span
-                      className={cn(
-                        'text-xs leading-snug',
-                        option.variant === 'destructive'
-                          ? 'text-destructive-foreground/90'
-                          : 'text-muted-foreground'
-                      )}
-                    >
-                      {option.description(selectedCount)}
-                    </span>
-                  </AlertDialogAction>
-                ))}
-              </div>
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={isBulkDeleting}>
                   Cancel
                 </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={isBulkDeleting}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void handleBulkDeleteConfirm();
+                  }}
+                >
+                  {isBulkDeleting ? 'Deleting…' : 'Delete'}
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
