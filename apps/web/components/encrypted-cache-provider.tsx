@@ -450,9 +450,9 @@ async function repairCacheState(
 type MetadataValidationResult =
   | { ok: true; metadata: CacheMetadataPayload }
   | {
-    ok: false;
-    reason: 'missing' | 'version-mismatch' | 'invalid-structure';
-  };
+      ok: false;
+      reason: 'missing' | 'version-mismatch' | 'invalid-structure';
+    };
 
 type ChatValidationResult =
   | { ok: true }
@@ -603,12 +603,12 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   ready: false,
   metadata: null,
   cachedChats: [],
-  refreshCache: async () => { },
-  upsertChatRecord: async () => { },
+  refreshCache: async () => {},
+  upsertChatRecord: async () => {},
   getCachedBootstrap: () => undefined,
-  addOptimisticChat: () => { },
-  removeOptimisticChat: () => { },
-  updateChatTitle: () => { },
+  addOptimisticChat: () => {},
+  removeOptimisticChat: () => {},
+  updateChatTitle: () => {},
 });
 
 export function useEncryptedCache(): CacheContextValue {
@@ -1195,15 +1195,15 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
           const updatedMetadata: CacheMetadataPayload = {
             ...(syncResult.metadata ??
               state.metadata ?? {
-              version: CACHE_METADATA_VERSION,
-              generatedAt: syncResult.serverTimestamp,
-              cacheCompletionMarker: {
-                completeFromDate: null,
-                completeToDate: null,
-                hasOlderChats: false,
-              },
-              allowedModels: [],
-            }),
+                version: CACHE_METADATA_VERSION,
+                generatedAt: syncResult.serverTimestamp,
+                cacheCompletionMarker: {
+                  completeFromDate: null,
+                  completeToDate: null,
+                  hasOlderChats: false,
+                },
+                allowedModels: [],
+              }),
             lastSyncedAt: syncResult.serverTimestamp,
             totalChats: syncResult.totalChats,
           };

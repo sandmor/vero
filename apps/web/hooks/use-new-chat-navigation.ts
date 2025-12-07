@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 /**
  * Hook for navigating to a new chat.
- * 
+ *
  * Handles cache invalidation to prevent stale bootstrap data from
  * being shown when creating a new chat.
  */

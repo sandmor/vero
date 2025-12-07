@@ -179,17 +179,14 @@ export function Chat({
     [isBulkDeleting]
   );
 
-  const handleBulkDeleteConfirm = useCallback(
-    async () => {
-      try {
-        await handleDeleteSelected('version');
-        setIsBulkDeleteDialogOpen(false);
-      } catch (_error) {
-        // Errors are surfaced by handleDeleteSelected via toast notifications.
-      }
-    },
-    [handleDeleteSelected]
-  );
+  const handleBulkDeleteConfirm = useCallback(async () => {
+    try {
+      await handleDeleteSelected('version');
+      setIsBulkDeleteDialogOpen(false);
+    } catch (_error) {
+      // Errors are surfaced by handleDeleteSelected via toast notifications.
+    }
+  }, [handleDeleteSelected]);
 
   useEffect(() => {
     if (!isSelectionMode) {

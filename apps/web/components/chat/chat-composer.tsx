@@ -16,11 +16,8 @@ import { ChatLoadingSkeleton } from '@/components/chat/chat-loading-skeleton';
 import { useAppSession } from '@/hooks/use-app-session';
 import { buildLoginRedirectUrl } from '@/lib/auth/redirects';
 
-async function fetchChatBootstrap(
-  chatId?: string
-): Promise<ChatBootstrapResponse> {
-  const params = chatId ? `?chatId=${encodeURIComponent(chatId)}` : '';
-  const response = await fetch(`/api/chat/bootstrap${params}`, {
+async function fetchNewChatBootstrap(): Promise<ChatBootstrapResponse> {
+  const response = await fetch('/api/chat/bootstrap', {
     method: 'GET',
     credentials: 'include',
     cache: 'no-store',
@@ -62,21 +59,24 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     refreshCache,
     ready: isCacheReady,
   } = useEncryptedCache();
+  const [existingLoadState, setExistingLoadState] = useState<
+    'idle' | 'syncing' | 'missing'
+  >('idle');
+  const isNewChat = !chatId;
   const hasRequestedSyncRef = useRef(false);
   const cachedBootstrap = chatId ? getCachedBootstrap(chatId) : undefined;
   const { data: sessionData, status: sessionStatus } = useAppSession();
 
   const { data: queryData, error } =
     useReactQueryWithCache<ChatBootstrapResponse>({
-      queryKey: chatId
-        ? ['chat', 'bootstrap', chatId]
-        : ['chat', 'bootstrap', 'new'],
-      queryFn: () => fetchChatBootstrap(chatId),
-      chatId,
-      enabled: true,
-      // Always refetch to ensure fresh data on navigation
+      queryKey: isNewChat
+        ? ['chat', 'bootstrap', 'new']
+        : ['chat', 'bootstrap', chatId ?? ''],
+      queryFn: fetchNewChatBootstrap,
+      chatId: isNewChat ? undefined : chatId,
+      enabled: isNewChat,
       staleTime: 0,
-      verifyCache: !!chatId,
+      verifyCache: false,
       onError: (err) => {
         console.error('Failed to load chat bootstrap data:', err);
         toast({
@@ -87,7 +87,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     });
 
   useEffect(() => {
-    if (!chatId) return;
+    if (isNewChat) return;
     if (!error) return;
     const status = (error as Error & { status?: number })?.status;
     if (!status || (status !== 404 && status !== 401)) return;
@@ -95,26 +95,19 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     const userType = sessionData?.session?.user?.type;
     if (userType === 'regular') return;
 
-    const loginUrl = buildLoginRedirectUrl(
-      `/chat/${encodeURIComponent(chatId)}`
-    );
+    const loginUrl = buildLoginRedirectUrl('/chat');
     router.replace(loginUrl);
-  }, [chatId, error, router, sessionData, sessionStatus]);
-
-  const bootstrap = useStableBootstrap({
-    chatId,
-    queryData,
-    cachedBootstrap,
-  });
-
-  // Only use bootstrap if it matches the current chatId
-  const validBootstrap = isBootstrapForChat(bootstrap, chatId)
-    ? bootstrap
-    : null;
+  }, [error, isNewChat, router, sessionData, sessionStatus]);
 
   useEffect(() => {
     hasRequestedSyncRef.current = false;
+    setExistingLoadState('idle');
   }, [chatId]);
+
+  useEffect(() => {
+    if (!cachedBootstrap) return;
+    setExistingLoadState('idle');
+  }, [cachedBootstrap]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -123,17 +116,48 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     if (hasRequestedSyncRef.current) return;
 
     hasRequestedSyncRef.current = true;
-    refreshCache().catch(() => {
-      // cache provider surfaces sync errors; component stays optimistic
-    });
-  }, [chatId, cachedBootstrap, isCacheReady, refreshCache]);
+    setExistingLoadState('syncing');
+    let cancelled = false;
+
+    refreshCache({ force: true })
+      .then(() => {
+        if (cancelled) return;
+        const refreshedBootstrap = getCachedBootstrap(chatId);
+        setExistingLoadState(refreshedBootstrap ? 'idle' : 'missing');
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setExistingLoadState('missing');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedBootstrap, chatId, getCachedBootstrap, isCacheReady, refreshCache]);
+
+  const bootstrap = useStableBootstrap({
+    chatId,
+    queryData: isNewChat ? queryData : undefined,
+    cachedBootstrap,
+  });
+
+  // Only use bootstrap if it matches the current chatId
+  const validBootstrap = isBootstrapForChat(bootstrap, chatId)
+    ? bootstrap
+    : null;
+
+  const isMissingExistingChat =
+    !isNewChat && existingLoadState === 'missing' && !validBootstrap;
 
   // Show error state if there's an error and no valid bootstrap
-  if (error && !validBootstrap) {
+  if ((error && !validBootstrap) || isMissingExistingChat) {
     return (
       <div className="flex h-dvh items-center justify-center bg-background">
         <span className="text-sm text-red-500">
-          Failed to load chat. Please try again.
+          {isMissingExistingChat
+            ? 'Chat not found or no longer accessible.'
+            : 'Failed to load chat. Please try again.'}
         </span>
       </div>
     );
@@ -186,7 +210,7 @@ type StableBootstrapParams = {
 
 /**
  * Hook that manages bootstrap state transitions during navigation.
- * 
+ *
  * Key behaviors:
  * - Immediately clears stale bootstrap when chatId changes
  * - Uses cached data as initial value when available

@@ -10,9 +10,15 @@ export type TierRecord = {
   bucketRefillIntervalSeconds: number;
 };
 
-function parseModelList(envVar: string | undefined, defaultList: string[]): string[] {
+function parseModelList(
+  envVar: string | undefined,
+  defaultList: string[]
+): string[] {
   if (!envVar) return defaultList;
-  return envVar.split(',').map((s) => s.trim()).filter(Boolean);
+  return envVar
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 // Fallback definitions used if the DB rows are missing (e.g. before migrations run or during first boot)

@@ -6,15 +6,15 @@ import { useRealtimeConnection } from '@/hooks/use-realtime';
 type RealtimeContextValue = ReturnType<typeof useRealtimeConnection>;
 
 const RealtimeContext = createContext<RealtimeContextValue>({
-    isEnabled: false,
-    connectionState: 'disabled',
-    isConnected: false,
-    lastError: null,
-    reconnect: () => { },
+  isEnabled: false,
+  connectionState: 'disabled',
+  isConnected: false,
+  lastError: null,
+  reconnect: () => {},
 });
 
 export function useRealtime(): RealtimeContextValue {
-    return useContext(RealtimeContext);
+  return useContext(RealtimeContext);
 }
 
 /**
@@ -22,11 +22,11 @@ export function useRealtime(): RealtimeContextValue {
  * Should be placed inside EncryptedCacheProvider and QueryProvider.
  */
 export function RealtimeProvider({ children }: { children: ReactNode }) {
-    const realtimeState = useRealtimeConnection();
+  const realtimeState = useRealtimeConnection();
 
-    return (
-        <RealtimeContext.Provider value={realtimeState}>
-            {children}
-        </RealtimeContext.Provider>
-    );
+  return (
+    <RealtimeContext.Provider value={realtimeState}>
+      {children}
+    </RealtimeContext.Provider>
+  );
 }

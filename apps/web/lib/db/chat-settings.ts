@@ -39,12 +39,18 @@ export async function updateChatSettings(
 ): Promise<ChatSettings> {
   // Ownership check: if userId provided, verify ownership before updating
   if (userId) {
-    const existing = await prisma.chat.findUnique({ where: { id: chatId }, select: { userId: true } });
+    const existing = await prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { userId: true },
+    });
     if (!existing) {
       throw new ChatSDKError('not_found:database', 'Chat not found');
     }
     if (existing.userId !== userId) {
-      throw new ChatSDKError('forbidden:database', 'Not authorized to update this chat');
+      throw new ChatSDKError(
+        'forbidden:database',
+        'Not authorized to update this chat'
+      );
     }
   }
   // Read existing (tolerate parse errors)
@@ -62,7 +68,7 @@ export async function updateChatSettings(
     });
     // Notify realtime gateway (best-effort, non-blocking)
     if (userId || updated.userId) {
-      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => { });
+      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
     }
   } catch (_error) {
     throw new ChatSDKError(
@@ -113,16 +119,26 @@ export async function setModelId(chatId: string, modelId: string | undefined) {
   });
 }
 
-export async function updateChatAgent(chatId: string, agentId: string | null, userId?: string) {
+export async function updateChatAgent(
+  chatId: string,
+  agentId: string | null,
+  userId?: string
+) {
   try {
     // Ownership check: if userId provided, verify ownership before updating
     if (userId) {
-      const existing = await prisma.chat.findUnique({ where: { id: chatId }, select: { userId: true } });
+      const existing = await prisma.chat.findUnique({
+        where: { id: chatId },
+        select: { userId: true },
+      });
       if (!existing) {
         throw new ChatSDKError('not_found:database', 'Chat not found');
       }
       if (existing.userId !== userId) {
-        throw new ChatSDKError('forbidden:database', 'Not authorized to update this chat');
+        throw new ChatSDKError(
+          'forbidden:database',
+          'Not authorized to update this chat'
+        );
       }
     }
     const updated = await prisma.chat.update({
@@ -132,7 +148,7 @@ export async function updateChatAgent(chatId: string, agentId: string | null, us
     });
     // Notify realtime gateway (best-effort, non-blocking)
     if (userId || updated.userId) {
-      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => { });
+      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
     }
   } catch (_error) {
     throw new ChatSDKError(
@@ -176,12 +192,18 @@ export async function applyInitialSettingsPreset({
 }) {
   // Ownership check: if userId provided, verify ownership before updating
   if (userId) {
-    const existing = await prisma.chat.findUnique({ where: { id: chatId }, select: { userId: true } });
+    const existing = await prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { userId: true },
+    });
     if (!existing) {
       throw new ChatSDKError('not_found:database', 'Chat not found');
     }
     if (existing.userId !== userId) {
-      throw new ChatSDKError('forbidden:database', 'Not authorized to update this chat');
+      throw new ChatSDKError(
+        'forbidden:database',
+        'Not authorized to update this chat'
+      );
     }
   }
   // Start from a safe normalized object
@@ -235,7 +257,7 @@ export async function applyInitialSettingsPreset({
 
   // Notify realtime gateway (best-effort, non-blocking)
   if (userId || updated.userId) {
-    notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => { });
+    notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
   }
 
   return merged as ChatSettings;

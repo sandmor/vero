@@ -91,7 +91,11 @@ export async function updateChatVisibility({
     return;
   }
   const session = await requireSession();
-  await updateChatVisiblityById({ chatId, visibility, userId: session.user.id });
+  await updateChatVisiblityById({
+    chatId,
+    visibility,
+    userId: session.user.id,
+  });
 }
 
 export async function updateBranchSelection({
@@ -101,13 +105,13 @@ export async function updateBranchSelection({
 }: {
   chatId: string;
   operation:
-  | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
-  | {
-    kind: 'child';
-    parentId: string;
-    selectedChildIndex: number | null;
-    childId?: string;
-  };
+    | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
+    | {
+        kind: 'child';
+        parentId: string;
+        selectedChildIndex: number | null;
+        childId?: string;
+      };
   expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   if (IS_E2E) {

@@ -146,8 +146,8 @@ export function normalizeAgentSettingsPayload(input: unknown): ChatSettings {
   );
   const allowedTools = normalizeAllowedTools(
     raw.allowedTools ??
-      (raw as any)?.settings?.allowedTools ??
-      (raw as any)?.tools?.allow
+    (raw as any)?.settings?.allowedTools ??
+    (raw as any)?.tools?.allow
   );
   const modelId = normalizeModelId(
     raw.modelId ?? (raw as any)?.settings?.modelId

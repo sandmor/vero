@@ -11,7 +11,7 @@ global.document = dom.window.document;
 global.navigator = dom.window.navigator;
 
 // Polyfill missing browser APIs used by client components during tests
-const noop = () => { };
+const noop = () => {};
 const windowWithAny = globalThis.window as any;
 
 if (!('matchMedia' in windowWithAny)) {
@@ -28,9 +28,9 @@ if (!('matchMedia' in windowWithAny)) {
 }
 
 class ResizeObserverStub {
-  observe() { }
-  unobserve() { }
-  disconnect() { }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
 }
 
 if (!('ResizeObserver' in windowWithAny)) {
@@ -67,9 +67,9 @@ if (!(globalThis as any).DocumentFragment) {
 }
 
 class MutationObserverStub {
-  constructor(_callback: MutationCallback) { }
-  observe() { }
-  disconnect() { }
+  constructor(_callback: MutationCallback) {}
+  observe() {}
+  disconnect() {}
   takeRecords() {
     return [];
   }
@@ -99,14 +99,14 @@ mock.module('@/lib/constants', () => ({
 }));
 
 const chatActionsMock = {
-  saveChatModelAsCookie: () => { },
-  saveReasoningEffortAsCookie: () => { },
-  updateChatVisibility: () => { },
-  updateBranchSelection: () => { },
-  deleteTrailingMessages: () => { },
-  generateTitleFromChatHistory: () => { },
-  forkChatAction: () => { },
-  branchMessageAction: () => { },
+  saveChatModelAsCookie: () => {},
+  saveReasoningEffortAsCookie: () => {},
+  updateChatVisibility: () => {},
+  updateBranchSelection: () => {},
+  deleteTrailingMessages: () => {},
+  generateTitleFromChatHistory: () => {},
+  forkChatAction: () => {},
+  branchMessageAction: () => {},
   getMessageTreeAction: async () => ({
     tree: [],
     nodes: [],

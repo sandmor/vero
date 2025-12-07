@@ -48,28 +48,27 @@ const DELETE_MESSAGE_OPTIONS: Array<{
   description: string;
   variant: 'secondary' | 'destructive';
 }> = [
-    {
-      mode: 'version',
-      label: 'Delete version & branch',
-      description:
-        'Remove this version along with any messages in its branch.',
-      variant: 'secondary',
-    },
-    {
-      mode: 'message-only',
-      label: 'Delete message (keep following)',
-      description:
-        'Keep downstream messages by reconnecting remaining content to the previous step.',
-      variant: 'secondary',
-    },
-    {
-      mode: 'message-with-following',
-      label: 'Delete message & following',
-      description:
-        'Remove this message plus all alternate versions and later messages.',
-      variant: 'destructive',
-    },
-  ];
+  {
+    mode: 'version',
+    label: 'Delete version & branch',
+    description: 'Remove this version along with any messages in its branch.',
+    variant: 'secondary',
+  },
+  {
+    mode: 'message-only',
+    label: 'Delete message (keep following)',
+    description:
+      'Keep downstream messages by reconnecting remaining content to the previous step.',
+    variant: 'secondary',
+  },
+  {
+    mode: 'message-with-following',
+    label: 'Delete message & following',
+    description:
+      'Remove this message plus all alternate versions and later messages.',
+    variant: 'destructive',
+  },
+];
 
 export function PureMessageActions({
   chatId,
@@ -382,7 +381,10 @@ export function PureMessageActions({
         </AnimatePresence>
       </div>
 
-      <AlertDialog open={showDeleteDialog} onOpenChange={handleDialogOpenChange}>
+      <AlertDialog
+        open={showDeleteDialog}
+        onOpenChange={handleDialogOpenChange}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this message?</AlertDialogTitle>
