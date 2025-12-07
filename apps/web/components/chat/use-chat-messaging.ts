@@ -24,7 +24,7 @@ import {
   forkChatAction,
   updateBranchSelection,
   updateMessageTextAction,
-} from '@/app/(chat)/actions';
+} from '@/app/actions/chat';
 import type React from 'react';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { chatOperationsMachine } from '@/lib/state-machines/chat-operations.machine';
@@ -231,7 +231,7 @@ export function useChatMessaging({
       // If no tree is available, return an empty tree
       return { tree: [], nodes: [], branch: [], rootMessageIndex: null };
     }
-    const { getMessageTreeAction } = await import('@/app/(chat)/actions');
+    const { getMessageTreeAction } = await import('@/app/actions/chat');
     return await getMessageTreeAction({ chatId });
   }, [chatId]);
 

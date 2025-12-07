@@ -373,9 +373,8 @@ export function SidebarHistory({
     toast.promise(deletePromise, {
       loading: 'Deleting chats...',
       success: () => {
-        return `Deleted ${idsToDelete.length} chat${
-          idsToDelete.length === 1 ? '' : 's'
-        }`;
+        return `Deleted ${idsToDelete.length} chat${idsToDelete.length === 1 ? '' : 's'
+          }`;
       },
       error: 'Failed to delete chats',
     });

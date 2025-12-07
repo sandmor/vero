@@ -61,7 +61,7 @@ import { ChatSDKError } from '@/lib/errors';
 import type { ChatMessage } from '@/lib/types';
 import type { AppUsage } from '@/lib/usage';
 import { convertToUIMessages, generateUUID } from '@/lib/utils';
-import { generateTitleFromChatHistory } from '../../actions';
+import { generateTitleFromChatHistory } from '@/app/actions/chat';
 import { updateChatTitleById } from '@/lib/db/queries';
 import { ZodError } from 'zod';
 import { type PostRequestBody, createPostRequestBodySchema } from './schema';

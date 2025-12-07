@@ -5,7 +5,7 @@ import type { Chat, ChatSettings, DBMessage, MessageTreeNode } from '../schema';
 import type { AppUsage } from '../../usage';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { generateUUID } from '../../utils';
-import { generateTitleFromChatHistory } from '../../../app/(chat)/actions';
+import { generateTitleFromChatHistory } from '../../../app/actions/chat';
 import {
   saveMessages,
   getMessagesByChatId,
@@ -444,8 +444,8 @@ export async function searchChats({
     const agents =
       agentIds.length > 0
         ? await prisma.agent.findMany({
-            where: { id: { in: agentIds } },
-          })
+          where: { id: { in: agentIds } },
+        })
         : [];
     const agentMap = new Map(agents.map((a) => [a.id, a]));
 
@@ -660,7 +660,7 @@ export async function forkChat({
               : new Date(original.createdAt),
           model:
             typeof original.model === 'string' &&
-            original.model.trim().length > 0
+              original.model.trim().length > 0
               ? original.model
               : null,
           parentId: replayMessages.length
@@ -701,9 +701,9 @@ export async function forkChat({
         if (candidate.role === 'user') {
           const textParts = Array.isArray(candidate.parts)
             ? (candidate.parts as any[])
-                .filter((p) => p && p.type === 'text')
-                .map((p) => p.text)
-                .join('\n')
+              .filter((p) => p && p.type === 'text')
+              .map((p) => p.text)
+              .join('\n')
             : undefined;
           previousUserText = textParts || '';
           break;

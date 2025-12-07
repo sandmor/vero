@@ -21,7 +21,7 @@ import {
   ChevronDown,
   Loader2,
 } from 'lucide-react';
-import { saveReasoningEffortAsCookie } from '@/app/(chat)/actions';
+import { saveReasoningEffortAsCookie } from '@/app/actions/chat';
 
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 
@@ -40,25 +40,25 @@ const REASONING_OPTIONS: Array<{
   description: string;
   icon: typeof Zap;
 }> = [
-  {
-    value: 'low',
-    label: 'Low',
-    description: 'Faster responses with basic reasoning',
-    icon: Zap,
-  },
-  {
-    value: 'medium',
-    label: 'Medium',
-    description: 'Balanced speed and reasoning depth',
-    icon: Brain,
-  },
-  {
-    value: 'high',
-    label: 'High',
-    description: 'Slower but most thorough reasoning',
-    icon: TrendingUp,
-  },
-];
+    {
+      value: 'low',
+      label: 'Low',
+      description: 'Faster responses with basic reasoning',
+      icon: Zap,
+    },
+    {
+      value: 'medium',
+      label: 'Medium',
+      description: 'Balanced speed and reasoning depth',
+      icon: Brain,
+    },
+    {
+      value: 'high',
+      label: 'High',
+      description: 'Slower but most thorough reasoning',
+      icon: TrendingUp,
+    },
+  ];
 
 export function ReasoningEffortSelector({
   selectedEffort = 'medium',

@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
 import { getChatById } from '@/lib/db/queries';
-import { generateTitleFromChatHistory } from '@/app/(chat)/actions';
+import { generateTitleFromChatHistory } from '@/app/actions/chat';
 import { getMessagesByChatId } from '@/lib/db/queries';
 import { convertToUIMessages } from '@/lib/utils';
 
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ chatId: string }> }
 ) {
   try {
     const session = await getAppSession();
@@ -15,8 +15,8 @@ export async function POST(
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    const { id } = await params;
-    const chat = await getChatById({ id });
+    const { chatId } = await params;
+    const chat = await getChatById({ id: chatId });
 
     if (!chat) {
       return new NextResponse('Chat not found', { status: 404 });

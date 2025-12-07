@@ -52,8 +52,8 @@ export function useChatPreferences({
 
   const initialReasoningEffort = normalizeReasoningEffort(
     initialSettings?.reasoningEffort ??
-      initialAgentSettings?.reasoningEffort ??
-      undefined
+    initialAgentSettings?.reasoningEffort ??
+    undefined
   );
 
   const initialModelId = useMemo(() => {
@@ -102,8 +102,8 @@ export function useChatPreferences({
   const [stagedPinnedSlugs, setStagedPinnedSlugs] = useState<string[]>(() =>
     normalizePinnedEntries(
       initialSettings?.pinnedEntries ??
-        initialAgentSettings?.pinnedEntries ??
-        []
+      initialAgentSettings?.pinnedEntries ??
+      []
     )
   );
   const stagedPinnedSlugsRef = useRef<string[]>(stagedPinnedSlugs);

@@ -4,7 +4,7 @@ import { updateChatTitleById } from '@/lib/db/queries';
 
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ chatId: string }> }
 ) {
   try {
     const session = await getAppSession();
@@ -17,8 +17,8 @@ export async function PATCH(
       return new NextResponse('Missing title', { status: 400 });
     }
 
-    const { id } = await params;
-    await updateChatTitleById({ chatId: id, title });
+    const { chatId } = await params;
+    await updateChatTitleById({ chatId, title });
 
     return NextResponse.json({ success: true });
   } catch (error) {
