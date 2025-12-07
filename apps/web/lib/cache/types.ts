@@ -44,7 +44,6 @@ export type CachedChatRecord = {
 // Sync API types
 export type SyncRequest = {
   lastSyncedAt: string | null;
-  knownChats?: Array<{ id: string; updatedAt: string }>;
   pageSize?: number;
   cursor?: string | null;
 };

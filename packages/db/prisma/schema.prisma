@@ -76,6 +76,16 @@ model UserRateLimit {
   @@map("UserRateLimit")
 }
 
+// Tombstones for tracking deleted chats (for client cache sync)
+model ChatDeletion {
+  id        String   @id @db.Uuid
+  deletedAt DateTime @default(now())
+  userId    String   @db.VarChar(191)
+
+  @@index([userId, deletedAt])
+  @@map("ChatDeletion")
+}
+
 model Agent {
   id          String   @id @default(uuid()) @db.Uuid
   userId      String   @db.VarChar(191)

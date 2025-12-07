@@ -46,10 +46,23 @@ export async function saveChat({
 
 export async function deleteChatById({ id }: { id: string }): Promise<Chat> {
   try {
+    // Fetch chat first to get userId for tombstone
+    const chat = await prisma.chat.findUnique({ where: { id } });
+    if (!chat) {
+      throw new ChatSDKError('not_found:database', 'Chat not found');
+    }
+
     await prisma.message.deleteMany({ where: { chatId: id } });
     await prisma.stream.deleteMany({ where: { chatId: id } });
 
-    const deleted = await prisma.chat.delete({ where: { id } });
+    // Delete chat and create tombstone atomically
+    const [deleted] = await prisma.$transaction([
+      prisma.chat.delete({ where: { id } }),
+      prisma.chatDeletion.create({
+        data: { id, userId: chat.userId, deletedAt: new Date() },
+      }),
+    ]);
+
     const { lastContext, visibility, ...rest } = deleted as typeof deleted & {
       visibility: string;
     };
@@ -60,7 +73,8 @@ export async function deleteChatById({ id }: { id: string }): Promise<Chat> {
       settings: (deleted.settings as ChatSettings) ?? null,
       agent: null,
     };
-  } catch (_error) {
+  } catch (error) {
+    if (error instanceof ChatSDKError) throw error;
     throw new ChatSDKError(
       'bad_request:database',
       'Failed to delete chat by id'
@@ -96,7 +110,19 @@ export async function deleteChatsByIds({
 
     await prisma.message.deleteMany({ where: { chatId: { in: targetIds } } });
     await prisma.stream.deleteMany({ where: { chatId: { in: targetIds } } });
-    await prisma.chat.deleteMany({ where: { id: { in: targetIds }, userId } });
+
+    // Delete chats and create tombstones atomically
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.chat.deleteMany({ where: { id: { in: targetIds }, userId } }),
+      prisma.chatDeletion.createMany({
+        data: targetIds.map((chatId) => ({
+          id: chatId,
+          userId,
+          deletedAt: now,
+        })),
+      }),
+    ]);
 
     return { deletedIds: targetIds };
   } catch (_error) {
@@ -444,8 +470,8 @@ export async function searchChats({
     const agents =
       agentIds.length > 0
         ? await prisma.agent.findMany({
-          where: { id: { in: agentIds } },
-        })
+            where: { id: { in: agentIds } },
+          })
         : [];
     const agentMap = new Map(agents.map((a) => [a.id, a]));
 
@@ -660,7 +686,7 @@ export async function forkChat({
               : new Date(original.createdAt),
           model:
             typeof original.model === 'string' &&
-              original.model.trim().length > 0
+            original.model.trim().length > 0
               ? original.model
               : null,
           parentId: replayMessages.length
@@ -701,9 +727,9 @@ export async function forkChat({
         if (candidate.role === 'user') {
           const textParts = Array.isArray(candidate.parts)
             ? (candidate.parts as any[])
-              .filter((p) => p && p.type === 'text')
-              .map((p) => p.text)
-              .join('\n')
+                .filter((p) => p && p.type === 'text')
+                .map((p) => p.text)
+                .join('\n')
             : undefined;
           previousUserText = textParts || '';
           break;

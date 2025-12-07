@@ -29,8 +29,6 @@ import { enforceCacheRateLimit } from '@/lib/cache/rate-limit';
 export type SyncRequest = {
   // Last sync timestamp - ISO string. If null, this is an initial sync
   lastSyncedAt: string | null;
-  // Known chat IDs with their updatedAt timestamps for detecting deletions
-  knownChats?: Array<{ id: string; updatedAt: string }>;
   // Page size for chunked responses
   pageSize?: number;
   // Cursor for pagination (chat ID to continue from)
@@ -41,7 +39,7 @@ export type SyncRequest = {
 export type SyncResponse = {
   // Chats that were created or updated since lastSyncedAt
   upserts: CachedChatRecord[];
-  // Chat IDs that were deleted (only returned if knownChats was provided)
+  // Chat IDs that were deleted since lastSyncedAt (for incremental sync)
   deletions: string[];
   // Server timestamp for the next sync
   serverTimestamp: string;
@@ -102,7 +100,7 @@ export async function POST(request: NextRequest) {
     ).toResponse();
   }
 
-  const { lastSyncedAt, knownChats, cursor } = body;
+  const { lastSyncedAt, cursor } = body;
   const pageSize = Math.min(
     Math.max(body.pageSize ?? DEFAULT_PAGE_SIZE, 1),
     MAX_PAGE_SIZE
@@ -249,22 +247,17 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Detect deletions if knownChats was provided
+  // Detect deletions via tombstones for incremental sync
   let deletions: string[] = [];
-  if (knownChats && knownChats.length > 0) {
-    const knownIds = knownChats.map((c) => c.id);
-
-    // Find which of the known chats still exist
-    const existingChats = await prisma.chat.findMany({
+  if (lastSyncDate) {
+    const tombstones = await prisma.chatDeletion.findMany({
       where: {
         userId: session.user.id,
-        id: { in: knownIds },
+        deletedAt: { gt: lastSyncDate },
       },
       select: { id: true },
     });
-
-    const existingIds = new Set(existingChats.map((c) => c.id));
-    deletions = knownIds.filter((id) => !existingIds.has(id));
+    deletions = tombstones.map((t) => t.id);
   }
 
   // Get total chat count for the user

@@ -641,7 +641,6 @@ async function removeChatsFromCache(chatIds: string[]) {
 
 async function performIncrementalSync(
   lastSyncedAt: string | null,
-  knownChats: Array<{ id: string; updatedAt: string }>,
   signal?: AbortSignal
 ): Promise<{
   upserts: CachedChatRecord[];
@@ -668,8 +667,6 @@ async function performIncrementalSync(
       lastSyncedAt,
       pageSize: SYNC_PAGE_SIZE,
       cursor,
-      // Only send known chats on first page to detect deletions
-      ...(isFirstPage && knownChats.length > 0 ? { knownChats } : {}),
     };
 
     const response = await fetch('/api/cache/sync', {
@@ -1158,21 +1155,13 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
             ? null
             : (state.metadata?.lastSyncedAt ?? null);
 
-          // Get known chats for deletion detection
-          const knownChats = state.cachedChats.map((entry) => ({
-            id: entry.chatId,
-            updatedAt: entry.data.lastUpdatedAt,
-          }));
-
           cacheDebug('refreshCache: performing sync', {
             isInitialSync,
             lastSyncedAt,
-            knownChatsCount: knownChats.length,
           });
 
           const syncResult = await performIncrementalSync(
             lastSyncedAt,
-            knownChats,
             abortControllerRef.current?.signal
           );
 
