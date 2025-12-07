@@ -567,6 +567,19 @@ function validateChatRecords(
 
 type CacheStatus = 'disabled' | 'idle' | 'initializing' | 'ready' | 'error';
 
+// Optimistic state for immediate UI feedback
+type OptimisticChat = {
+  id: string;
+  title: string;
+  createdAt: Date;
+};
+
+type OptimisticState = {
+  pendingChats: OptimisticChat[];
+  deletedChatIds: Set<string>;
+  titleUpdates: Map<string, string>;
+};
+
 type CacheContextValue = {
   status: CacheStatus;
   ready: boolean;
@@ -579,6 +592,10 @@ type CacheContextValue = {
     options?: { metadata?: CacheMetadataPayload | null }
   ) => Promise<void>;
   getCachedBootstrap: (chatId: string) => ChatBootstrapResponse | undefined;
+  // Optimistic operations for immediate UI feedback
+  addOptimisticChat: (chat: { id: string; title: string }) => void;
+  removeOptimisticChat: (chatId: string) => void;
+  updateChatTitle: (chatId: string, newTitle: string) => void;
 };
 
 const EncryptedCacheContext = createContext<CacheContextValue>({
@@ -589,6 +606,9 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   refreshCache: async () => {},
   upsertChatRecord: async () => {},
   getCachedBootstrap: () => undefined,
+  addOptimisticChat: () => {},
+  removeOptimisticChat: () => {},
+  updateChatTitle: () => {},
 });
 
 export function useEncryptedCache(): CacheContextValue {
@@ -834,6 +854,75 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   const isLoggedIn = Boolean(sessionUserId);
   const isLoggedInRef = useRef(isLoggedIn);
   isLoggedInRef.current = isLoggedIn;
+
+  // Optimistic state for immediate UI feedback
+  const [optimisticState, setOptimisticState] = useState<OptimisticState>({
+    pendingChats: [],
+    deletedChatIds: new Set(),
+    titleUpdates: new Map(),
+  });
+
+  // Add an optimistic chat for immediate sidebar display
+  const addOptimisticChat = useCallback(
+    (chat: { id: string; title: string }) => {
+      setOptimisticState((prev) => ({
+        ...prev,
+        pendingChats: [
+          { id: chat.id, title: chat.title, createdAt: new Date() },
+          ...prev.pendingChats.filter((c) => c.id !== chat.id),
+        ],
+      }));
+    },
+    []
+  );
+
+  // Remove an optimistic chat (when real chat is synced or deleted)
+  const removeOptimisticChat = useCallback((chatId: string) => {
+    setOptimisticState((prev) => ({
+      ...prev,
+      pendingChats: prev.pendingChats.filter((c) => c.id !== chatId),
+      deletedChatIds: new Set([...prev.deletedChatIds, chatId]),
+    }));
+  }, []);
+
+  // Update chat title optimistically for immediate UI feedback
+  const updateChatTitle = useCallback((chatId: string, newTitle: string) => {
+    setOptimisticState((prev) => {
+      const newTitleUpdates = new Map(prev.titleUpdates);
+      newTitleUpdates.set(chatId, newTitle);
+      return { ...prev, titleUpdates: newTitleUpdates };
+    });
+  }, []);
+
+  // Clear optimistic state for chats that now exist in the real cache
+  useEffect(() => {
+    const realChatIds = new Set(state.cachedChats.map((c) => c.chatId));
+    setOptimisticState((prev) => {
+      const filteredPending = prev.pendingChats.filter(
+        (c) => !realChatIds.has(c.id)
+      );
+      // Also clear deleted IDs that aren't in cache (already removed)
+      const filteredDeleted = new Set(
+        [...prev.deletedChatIds].filter((id) => realChatIds.has(id))
+      );
+      // Clear title updates for chats not in cache
+      const filteredTitles = new Map(
+        [...prev.titleUpdates].filter(([id]) => realChatIds.has(id))
+      );
+      if (
+        filteredPending.length !== prev.pendingChats.length ||
+        filteredDeleted.size !== prev.deletedChatIds.size ||
+        filteredTitles.size !== prev.titleUpdates.size
+      ) {
+        return {
+          pendingChats: filteredPending,
+          deletedChatIds: filteredDeleted,
+          titleUpdates: filteredTitles,
+        };
+      }
+      return prev;
+    });
+  }, [state.cachedChats]);
 
   const ensureManagerActivated = useCallback(async () => {
     if (manager.isInitialized()) {
@@ -1307,18 +1396,88 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     [loadFromCache]
   );
 
+  // Merge optimistic state with real cached chats for UI
+  const mergedCachedChats = useMemo(() => {
+    // Filter out deleted chats and apply title updates
+    const filteredChats = state.cachedChats
+      .filter((c) => !optimisticState.deletedChatIds.has(c.chatId))
+      .map((entry) => {
+        const titleUpdate = optimisticState.titleUpdates.get(entry.chatId);
+        if (titleUpdate && entry.data.chat) {
+          return {
+            ...entry,
+            data: {
+              ...entry.data,
+              chat: { ...entry.data.chat, title: titleUpdate },
+            },
+          };
+        }
+        return entry;
+      });
+
+    // Add pending optimistic chats that aren't in real cache
+    const realChatIds = new Set(filteredChats.map((c) => c.chatId));
+    const pendingEntries = optimisticState.pendingChats
+      .filter(
+        (c) =>
+          !realChatIds.has(c.id) && !optimisticState.deletedChatIds.has(c.id)
+      )
+      .map((c) => ({
+        chatId: c.id,
+        data: {
+          chatId: c.id,
+          lastUpdatedAt: c.createdAt.toISOString(),
+          chat: {
+            id: c.id,
+            title: c.title,
+            createdAt: c.createdAt,
+            updatedAt: c.createdAt,
+            userId: '',
+            visibility: 'private' as const,
+            lastContext: null,
+            settings: null,
+            agent: null,
+            agentId: null,
+            parentChatId: null,
+            forkedFromMessageId: null,
+            forkDepth: 0,
+            rootMessageIndex: 0,
+          },
+          bootstrap: undefined,
+        },
+        lastUpdatedAt: c.createdAt.getTime(),
+        cachedAt: c.createdAt.getTime(),
+      })) as unknown as CachedChatPayload<CachedChatRecord>[];
+
+    return [...pendingEntries, ...filteredChats];
+  }, [state.cachedChats, optimisticState]);
+
   const value = useMemo<CacheContextValue>(
     () => ({
       status: state.status,
       ready: state.status === 'ready',
       error: state.error,
       metadata: state.metadata,
-      cachedChats: state.cachedChats,
+      cachedChats: mergedCachedChats,
       refreshCache,
       upsertChatRecord,
       getCachedBootstrap,
+      addOptimisticChat,
+      removeOptimisticChat,
+      updateChatTitle,
     }),
-    [state, refreshCache, getCachedBootstrap, upsertChatRecord]
+    [
+      state.status,
+      state.error,
+      state.metadata,
+      mergedCachedChats,
+      refreshCache,
+      getCachedBootstrap,
+      upsertChatRecord,
+      addOptimisticChat,
+      removeOptimisticChat,
+      updateChatTitle,
+    ]
   );
 
   return (

@@ -202,8 +202,8 @@ export async function configureChatMocks(
             : input instanceof URL
               ? input.href
               : ((input && typeof input === 'object' && 'url' in input
-                ? (input as { url?: string }).url
-                : undefined) ?? window.location.origin);
+                  ? (input as { url?: string }).url
+                  : undefined) ?? window.location.origin);
         const { pathname } = new URL(targetUrl, window.location.origin);
 
         if (pathname === '/api/chat/bootstrap') {
@@ -213,7 +213,7 @@ export async function configureChatMocks(
           });
         }
 
-        if (pathname === '/api/chat/history' || pathname === '/api/history') {
+        if (pathname === '/api/cache/sync') {
           const mocks = window.__testMocks!;
           const index = Math.min(
             mocks.historyRequestCount,
@@ -232,7 +232,7 @@ export async function configureChatMocks(
               ? pageResponse.chats.length
               : 0,
           });
-          console.info('[e2e] history request', {
+          console.info('[e2e] cache sync request', {
             index,
             count: mocks.historyRequestCount,
             hasMore: pageResponse.hasMore,
@@ -240,10 +240,31 @@ export async function configureChatMocks(
               ? pageResponse.chats.length
               : 0,
           });
-          return new Response(JSON.stringify(pageResponse), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          // Return cache sync response format
+          return new Response(
+            JSON.stringify({
+              upserts: [],
+              deletions: [],
+              serverTimestamp: new Date().toISOString(),
+              hasMore: false,
+              nextCursor: null,
+              totalChats: 0,
+              metadata: {
+                version: 1,
+                generatedAt: new Date().toISOString(),
+                allowedModels: mocks.bootstrap.allowedModels ?? [],
+                cacheCompletionMarker: {
+                  completeFromDate: null,
+                  completeToDate: null,
+                  hasOlderChats: false,
+                },
+              },
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         }
 
         if (pathname === '/api/chat/settings') {

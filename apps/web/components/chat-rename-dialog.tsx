@@ -37,7 +37,7 @@ export function ChatRenameDialog({
   const handleGenerateTitle = async () => {
     setGenerateFeedback('loading');
     try {
-      const response = await fetch(`/chat/${chat.id}/api/generate-title`, {
+      const response = await fetch(`/api/chat/${chat.id}/generate-title`, {
         method: 'POST',
       });
 

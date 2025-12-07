@@ -81,7 +81,7 @@ const PureChatItem = ({
 
   const handleRename = async (newTitle: string) => {
     try {
-      const response = await fetch(`/chat/${chat.id}/api`, {
+      const response = await fetch(`/api/chat/${chat.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

@@ -33,6 +33,7 @@ import {
   cloneSelectionSnapshot,
 } from '@/lib/utils/selection-snapshot';
 import type { BranchSelectionOperation } from '@/lib/utils/branch-planning';
+import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 
 const IS_E2E = process.env.NEXT_PUBLIC_E2E === '1';
 
@@ -90,6 +91,7 @@ export function useChatMessaging({
 }: UseChatMessagingArgs) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { addOptimisticChat } = useEncryptedCache();
 
   const {
     getSelectedIds,
@@ -190,7 +192,8 @@ export function useChatMessaging({
     },
     onFinish: () => {
       if (!chatHasStartedRef.current) {
-        queryClient.invalidateQueries({ queryKey: ['chat', 'history'] });
+        // Add optimistic entry for immediate sidebar display
+        addOptimisticChat({ id: chatId, title: 'New Chat' });
         markChatAsStarted();
       }
     },
