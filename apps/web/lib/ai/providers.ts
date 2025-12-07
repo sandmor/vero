@@ -56,13 +56,10 @@ async function resolveLanguageModel(compositeId: string) {
 
 // Curated model IDs surfaced in UI / entitlements.
 const KNOWN_MODEL_IDS = [
-  'openai:gpt-5',
+  'openai:gpt-5.1',
   'google:gemini-2.5-flash-image-preview',
   'google:gemini-2.5-flash',
   'google:gemini-2.5-pro',
-  'openrouter:x-ai/grok-4',
-  'openrouter:x-ai/grok-4-fast:free',
-  'openrouter:moonshotai/kimi-k2:free',
 ];
 
 let modelsCache: Record<string, any> | null = null;
@@ -75,13 +72,10 @@ async function buildModels(): Promise<Record<string, any>> {
   if (isTestEnvironment) {
     const { chatModel, reasoningModel } = require('./models.mock');
     return {
-      'openai:gpt-5': chatModel,
+      'openai:gpt-5.1': reasoningModel,
       'google:gemini-2.5-flash-image-preview': reasoningModel,
       'google:gemini-2.5-flash': reasoningModel,
       'google:gemini-2.5-pro': reasoningModel,
-      'openrouter:x-ai/grok-4': chatModel,
-      'openrouter:x-ai/grok-4-fast:free': reasoningModel,
-      'openrouter:moonshotai/kimi-k2:free': chatModel,
     } as Record<string, any>;
   }
   const entries = await Promise.all(

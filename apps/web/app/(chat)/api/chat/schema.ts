@@ -25,7 +25,7 @@ export async function createPostRequestBodySchema() {
     }),
     regenerateMessageId: z.string().uuid().optional(),
     // Accept any composite provider:model id; entitlement check is enforced server-side.
-    // Examples: 'openai:gpt-5', 'google:gemini-2.5-pro', 'openrouter:openai/gpt-5', 'openrouter:x-ai/grok-4'
+    // Examples: 'google:gemini-2.5-pro', 'openrouter:google/gemini-2.5-flash'
     selectedChatModel: z
       .string()
       .min(3)

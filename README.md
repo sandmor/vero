@@ -109,15 +109,14 @@ The archive provides tools for AI assistants to:
 
 ## Models
 
-Provider-agnostic model registry supporting multiple AI providers:
+Provider-agnostic model registry supporting multiple AI providers.
 
 ### Supported (Curated) Models
 
-Curated list included at build time (see `lib/ai/models.ts`). Capabilities may be further enriched automatically:
+Curated list included at build time (see `lib/ai/models.ts`). Capabilities may be further enriched automatically.
+The default set includes Google Gemini variants (`gemini-2.5-flash-image-preview`, `gemini-2.5-flash`, `gemini-2.5-pro`).
 
-- OpenAI: `gpt-5`
-- Google: `gemini-2.5-flash-image-preview`, `gemini-2.5-flash`, `gemini-2.5-pro`
-- OpenRouter Aggregated: `x-ai/grok-4`, `x-ai/grok-4-fast:free`, `moonshotai/kimi-k2:free`
+Additional models can be configured via environment variables or added to the database.
 
 ### Provider Integration
 
@@ -130,10 +129,12 @@ Curated list included at build time (see `lib/ai/models.ts`). Capabilities may b
 
 Default tier definitions (fallback when DB rows absent):
 
-| Tier    | Models                                                   | Capacity | Refill | Interval |
-| ------- | -------------------------------------------------------- | -------- | ------ | -------- |
-| guest   | grok-4-fast:free, kimi-k2:free                           | 60       | 20     | 3600s    |
-| regular | gpt-5, gemini flash/pro variants, grok-4 (+ free models) | 300      | 100    | 3600s    |
+| Tier    | Models                                                                           | Capacity | Refill | Interval |
+| ------- | -------------------------------------------------------------------------------- | -------- | ------ | -------- |
+| guest   | Configured via `GUEST_MODELS` (defaults to auto-detected `DEFAULT_CHAT_MODEL`)   | 60       | 20     | 3600s    |
+| regular | Configured via `REGULAR_MODELS` (defaults to auto-detected `DEFAULT_CHAT_MODEL`) | 300      | 100    | 3600s    |
+
+If `DEFAULT_CHAT_MODEL` is not explicitly set, the system selects a default model based on available API keys (Google > OpenAI > OpenRouter).
 
 All values can be overridden by inserting/updating `Tier` rows.
 
@@ -275,6 +276,7 @@ Create `.env.local` (loaded by Next.js) and ensure `DATABASE_URL` is present whe
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini API access                           |
 | `ADMIN_USER_ID`                | Hard admin (takes precedence over email)           |
 | `ADMIN_EMAIL`                  | Fallback admin identity (bootstrap)                |
+| `DEFAULT_CHAT_MODEL`           | Default model for new chats and fallback           |
 | `TITLE_GENERATION_MODEL`       | Override model for automatic chat title generation |
 
 ### Database Setup

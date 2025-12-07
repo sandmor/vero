@@ -1,11 +1,38 @@
 import type { ModelFormat } from './model-capabilities';
 
-export const DEFAULT_CHAT_MODEL = 'google:gemini-2.5-flash';
+// Define defaults for each supported provider to ensure a safe fallback
+// when a specific DEFAULT_CHAT_MODEL is not configured.
+export const PROVIDER_DEFAULTS = {
+  google: 'google:gemini-2.5-flash',
+  openai: 'openai:gpt-5.1',
+  openrouter: 'anthropic/claude-sonnet-4.5',
+} as const;
+
+function resolveDefaultChatModel() {
+  // 1. Explicit override
+  if (process.env.DEFAULT_CHAT_MODEL) return process.env.DEFAULT_CHAT_MODEL;
+
+  // 2. Auto-detect based on available API keys (Server-side only detection)
+  // We check environment variables directly to avoid circular dependencies with provider-keys.ts
+  const hasGoogle =
+    !!process.env.GOOGLE_API_KEY || !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const hasOpenAI = !!process.env.OPENAI_API_KEY;
+  const hasOpenRouter = !!process.env.OPENROUTER_API_KEY;
+
+  if (hasGoogle) return PROVIDER_DEFAULTS.google;
+  if (hasOpenAI) return PROVIDER_DEFAULTS.openai;
+  if (hasOpenRouter) return PROVIDER_DEFAULTS.openrouter;
+
+  // 3. Ultimate fallback (Google was the original default)
+  return PROVIDER_DEFAULTS.google;
+}
+
+export const DEFAULT_CHAT_MODEL = resolveDefaultChatModel();
 
 export const TITLE_GENERATION_MODEL =
-  process.env.TITLE_GENERATION_MODEL ?? 'google:gemini-2.5-flash';
+  process.env.TITLE_GENERATION_MODEL ?? DEFAULT_CHAT_MODEL;
 export const ARTIFACT_GENERATION_MODEL =
-  process.env.ARTIFACT_GENERATION_MODEL ?? 'google:gemini-2.5-flash';
+  process.env.ARTIFACT_GENERATION_MODEL ?? DEFAULT_CHAT_MODEL;
 
 export type ChatModel = {
   id: string; // composite id provider:model
@@ -50,29 +77,27 @@ export function isModelIdAllowed(
 // Curated metadata for a *small* set of popular models; absence falls back to automatic derivation.
 // Curated metadata keyed by composite id
 const curated: Record<string, { name: string; description?: string }> = {
-  'openai:gpt-5': {
-    name: 'GPT-5',
-    description:
-      'OpenAI frontier model for high reasoning & multilingual coding tasks',
+  [PROVIDER_DEFAULTS.google]: {
+    name: 'Gemini 2.5 Flash',
+    description: 'Balanced speed + quality multimodal generation',
   },
   'google:gemini-2.5-flash-image-preview': {
     name: 'Gemini 2.5 Flash Image Preview',
     description:
       'Fast multimodal (image+text) with lightweight image preview support',
   },
-  'google:gemini-2.5-flash': {
-    name: 'Gemini 2.5 Flash',
-    description: 'Balanced speed + quality multimodal generation',
-  },
   'google:gemini-2.5-pro': {
     name: 'Gemini 2.5 Pro',
     description:
       'Higher capability Gemini 2.5 for complex reasoning & synthesis',
   },
-  'openrouter:x-ai/grok-4': {
-    name: 'Grok 4',
-    description:
-      'xAI flagship: advanced long‑context reasoning & multimodal understanding',
+  [PROVIDER_DEFAULTS.openai]: {
+    name: 'GPT-5.1',
+    description: 'OpenAI flagship multimodal model',
+  },
+  [PROVIDER_DEFAULTS.openrouter]: {
+    name: 'Sonnet 4.5',
+    description: 'Fast multimodal model by Anthropic via OpenRouter',
   },
 };
 

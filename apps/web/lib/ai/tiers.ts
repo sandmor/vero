@@ -1,5 +1,6 @@
 import type { UserType } from '@/lib/auth/types';
 import { prisma } from '@virid/db';
+import { DEFAULT_CHAT_MODEL } from './models';
 
 export type TierRecord = {
   id: string;
@@ -9,30 +10,24 @@ export type TierRecord = {
   bucketRefillIntervalSeconds: number;
 };
 
+function parseModelList(envVar: string | undefined, defaultList: string[]): string[] {
+  if (!envVar) return defaultList;
+  return envVar.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
 // Fallback definitions used if the DB rows are missing (e.g. before migrations run or during first boot)
 // Keep these in sync with the migration seed. They guarantee the app remains functional.
 const FALLBACK_TIERS: Record<UserType, TierRecord> = {
   guest: {
     id: 'guest',
-    modelIds: [
-      'openrouter:x-ai/grok-4-fast:free',
-      'openrouter:moonshotai/kimi-k2:free',
-    ],
+    modelIds: parseModelList(process.env.GUEST_MODELS, [DEFAULT_CHAT_MODEL]),
     bucketCapacity: 60, // allow bursts up to 60 messages
     bucketRefillAmount: 20, // refill 20 per hour
     bucketRefillIntervalSeconds: 3600,
   },
   regular: {
     id: 'regular',
-    modelIds: [
-      'openai:gpt-5',
-      'google:gemini-2.5-flash-image-preview',
-      'google:gemini-2.5-flash',
-      'google:gemini-2.5-pro',
-      'openrouter:x-ai/grok-4',
-      'openrouter:x-ai/grok-4-fast:free',
-      'openrouter:moonshotai/kimi-k2:free',
-    ],
+    modelIds: parseModelList(process.env.REGULAR_MODELS, [DEFAULT_CHAT_MODEL]),
     bucketCapacity: 300,
     bucketRefillAmount: 100,
     bucketRefillIntervalSeconds: 3600,
