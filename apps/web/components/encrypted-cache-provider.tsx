@@ -450,9 +450,9 @@ async function repairCacheState(
 type MetadataValidationResult =
   | { ok: true; metadata: CacheMetadataPayload }
   | {
-      ok: false;
-      reason: 'missing' | 'version-mismatch' | 'invalid-structure';
-    };
+    ok: false;
+    reason: 'missing' | 'version-mismatch' | 'invalid-structure';
+  };
 
 type ChatValidationResult =
   | { ok: true }
@@ -603,12 +603,12 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   ready: false,
   metadata: null,
   cachedChats: [],
-  refreshCache: async () => {},
-  upsertChatRecord: async () => {},
+  refreshCache: async () => { },
+  upsertChatRecord: async () => { },
   getCachedBootstrap: () => undefined,
-  addOptimisticChat: () => {},
-  removeOptimisticChat: () => {},
-  updateChatTitle: () => {},
+  addOptimisticChat: () => { },
+  removeOptimisticChat: () => { },
+  updateChatTitle: () => { },
 });
 
 export function useEncryptedCache(): CacheContextValue {
@@ -1141,9 +1141,11 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
             priorStatus: state.status,
             hasExistingMetadata: Boolean(state.metadata),
           });
+          // Don't set status to initializing if we already have data
+          // This prevents UI skeletons/blocking during background sync
           setState((prev) => ({
             ...prev,
-            status: 'initializing',
+            status: prev.status === 'ready' ? 'ready' : 'initializing',
             error: undefined,
           }));
 
@@ -1193,23 +1195,75 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
           const updatedMetadata: CacheMetadataPayload = {
             ...(syncResult.metadata ??
               state.metadata ?? {
-                version: CACHE_METADATA_VERSION,
-                generatedAt: syncResult.serverTimestamp,
-                cacheCompletionMarker: {
-                  completeFromDate: null,
-                  completeToDate: null,
-                  hasOlderChats: false,
-                },
-                allowedModels: [],
-              }),
+              version: CACHE_METADATA_VERSION,
+              generatedAt: syncResult.serverTimestamp,
+              cacheCompletionMarker: {
+                completeFromDate: null,
+                completeToDate: null,
+                hasOlderChats: false,
+              },
+              allowedModels: [],
+            }),
             lastSyncedAt: syncResult.serverTimestamp,
             totalChats: syncResult.totalChats,
           };
 
           await manager.storeMetadata(CACHE_METADATA_KEY, updatedMetadata);
 
-          cacheDebug('refreshCache: cache updated, reloading state');
-          await loadFromCache({ forceUpdateQueries: true });
+          cacheDebug('refreshCache: updating in-memory state incrementally');
+
+          const nextChatsMap = new Map<
+            string,
+            CachedChatPayload<CachedChatRecord>
+          >();
+
+          // Start with existing chats
+          for (const chat of state.cachedChats) {
+            nextChatsMap.set(chat.chatId, chat);
+          }
+
+          // Remove deletions
+          for (const id of syncResult.deletions) {
+            nextChatsMap.delete(id);
+          }
+
+          // Apply upserts
+          const processingTime = Date.now();
+          for (const record of syncResult.upserts) {
+            const parsedLastUpdated = Date.parse(record.lastUpdatedAt);
+            const lastUpdatedAt = Number.isNaN(parsedLastUpdated)
+              ? processingTime
+              : parsedLastUpdated;
+
+            const payload: CachedChatPayload<CachedChatRecord> = {
+              chatId: record.chatId,
+              data: record,
+              lastUpdatedAt,
+              cachedAt: processingTime,
+              // Optimistic state is cleared on server update as the server is the source of truth
+              optimisticState: undefined,
+            };
+            nextChatsMap.set(record.chatId, payload);
+          }
+
+          // Convert to array and sort
+          const nextCachedChats = Array.from(nextChatsMap.values()).sort(
+            (a, b) => b.lastUpdatedAt - a.lastUpdatedAt
+          );
+
+          setState((prev) => ({
+            ...prev,
+            status: 'ready',
+            metadata: updatedMetadata,
+            cachedChats: nextCachedChats,
+            error: undefined,
+            isIntegrityValid: true,
+          }));
+
+          // 5. Update React Query
+          // We use the exact same logic as loadFromCache
+          primeChatHistoryQuery(qc, nextCachedChats, updatedMetadata, true);
+          primeBootstrapQueries(qc, nextCachedChats, true);
         } catch (error) {
           if (error instanceof DOMException && error.name === 'AbortError') {
             cacheDebug('refreshCache: sync aborted');
@@ -1444,7 +1498,10 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CacheContextValue>(
     () => ({
       status: state.status,
-      ready: state.status === 'ready',
+      // Keep the cache "ready" while we have hydrated data, even if a
+      // background incremental sync temporarily switches status away from
+      // ready. This prevents UI skeletons from flashing during syncs.
+      ready: state.status === 'ready' || mergedCachedChats.length > 0,
       error: state.error,
       metadata: state.metadata,
       cachedChats: mergedCachedChats,

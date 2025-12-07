@@ -37,6 +37,24 @@ async function fetchChatBootstrap(
   return response.json();
 }
 
+/**
+ * Determines if a bootstrap response matches the requested chatId.
+ * For new chats (chatId undefined), any "new" kind bootstrap is valid.
+ * For existing chats, the bootstrap chatId must match exactly.
+ */
+function isBootstrapForChat(
+  bootstrap: ChatBootstrapResponse | undefined | null,
+  chatId: string | undefined
+): bootstrap is ChatBootstrapResponse {
+  if (!bootstrap) return false;
+  if (!chatId) {
+    // New chat: bootstrap should be for a new chat (kind === 'new')
+    // or match the chatId if it's already been created
+    return bootstrap.kind === 'new';
+  }
+  return bootstrap.chatId === chatId;
+}
+
 export function ChatComposer({ chatId }: { chatId?: string }) {
   const router = useRouter();
   const {
@@ -56,7 +74,8 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
       queryFn: () => fetchChatBootstrap(chatId),
       chatId,
       enabled: true,
-      staleTime: chatId ? 0 : 30_000, // Avoid duplicate new-chat fetches while still refreshing existing chats instantly
+      // Always refetch to ensure fresh data on navigation
+      staleTime: 0,
       verifyCache: !!chatId,
       onError: (err) => {
         console.error('Failed to load chat bootstrap data:', err);
@@ -82,11 +101,16 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     router.replace(loginUrl);
   }, [chatId, error, router, sessionData, sessionStatus]);
 
-  const stableBootstrap = useStableBootstrap({
+  const bootstrap = useStableBootstrap({
     chatId,
     queryData,
     cachedBootstrap,
   });
+
+  // Only use bootstrap if it matches the current chatId
+  const validBootstrap = isBootstrapForChat(bootstrap, chatId)
+    ? bootstrap
+    : null;
 
   useEffect(() => {
     hasRequestedSyncRef.current = false;
@@ -104,8 +128,8 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     });
   }, [chatId, cachedBootstrap, isCacheReady, refreshCache]);
 
-  // Show error state if there's an error
-  if (error && !stableBootstrap) {
+  // Show error state if there's an error and no valid bootstrap
+  if (error && !validBootstrap) {
     return (
       <div className="flex h-dvh items-center justify-center bg-background">
         <span className="text-sm text-red-500">
@@ -115,48 +139,41 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     );
   }
 
-  if (!stableBootstrap) {
+  if (!validBootstrap) {
     return <ChatLoadingSkeleton variant={chatId ? 'existing' : 'new'} />;
   }
 
   const initialBranchState: BranchSelectionSnapshot =
-    stableBootstrap.kind === 'existing'
-      ? stableBootstrap.initialBranchState
-      : (stableBootstrap.initialBranchState ?? { rootMessageIndex: null });
+    validBootstrap.kind === 'existing'
+      ? validBootstrap.initialBranchState
+      : (validBootstrap.initialBranchState ?? { rootMessageIndex: null });
 
-  const commonProps = useMemo(
-    () =>
-      ({
-        id: stableBootstrap.chatId,
-        initialChatModel: stableBootstrap.initialChatModel,
-        initialVisibilityType: stableBootstrap.initialVisibilityType,
-        isReadonly: stableBootstrap.isReadonly,
-        autoResume: stableBootstrap.autoResume,
-        allowedModels: stableBootstrap.allowedModels,
-        initialSettings: stableBootstrap.initialSettings ?? null,
-        initialAgent: stableBootstrap.initialAgent ?? null,
-        initialMessages: stableBootstrap.initialMessages ?? [],
-        initialBranchState,
-      }) as const,
-    [initialBranchState, stableBootstrap]
-  );
-
-  const chatElement =
-    stableBootstrap.kind === 'existing' ? (
-      <Chat
-        key={stableBootstrap.chatId}
-        {...commonProps}
-        agentId={stableBootstrap.agentId ?? undefined}
-        initialLastContext={stableBootstrap.initialLastContext ?? undefined}
-      />
-    ) : (
-      <Chat key={stableBootstrap.chatId} {...commonProps} />
-    );
+  const commonProps = {
+    id: validBootstrap.chatId,
+    initialChatModel: validBootstrap.initialChatModel,
+    initialVisibilityType: validBootstrap.initialVisibilityType,
+    isReadonly: validBootstrap.isReadonly,
+    autoResume: validBootstrap.autoResume,
+    allowedModels: validBootstrap.allowedModels,
+    initialSettings: validBootstrap.initialSettings ?? null,
+    initialAgent: validBootstrap.initialAgent ?? null,
+    initialMessages: validBootstrap.initialMessages ?? [],
+    initialBranchState,
+  } as const;
 
   return (
     <>
-      {stableBootstrap.shouldSetLastChatUrl ? <SetLastChatUrl /> : null}
-      {chatElement}
+      {validBootstrap.shouldSetLastChatUrl ? <SetLastChatUrl /> : null}
+      {validBootstrap.kind === 'existing' ? (
+        <Chat
+          key={validBootstrap.chatId}
+          {...commonProps}
+          agentId={validBootstrap.agentId ?? undefined}
+          initialLastContext={validBootstrap.initialLastContext ?? undefined}
+        />
+      ) : (
+        <Chat key={validBootstrap.chatId} {...commonProps} />
+      )}
     </>
   );
 }
@@ -167,13 +184,24 @@ type StableBootstrapParams = {
   cachedBootstrap?: ChatBootstrapResponse;
 };
 
+/**
+ * Hook that manages bootstrap state transitions during navigation.
+ * 
+ * Key behaviors:
+ * - Immediately clears stale bootstrap when chatId changes
+ * - Uses cached data as initial value when available
+ * - Updates state when fresh query data arrives
+ * - Prevents stale data from persisting across navigations
+ */
 function useStableBootstrap({
   chatId,
   queryData,
   cachedBootstrap,
-}: StableBootstrapParams) {
-  const cachedForChat = useMemo(() => {
+}: StableBootstrapParams): ChatBootstrapResponse | null {
+  // Memoize cached bootstrap that matches the current chatId
+  const validCachedBootstrap = useMemo(() => {
     if (!cachedBootstrap) return undefined;
+    // For existing chats, ensure the cached bootstrap matches
     if (chatId && cachedBootstrap.chatId !== chatId) {
       return undefined;
     }
@@ -181,66 +209,87 @@ function useStableBootstrap({
   }, [cachedBootstrap, chatId]);
 
   const [bootstrap, setBootstrap] = useState<ChatBootstrapResponse | null>(
-    () => queryData ?? cachedForChat ?? null
+    () => {
+      // Initialize with query data or valid cached bootstrap
+      return queryData ?? validCachedBootstrap ?? null;
+    }
   );
 
   const previousChatIdRef = useRef<string | undefined>(chatId);
 
+  // Handle chatId changes - this is the key to fixing the race condition
+  useEffect(() => {
+    const previousChatId = previousChatIdRef.current;
+
+    if (previousChatId === chatId) {
+      return;
+    }
+
+    previousChatIdRef.current = chatId;
+
+    // chatId changed - clear bootstrap immediately if it doesn't match
+    setBootstrap((current) => {
+      // If we have fresh query data for the new chatId, use it
+      if (queryData) {
+        if (!chatId && queryData.kind === 'new') {
+          return queryData;
+        }
+        if (chatId && queryData.chatId === chatId) {
+          return queryData;
+        }
+      }
+
+      // If we have valid cached bootstrap for the new chatId, use it
+      if (validCachedBootstrap) {
+        if (!chatId && validCachedBootstrap.kind === 'new') {
+          return validCachedBootstrap;
+        }
+        if (chatId && validCachedBootstrap.chatId === chatId) {
+          return validCachedBootstrap;
+        }
+      }
+
+      // Otherwise clear the bootstrap to show loading state
+      // This prevents showing stale data from the previous chat
+      return null;
+    });
+  }, [chatId, queryData, validCachedBootstrap]);
+
+  // Update bootstrap when query data changes
   useEffect(() => {
     if (!queryData) {
       return;
     }
 
     setBootstrap((current) => {
+      // No current bootstrap - use the new data
       if (!current) {
         return queryData;
       }
 
+      // Chat ID mismatch - use new data
       if (current.chatId !== queryData.chatId) {
         return queryData;
       }
 
+      // Same chat, check if data changed
       if (!equal(current, queryData)) {
         return queryData;
       }
 
+      // No change needed
       return current;
     });
   }, [queryData]);
 
+  // Fill in cached bootstrap if we don't have any data yet
   useEffect(() => {
-    if (bootstrap || !cachedForChat) {
+    if (bootstrap || !validCachedBootstrap) {
       return;
     }
 
-    setBootstrap(cachedForChat);
-  }, [bootstrap, cachedForChat]);
-
-  useEffect(() => {
-    if (previousChatIdRef.current === chatId) {
-      return;
-    }
-
-    previousChatIdRef.current = chatId;
-
-    if (!chatId) {
-      setBootstrap(queryData ?? cachedForChat ?? null);
-      return;
-    }
-
-    setBootstrap((current) => {
-      if (current && current.chatId === chatId) {
-        return current;
-      }
-      if (queryData && queryData.chatId === chatId) {
-        return queryData;
-      }
-      if (cachedForChat && cachedForChat.chatId === chatId) {
-        return cachedForChat;
-      }
-      return null;
-    });
-  }, [cachedForChat, chatId, queryData]);
+    setBootstrap(validCachedBootstrap);
+  }, [bootstrap, validCachedBootstrap]);
 
   return bootstrap;
 }
