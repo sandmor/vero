@@ -116,6 +116,25 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
     ? bootstrap
     : null;
 
+  useEffect(() => {
+    if (isNewChat) {
+      document.title = 'New Chat';
+      return;
+    }
+
+    let title: string | undefined;
+
+    if (cachedBootstrap?.kind === 'existing') {
+      title = cachedBootstrap.prefetchedChat?.title;
+    } else if (validBootstrap?.kind === 'existing') {
+      title = validBootstrap.prefetchedChat?.title;
+    }
+
+    if (title) {
+      document.title = title;
+    }
+  }, [isNewChat, cachedBootstrap, validBootstrap]);
+
   const isMissingExistingChat =
     !isNewChat && existingLoadState === 'missing' && !validBootstrap;
 
