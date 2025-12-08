@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { hkdfSync } from 'crypto';
+import { readGuestSession } from '@/lib/auth/guest';
 
 const KEY_LENGTH_BYTES = 32;
 const HKDF_DIGEST = 'sha256';
@@ -38,29 +39,43 @@ async function resolveStableSessionId(): Promise<{
     !!process.env.CLERK_SECRET_KEY &&
     !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-  if (!hasClerkEnv) {
-    return { userId: null, stableId: null };
+  if (hasClerkEnv) {
+    try {
+      const authState = await auth();
+      const { userId, sessionId, sessionClaims } = authState;
+
+      if (userId || sessionId) {
+        const claims = sessionClaims as Record<string, unknown> | undefined;
+        const stableId =
+          sessionId ||
+          (typeof claims?.sid === 'string'
+            ? (claims.sid as string)
+            : undefined) ||
+          userId ||
+          null;
+
+        return { userId: userId ?? null, stableId };
+      }
+    } catch (error) {
+      console.warn(
+        'Failed to resolve Clerk session for encryption key request',
+        error
+      );
+      // Fallthrough to guest check
+    }
   }
 
+  // Fallback: Check for guest session
   try {
-    const authState = await auth();
-    const { userId, sessionId, sessionClaims } = authState;
-
-    const claims = sessionClaims as Record<string, unknown> | undefined;
-    const stableId =
-      sessionId ||
-      (typeof claims?.sid === 'string' ? (claims.sid as string) : undefined) ||
-      userId ||
-      null;
-
-    return { userId: userId ?? null, stableId };
+    const guest = await readGuestSession();
+    if (guest?.uid) {
+      return { userId: guest.uid, stableId: guest.uid };
+    }
   } catch (error) {
-    console.warn(
-      'Failed to resolve Clerk session for encryption key request',
-      error
-    );
-    return { userId: null, stableId: null };
+    console.warn('Failed to resolve guest session for encryption key', error);
   }
+
+  return { userId: null, stableId: null };
 }
 
 function unauthorizedResponse(): NextResponse {
