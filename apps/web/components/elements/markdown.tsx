@@ -4,8 +4,18 @@ import { type ComponentProps, memo } from 'react';
 import { Streamdown } from 'streamdown';
 import remarkBreaks from 'remark-breaks';
 import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
 import { useTheme } from 'next-themes';
 import { cn, normalizeLatexMathDelimiters } from '@/lib/utils';
+import { CodeBlock } from './code-block';
+import { TableView } from './table-view';
+import {
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 export type MarkdownProps = ComponentProps<typeof Streamdown>;
 
@@ -23,6 +33,7 @@ const MarkdownComponent = ({
   }
 
   const extraRemarkPlugins: any[] = [
+    remarkGfm,
     remarkBreaks,
     [remarkMath, { singleDollarTextMath: true }],
   ];
@@ -37,6 +48,41 @@ const MarkdownComponent = ({
     ],
     mermaidConfig: {
       theme: mermaidTheme,
+    },
+    components: {
+      ...((props as any).components || {}),
+      table: (props: any) => <TableView {...props} />,
+      thead: ({ node, ...props }: any) => <TableHeader {...props} />,
+      tbody: ({ node, ...props }: any) => <TableBody {...props} />,
+      tr: ({ node, ...props }: any) => <TableRow {...props} />,
+      th: ({ node, ...props }: any) => <TableHead {...props} />,
+      td: ({ node, ...props }: any) => <TableCell {...props} />,
+      code: ({ node, inline, className, children, ...props }: any) => {
+        const match = /language-(\w+)/.exec(className || '');
+        const language = match ? match[1] : '';
+        const codeContent = String(children).replace(/\n$/, '');
+
+        if (!inline && (language === 'tsv' || language === 'csv')) {
+          return <TableView content={codeContent} />;
+        }
+
+        if (!inline && match) {
+          return (
+            <CodeBlock
+              language={language}
+              code={codeContent}
+              className="my-4"
+              {...props}
+            />
+          );
+        }
+
+        return (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        );
+      },
     },
   } as typeof props & { remarkPlugins: any[] };
 

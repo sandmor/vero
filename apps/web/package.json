@@ -49,6 +49,7 @@
     "@vercel/blob": "^2.0.0",
     "@vercel/functions": "^3.3.4",
     "@vercel/otel": "^2.1.0",
+    "@virid/db": "workspace:*",
     "@xstate/react": "^6.0.0",
     "ai": "5.0.106",
     "babel-plugin-react-compiler": "^1.0.0",
@@ -88,6 +89,7 @@
     "react-syntax-highlighter": "^16.1.0",
     "redis": "^5.10.0",
     "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "resumable-stream": "^2.2.8",
     "server-only": "^0.0.1",
@@ -102,8 +104,7 @@
     "usehooks-ts": "^3.1.1",
     "xstate": "^5.24.0",
     "zod": "^4.1.13",
-    "zustand": "^5.0.9",
-    "@virid/db": "workspace:*"
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
