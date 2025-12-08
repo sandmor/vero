@@ -8,7 +8,7 @@ import {
   ChatAction,
   type ChatChangedPayload,
 } from '@/lib/realtime';
-import { useEncryptedCache } from '@/components/encrypted-cache-provider';
+import { getSyncManager } from '@/lib/cache/sync-manager';
 
 type ConnectionState =
   | 'disabled'
@@ -24,12 +24,11 @@ const IS_ENABLED = !!GATEWAY_URL;
  * Hook to manage the realtime WebSocket connection for chat notifications.
  *
  * Automatically connects when authenticated and disconnects on sign out.
- * Integrates with the encrypted cache to update local state when changes occur.
+ * Integrates with the SyncManager to coordinate cache updates and avoid race conditions.
  */
 export function useRealtimeConnection() {
   const { getToken, isSignedIn } = useAuth();
   const queryClient = useQueryClient();
-  const { refreshCache } = useEncryptedCache();
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(
     IS_ENABLED ? 'disconnected' : 'disabled'
@@ -41,28 +40,31 @@ export function useRealtimeConnection() {
   const handleChatChanged = useCallback(
     (payload: ChatChangedPayload) => {
       const { chatId, action } = payload;
+      const syncManager = getSyncManager();
 
       switch (action) {
         case ChatAction.CREATED:
         case ChatAction.UPDATED:
           // Invalidate the specific chat's queries to force refetch
+          // Note: The SyncManager will filter this if it's an echo of own change
           queryClient.invalidateQueries({
             queryKey: ['chat', 'bootstrap', chatId],
           });
-          // Refresh the cache to sync new/updated chat
-          refreshCache({ force: true });
+          // Request sync through the SyncManager (handles debouncing, echo filtering, protection)
+          syncManager?.requestSync('realtime', chatId);
           break;
 
         case ChatAction.DELETED:
-          // Remove from React Query cache
+          // Remove from React Query cache immediately
           queryClient.removeQueries({
             queryKey: ['chat', 'bootstrap', chatId],
           });
-          refreshCache({ force: true });
+          // Request sync through the SyncManager
+          syncManager?.requestSync('realtime', chatId);
           break;
       }
     },
-    [queryClient, refreshCache]
+    [queryClient]
   );
 
   useEffect(() => {

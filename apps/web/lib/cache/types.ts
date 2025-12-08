@@ -8,11 +8,24 @@ export type CacheCompletionMarker = {
   hasOlderChats: boolean;
 };
 
+/**
+ * Defaults for creating new chats. These are derived from server-side config
+ * and user tier/BYOK settings, and are included in sync metadata.
+ */
+export type NewChatDefaults = {
+  /** The default model to use for new chats */
+  defaultModelId: string;
+  /** List of allowed model IDs for the user */
+  allowedModelIds: string[];
+};
+
 export type CacheMetadataPayload = {
   version: number;
   generatedAt: string;
   cacheCompletionMarker: CacheCompletionMarker;
   allowedModels: ChatModelOption[];
+  /** Defaults for creating new chats */
+  newChatDefaults: NewChatDefaults;
   // Sync tracking
   lastSyncedAt?: string;
   totalChats?: number;

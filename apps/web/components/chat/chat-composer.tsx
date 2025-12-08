@@ -4,35 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Chat } from '@/components/chat';
 import { SetLastChatUrl } from '@/components/set-last-chat-url';
-import { toast } from '@/components/toast';
 import type {
   BranchSelectionSnapshot,
   ChatBootstrapResponse,
 } from '@/types/chat-bootstrap';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
-import { useReactQueryWithCache } from '@/hooks/use-react-query-with-cache';
-import equal from 'fast-deep-equal';
 import { ChatLoadingSkeleton } from '@/components/chat/chat-loading-skeleton';
 import { useAppSession } from '@/hooks/use-app-session';
 import { buildLoginRedirectUrl } from '@/lib/auth/redirects';
-
-async function fetchNewChatBootstrap(): Promise<ChatBootstrapResponse> {
-  const response = await fetch('/api/chat/bootstrap', {
-    method: 'GET',
-    credentials: 'include',
-    cache: 'no-store',
-  });
-
-  if (!response.ok) {
-    const error: Error & { status?: number } = new Error(
-      'Failed to load chat bootstrap data'
-    );
-    error.status = response.status;
-    throw error;
-  }
-
-  return response.json();
-}
 
 /**
  * Determines if a bootstrap response matches the requested chatId.
@@ -56,6 +35,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   const router = useRouter();
   const {
     getCachedBootstrap,
+    generateNewChatBootstrap,
     refreshCache,
     ready: isCacheReady,
   } = useEncryptedCache();
@@ -67,37 +47,26 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   const cachedBootstrap = chatId ? getCachedBootstrap(chatId) : undefined;
   const { data: sessionData, status: sessionStatus } = useAppSession();
 
-  const { data: queryData, error } =
-    useReactQueryWithCache<ChatBootstrapResponse>({
-      queryKey: isNewChat
-        ? ['chat', 'bootstrap', 'new']
-        : ['chat', 'bootstrap', chatId ?? ''],
-      queryFn: fetchNewChatBootstrap,
-      chatId: isNewChat ? undefined : chatId,
-      enabled: isNewChat,
-      staleTime: 0,
-      verifyCache: false,
-      onError: (err) => {
-        console.error('Failed to load chat bootstrap data:', err);
-        toast({
-          type: 'error',
-          description: 'Failed to load chat. Please try again.',
-        });
-      },
-    });
+  // For new chats, generate bootstrap from cache metadata
+  const newChatBootstrap = useMemo(() => {
+    if (!isNewChat || !isCacheReady) return null;
+    return generateNewChatBootstrap();
+  }, [isNewChat, isCacheReady, generateNewChatBootstrap]);
+
+  // Track if user is not logged in (for redirecting guests)
+  const [needsAuth, setNeedsAuth] = useState(false);
 
   useEffect(() => {
     if (isNewChat) return;
-    if (!error) return;
-    const status = (error as Error & { status?: number })?.status;
-    if (!status || (status !== 404 && status !== 401)) return;
+    if (existingLoadState !== 'missing') return;
     if (sessionStatus !== 'success') return;
     const userType = sessionData?.session?.user?.type;
     if (userType === 'regular') return;
 
+    setNeedsAuth(true);
     const loginUrl = buildLoginRedirectUrl('/chat');
     router.replace(loginUrl);
-  }, [error, isNewChat, router, sessionData, sessionStatus]);
+  }, [existingLoadState, isNewChat, router, sessionData, sessionStatus]);
 
   useEffect(() => {
     hasRequestedSyncRef.current = false;
@@ -138,7 +107,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
 
   const bootstrap = useStableBootstrap({
     chatId,
-    queryData: isNewChat ? queryData : undefined,
+    newChatBootstrap: isNewChat ? newChatBootstrap : undefined,
     cachedBootstrap,
   });
 
@@ -150,14 +119,12 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   const isMissingExistingChat =
     !isNewChat && existingLoadState === 'missing' && !validBootstrap;
 
-  // Show error state if there's an error and no valid bootstrap
-  if ((error && !validBootstrap) || isMissingExistingChat) {
+  // Show error state for missing existing chat (not found or auth required)
+  if (isMissingExistingChat && !needsAuth) {
     return (
       <div className="flex h-dvh items-center justify-center bg-background">
         <span className="text-sm text-red-500">
-          {isMissingExistingChat
-            ? 'Chat not found or no longer accessible.'
-            : 'Failed to load chat. Please try again.'}
+          Chat not found or no longer accessible.
         </span>
       </div>
     );
@@ -204,7 +171,7 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
 
 type StableBootstrapParams = {
   chatId?: string;
-  queryData?: ChatBootstrapResponse;
+  newChatBootstrap?: ChatBootstrapResponse | null;
   cachedBootstrap?: ChatBootstrapResponse;
 };
 
@@ -214,12 +181,12 @@ type StableBootstrapParams = {
  * Key behaviors:
  * - Immediately clears stale bootstrap when chatId changes
  * - Uses cached data as initial value when available
- * - Updates state when fresh query data arrives
+ * - For new chats, uses generated bootstrap from cache metadata
  * - Prevents stale data from persisting across navigations
  */
 function useStableBootstrap({
   chatId,
-  queryData,
+  newChatBootstrap,
   cachedBootstrap,
 }: StableBootstrapParams): ChatBootstrapResponse | null {
   // Memoize cached bootstrap that matches the current chatId
@@ -234,8 +201,8 @@ function useStableBootstrap({
 
   const [bootstrap, setBootstrap] = useState<ChatBootstrapResponse | null>(
     () => {
-      // Initialize with query data or valid cached bootstrap
-      return queryData ?? validCachedBootstrap ?? null;
+      // Initialize with new chat bootstrap or valid cached bootstrap
+      return newChatBootstrap ?? validCachedBootstrap ?? null;
     }
   );
 
@@ -253,14 +220,9 @@ function useStableBootstrap({
 
     // chatId changed - clear bootstrap immediately if it doesn't match
     setBootstrap((current) => {
-      // If we have fresh query data for the new chatId, use it
-      if (queryData) {
-        if (!chatId && queryData.kind === 'new') {
-          return queryData;
-        }
-        if (chatId && queryData.chatId === chatId) {
-          return queryData;
-        }
+      // For new chats, use generated bootstrap from cache
+      if (!chatId && newChatBootstrap) {
+        return newChatBootstrap;
       }
 
       // If we have valid cached bootstrap for the new chatId, use it
@@ -277,34 +239,31 @@ function useStableBootstrap({
       // This prevents showing stale data from the previous chat
       return null;
     });
-  }, [chatId, queryData, validCachedBootstrap]);
+  }, [chatId, newChatBootstrap, validCachedBootstrap]);
 
-  // Update bootstrap when query data changes
+  // Update bootstrap when newChatBootstrap becomes available (for new chats)
   useEffect(() => {
-    if (!queryData) {
+    if (!newChatBootstrap) {
       return;
     }
 
     setBootstrap((current) => {
       // No current bootstrap - use the new data
       if (!current) {
-        return queryData;
+        return newChatBootstrap;
       }
 
-      // Chat ID mismatch - use new data
-      if (current.chatId !== queryData.chatId) {
-        return queryData;
+      // If current is a new chat and we have fresh new chat bootstrap,
+      // only update if it's different (to avoid infinite loops)
+      if (current.kind === 'new' && newChatBootstrap.kind === 'new') {
+        // Keep the same bootstrap if chatId matches (already have one)
+        // This prevents regenerating a new UUID on every render
+        return current;
       }
 
-      // Same chat, check if data changed
-      if (!equal(current, queryData)) {
-        return queryData;
-      }
-
-      // No change needed
-      return current;
+      return newChatBootstrap;
     });
-  }, [queryData]);
+  }, [newChatBootstrap]);
 
   // Fill in cached bootstrap if we don't have any data yet
   useEffect(() => {

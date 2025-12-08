@@ -206,13 +206,6 @@ export async function configureChatMocks(
                   : undefined) ?? window.location.origin);
         const { pathname } = new URL(targetUrl, window.location.origin);
 
-        if (pathname === '/api/chat/bootstrap') {
-          return new Response(JSON.stringify(window.__testMocks!.bootstrap), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-
         if (pathname === '/api/cache/sync') {
           const mocks = window.__testMocks!;
           const index = Math.min(
@@ -240,7 +233,10 @@ export async function configureChatMocks(
               ? pageResponse.chats.length
               : 0,
           });
-          // Return cache sync response format
+          // Return cache sync response format with newChatDefaults
+          const allowedModelIds = (mocks.bootstrap.allowedModels ?? []).map(
+            (m: ChatModelOption) => m.id
+          );
           return new Response(
             JSON.stringify({
               upserts: [],
@@ -257,6 +253,13 @@ export async function configureChatMocks(
                   completeFromDate: null,
                   completeToDate: null,
                   hasOlderChats: false,
+                },
+                newChatDefaults: {
+                  defaultModelId:
+                    mocks.bootstrap.initialChatModel ||
+                    allowedModelIds[0] ||
+                    '',
+                  allowedModelIds,
                 },
               },
             }),

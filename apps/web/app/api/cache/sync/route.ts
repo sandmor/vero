@@ -304,6 +304,10 @@ export async function POST(request: NextRequest) {
         completeToDate: newestChat?.createdAt.toISOString() ?? null,
         hasOlderChats: false, // With the new sync system, we aim for full sync
       },
+      newChatDefaults: {
+        defaultModelId: combinedModelIds[0] ?? DEFAULT_CHAT_MODEL,
+        allowedModelIds: combinedModelIds,
+      },
     };
   }
 

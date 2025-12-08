@@ -22,10 +22,20 @@ import type {
   SyncRequest,
   SyncResponse,
 } from '@/lib/cache/types';
+import {
+  initializeSyncManager,
+  destroySyncManager,
+  getSyncManager,
+} from '@/lib/cache/sync-manager';
 import { useAppSession } from '@/hooks/use-app-session';
-import type { ChatBootstrapResponse } from '@/types/chat-bootstrap';
+import type {
+  ChatBootstrapResponse,
+  NewChatBootstrap,
+} from '@/types/chat-bootstrap';
 import type { ChatHistory } from '@/types/chat-history';
 import { deserializeChat } from '@/lib/chat/serialization';
+import { generateUUID } from '@/lib/utils';
+import { isModelIdAllowed } from '@/lib/ai/models';
 
 const CACHE_METADATA_KEY = 'cache-metadata';
 const CACHE_METADATA_VERSION = 1;
@@ -163,6 +173,25 @@ function repairMetadataPayload(
     repaired = true;
   }
 
+  // Validate and repair newChatDefaults
+  let newChatDefaults: CacheMetadataPayload['newChatDefaults'];
+  if (
+    metadata.newChatDefaults &&
+    typeof metadata.newChatDefaults === 'object' &&
+    typeof metadata.newChatDefaults.defaultModelId === 'string' &&
+    Array.isArray(metadata.newChatDefaults.allowedModelIds)
+  ) {
+    newChatDefaults = metadata.newChatDefaults;
+  } else {
+    // Derive from allowedModels if missing
+    const allowedModelIds = allowedModels.map((m) => m.id);
+    newChatDefaults = {
+      defaultModelId: allowedModelIds[0] ?? '',
+      allowedModelIds,
+    };
+    repaired = true;
+  }
+
   const repairedMetadata: CacheMetadataPayload = {
     ...metadata,
     generatedAt,
@@ -172,6 +201,7 @@ function repairMetadataPayload(
       hasOlderChats,
     },
     allowedModels,
+    newChatDefaults,
   };
 
   return {
@@ -483,10 +513,20 @@ function validateMetadata(
     (marker.completeToDate === null ||
       typeof marker.completeToDate === 'string');
 
-  if (!markerIsValid || !Array.isArray(metadata.allowedModels)) {
+  const newChatDefaultsValid =
+    !!metadata.newChatDefaults &&
+    typeof metadata.newChatDefaults.defaultModelId === 'string' &&
+    Array.isArray(metadata.newChatDefaults.allowedModelIds);
+
+  if (
+    !markerIsValid ||
+    !Array.isArray(metadata.allowedModels) ||
+    !newChatDefaultsValid
+  ) {
     cacheDebug('validateMetadata: invalid structure detected', {
       marker,
       hasAllowedModelsArray: Array.isArray(metadata.allowedModels),
+      hasNewChatDefaults: newChatDefaultsValid,
     });
     return { ok: false, reason: 'invalid-structure' };
   }
@@ -586,16 +626,42 @@ type CacheContextValue = {
   error?: Error;
   metadata: CacheMetadataPayload | null;
   cachedChats: CachedChatPayload<CachedChatRecord>[];
-  refreshCache: (options?: { force?: boolean }) => Promise<void>;
+  refreshCache: (options?: {
+    force?: boolean;
+    excludeChatIds?: Set<string>;
+  }) => Promise<void>;
   upsertChatRecord: (
     record: CachedChatRecord,
     options?: { metadata?: CacheMetadataPayload | null }
   ) => Promise<void>;
   getCachedBootstrap: (chatId: string) => ChatBootstrapResponse | undefined;
+  /**
+   * Generates bootstrap data for a new chat from cache metadata.
+   * Returns null if cache is not ready or metadata is unavailable.
+   */
+  generateNewChatBootstrap: () => ChatBootstrapResponse | null;
   // Optimistic operations for immediate UI feedback
   addOptimisticChat: (chat: { id: string; title: string }) => void;
   removeOptimisticChat: (chatId: string) => void;
   updateChatTitle: (chatId: string, newTitle: string) => void;
+  // Sync manager integration
+  /**
+   * Set the active chat being viewed. This chat receives special sync protection.
+   */
+  setActiveChat: (chatId: string | null) => void;
+  /**
+   * Mark that generation has started on the active chat.
+   * During generation, the active chat is protected from external sync updates.
+   */
+  markGenerationStarted: () => void;
+  /**
+   * Mark that generation has ended on the active chat.
+   */
+  markGenerationEnded: () => void;
+  /**
+   * Record a local change to a chat (for echo filtering).
+   */
+  recordLocalChange: (chatId: string) => void;
 };
 
 const EncryptedCacheContext = createContext<CacheContextValue>({
@@ -606,9 +672,14 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   refreshCache: async () => {},
   upsertChatRecord: async () => {},
   getCachedBootstrap: () => undefined,
+  generateNewChatBootstrap: () => null,
   addOptimisticChat: () => {},
   removeOptimisticChat: () => {},
   updateChatTitle: () => {},
+  setActiveChat: () => {},
+  markGenerationStarted: () => {},
+  markGenerationEnded: () => {},
+  recordLocalChange: () => {},
 });
 
 export function useEncryptedCache(): CacheContextValue {
@@ -1113,7 +1184,10 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   ); // Only depends on ensureManagerActivated (stable)
 
   const refreshCache = useCallback(
-    (options?: { force?: boolean }): Promise<void> => {
+    (options?: {
+      force?: boolean;
+      excludeChatIds?: Set<string>;
+    }): Promise<void> => {
       const currentState = stateRef.current;
       const currentIsLoggedIn = isLoggedInRef.current;
 
@@ -1130,6 +1204,8 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         return syncPromiseRef.current;
       }
 
+      const excludeChatIds = options?.excludeChatIds;
+
       const promise = (async () => {
         // Re-read state at start of async operation
         const state = stateRef.current;
@@ -1140,6 +1216,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
             forced: Boolean(options?.force),
             priorStatus: state.status,
             hasExistingMetadata: Boolean(state.metadata),
+            excludedChats: excludeChatIds ? Array.from(excludeChatIds) : [],
           });
           // Don't set status to initializing if we already have data
           // This prevents UI skeletons/blocking during background sync
@@ -1173,22 +1250,41 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
             totalChats: syncResult.totalChats,
           });
 
-          // Handle deletions
-          if (syncResult.deletions.length > 0) {
-            cacheDebug('refreshCache: removing deleted chats', {
-              count: syncResult.deletions.length,
+          // Filter out excluded chats from upserts (protected chats)
+          const filteredUpserts = excludeChatIds
+            ? syncResult.upserts.filter((u) => !excludeChatIds.has(u.chatId))
+            : syncResult.upserts;
+
+          // Filter out excluded chats from deletions (protected chats)
+          const filteredDeletions = excludeChatIds
+            ? syncResult.deletions.filter((id) => !excludeChatIds.has(id))
+            : syncResult.deletions;
+
+          if (excludeChatIds && excludeChatIds.size > 0) {
+            cacheDebug('refreshCache: filtered out protected chats', {
+              originalUpserts: syncResult.upserts.length,
+              filteredUpserts: filteredUpserts.length,
+              originalDeletions: syncResult.deletions.length,
+              filteredDeletions: filteredDeletions.length,
             });
-            await removeChatsFromCache(syncResult.deletions);
+          }
+
+          // Handle deletions
+          if (filteredDeletions.length > 0) {
+            cacheDebug('refreshCache: removing deleted chats', {
+              count: filteredDeletions.length,
+            });
+            await removeChatsFromCache(filteredDeletions);
             // Also remove from React Query cache
-            removeDeletedChatsFromQueries(qc, syncResult.deletions);
+            removeDeletedChatsFromQueries(qc, filteredDeletions);
           }
 
           // Handle upserts
-          if (syncResult.upserts.length > 0) {
+          if (filteredUpserts.length > 0) {
             cacheDebug('refreshCache: storing updated chats', {
-              count: syncResult.upserts.length,
+              count: filteredUpserts.length,
             });
-            await storeChatsInCache(syncResult.upserts);
+            await storeChatsInCache(filteredUpserts);
           }
 
           // Update metadata with sync timestamp
@@ -1203,6 +1299,10 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
                   hasOlderChats: false,
                 },
                 allowedModels: [],
+                newChatDefaults: {
+                  defaultModelId: '',
+                  allowedModelIds: [],
+                },
               }),
             lastSyncedAt: syncResult.serverTimestamp,
             totalChats: syncResult.totalChats,
@@ -1222,14 +1322,14 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
             nextChatsMap.set(chat.chatId, chat);
           }
 
-          // Remove deletions
-          for (const id of syncResult.deletions) {
+          // Remove deletions (use filtered list to preserve protected chats)
+          for (const id of filteredDeletions) {
             nextChatsMap.delete(id);
           }
 
-          // Apply upserts
+          // Apply upserts (use filtered list to preserve protected chats)
           const processingTime = Date.now();
-          for (const record of syncResult.upserts) {
+          for (const record of filteredUpserts) {
             const parsedLastUpdated = Date.parse(record.lastUpdatedAt);
             const lastUpdatedAt = Number.isNaN(parsedLastUpdated)
               ? processingTime
@@ -1376,27 +1476,70 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     };
   }, [isLoggedIn, sessionStatus]); // Only re-run on login state changes
 
-  // Store refreshCache in a ref for stable periodic sync
+  // Store refreshCache in a ref for stable SyncManager callback
   const refreshCacheRef = useRef(refreshCache);
   refreshCacheRef.current = refreshCache;
 
-  // Periodic sync effect - keeps cache in sync with server
+  // Initialize the SyncManager
+  useEffect(() => {
+    if (!isLoggedIn || state.status !== 'ready') {
+      destroySyncManager();
+      return;
+    }
+
+    const syncManager = initializeSyncManager({
+      onSync: async ({ force, excludeChatIds }) => {
+        await refreshCacheRef.current({ force, excludeChatIds });
+      },
+      debounceMs: 500,
+      postGenerationProtectionMs: 2000,
+      debug: IS_DEV,
+    });
+
+    cacheDebug('SyncManager initialized');
+
+    return () => {
+      destroySyncManager();
+    };
+  }, [isLoggedIn, state.status]);
+
+  // Periodic sync effect - uses SyncManager for coordination
   useEffect(() => {
     if (!isLoggedIn || state.status !== 'ready') {
       return;
     }
 
     const intervalId = setInterval(() => {
-      cacheDebug('Periodic sync: checking for updates');
-      refreshCacheRef.current().catch((error) => {
-        cacheDebug('Periodic sync: failed', error);
-      });
+      cacheDebug('Periodic sync: requesting through SyncManager');
+      const syncManager = getSyncManager();
+      syncManager?.requestSync('periodic');
     }, SYNC_INTERVAL_MS);
 
     return () => {
       clearInterval(intervalId);
     };
   }, [isLoggedIn, state.status]); // Only re-setup interval when login or ready state changes
+
+  // Sync manager method wrappers
+  const setActiveChat = useCallback((chatId: string | null) => {
+    const syncManager = getSyncManager();
+    syncManager?.setActiveChat(chatId);
+  }, []);
+
+  const markGenerationStarted = useCallback(() => {
+    const syncManager = getSyncManager();
+    syncManager?.markGenerationStarted();
+  }, []);
+
+  const markGenerationEnded = useCallback(() => {
+    const syncManager = getSyncManager();
+    syncManager?.markGenerationEnded();
+  }, []);
+
+  const recordLocalChange = useCallback((chatId: string) => {
+    const syncManager = getSyncManager();
+    syncManager?.recordLocalChange(chatId);
+  }, []);
 
   const getCachedBootstrap = useCallback(
     (chatId: string) => {
@@ -1405,6 +1548,61 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     },
     [state.cachedChats]
   );
+
+  /**
+   * Generates bootstrap data for a new chat from cache metadata.
+   * Uses stored user preferences (model, reasoning) from cookies client-side.
+   */
+  const generateNewChatBootstrap = useCallback((): NewChatBootstrap | null => {
+    const metadata = state.metadata;
+    if (!metadata || !metadata.newChatDefaults) {
+      return null;
+    }
+
+    const { newChatDefaults, allowedModels } = metadata;
+    const { defaultModelId, allowedModelIds } = newChatDefaults;
+
+    // Read user preferences from cookies (client-side)
+    const getCookie = (name: string): string | undefined => {
+      if (typeof document === 'undefined') return undefined;
+      const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+      return match ? decodeURIComponent(match[2]) : undefined;
+    };
+
+    const cookieModelId = getCookie('chat-model');
+    const cookieReasoning = getCookie('chat-reasoning') as
+      | 'low'
+      | 'medium'
+      | 'high'
+      | undefined;
+
+    // Determine initial model: prefer cookie if allowed, otherwise use default
+    let initialChatModel = defaultModelId;
+    if (cookieModelId && isModelIdAllowed(cookieModelId, allowedModelIds)) {
+      initialChatModel = cookieModelId;
+    }
+
+    // Build initial settings if we have reasoning preference
+    const initialSettings =
+      cookieReasoning && ['low', 'medium', 'high'].includes(cookieReasoning)
+        ? { reasoningEffort: cookieReasoning }
+        : null;
+
+    return {
+      kind: 'new',
+      chatId: generateUUID(),
+      autoResume: false,
+      isReadonly: false,
+      initialVisibilityType: 'private',
+      initialChatModel,
+      allowedModels,
+      initialSettings,
+      initialAgent: null,
+      initialBranchState: { rootMessageIndex: null },
+      shouldSetLastChatUrl:
+        !!cookieModelId && isModelIdAllowed(cookieModelId, allowedModelIds),
+    };
+  }, [state.metadata]);
 
   const upsertChatRecord = useCallback(
     async (
@@ -1508,9 +1706,14 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       refreshCache,
       upsertChatRecord,
       getCachedBootstrap,
+      generateNewChatBootstrap,
       addOptimisticChat,
       removeOptimisticChat,
       updateChatTitle,
+      setActiveChat,
+      markGenerationStarted,
+      markGenerationEnded,
+      recordLocalChange,
     }),
     [
       state.status,
@@ -1519,10 +1722,15 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       mergedCachedChats,
       refreshCache,
       getCachedBootstrap,
+      generateNewChatBootstrap,
       upsertChatRecord,
       addOptimisticChat,
       removeOptimisticChat,
       updateChatTitle,
+      setActiveChat,
+      markGenerationStarted,
+      markGenerationEnded,
+      recordLocalChange,
     ]
   );
 

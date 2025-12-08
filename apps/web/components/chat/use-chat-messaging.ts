@@ -91,7 +91,13 @@ export function useChatMessaging({
 }: UseChatMessagingArgs) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { addOptimisticChat } = useEncryptedCache();
+  const {
+    addOptimisticChat,
+    setActiveChat,
+    markGenerationStarted,
+    markGenerationEnded,
+    recordLocalChange,
+  } = useEncryptedCache();
 
   const {
     getSelectedIds,
@@ -217,6 +223,14 @@ export function useChatMessaging({
   // Track previous streaming state to detect transitions
   const streamingStateRef = useRef(isStreamingStatus(status));
 
+  // Set this chat as the active chat for sync protection
+  useEffect(() => {
+    setActiveChat(chatId);
+    return () => {
+      setActiveChat(null);
+    };
+  }, [chatId, setActiveChat]);
+
   // Keep refs in sync with state
   useEffect(() => {
     messagesRef.current = messages;
@@ -309,19 +323,32 @@ export function useChatMessaging({
     return () => subscription.unsubscribe();
   }, [chatId, operationsActor, queryClient]);
 
-  // Sync streaming state with the operations machine
+  // Sync streaming state with the operations machine and SyncManager
   useEffect(() => {
     const isStreaming = isStreamingStatus(status);
     const wasStreaming = streamingStateRef.current;
 
     if (isStreaming && !wasStreaming) {
       sendOperations({ type: 'STREAM_STARTED' });
+      // Notify SyncManager that generation started - protects this chat from external syncs
+      markGenerationStarted();
     } else if (!isStreaming && wasStreaming) {
       sendOperations({ type: 'STREAM_FINISHED' });
+      // Notify SyncManager that generation ended - protection window begins
+      markGenerationEnded();
+      // Record local change for echo filtering
+      recordLocalChange(chatId);
     }
 
     streamingStateRef.current = isStreaming;
-  }, [status, sendOperations]);
+  }, [
+    status,
+    sendOperations,
+    chatId,
+    markGenerationStarted,
+    markGenerationEnded,
+    recordLocalChange,
+  ]);
 
   // Sync messages with the machine when they change externally
   useEffect(() => {
@@ -414,6 +441,9 @@ export function useChatMessaging({
           return { chatDeleted: true } as const;
         }
 
+        // Record local change for sync echo filtering
+        recordLocalChange(chatId);
+
         // Request tree sync after deletion
         sendOperations({ type: 'SYNC_TREE' });
 
@@ -438,6 +468,7 @@ export function useChatMessaging({
       getSelectedIds,
       handleChatDeleted,
       isReadonly,
+      recordLocalChange,
       removeFromSelection,
       sendOperations,
     ]
@@ -476,6 +507,9 @@ export function useChatMessaging({
           return;
         }
 
+        // Record local change for sync echo filtering
+        recordLocalChange(chatId);
+
         // Request tree sync after deletion
         sendOperations({ type: 'SYNC_TREE' });
         clearSelection();
@@ -508,6 +542,7 @@ export function useChatMessaging({
       getSelectedIds,
       handleChatDeleted,
       isReadonly,
+      recordLocalChange,
       sendOperations,
       setMessages,
     ]
@@ -746,6 +781,9 @@ export function useChatMessaging({
           editedText: trimmed,
         });
 
+        // Record local change for sync echo filtering
+        recordLocalChange(chatId);
+
         // Reset selection state
         selectionRef.current = null;
         currentMessageTreeRef.current = undefined;
@@ -783,6 +821,7 @@ export function useChatMessaging({
       fetchTree,
       getSelectedIds,
       isReadonly,
+      recordLocalChange,
       removeFromSelection,
       sendMessage,
       sendOperations,
@@ -871,6 +910,9 @@ export function useChatMessaging({
           editedText: trimmed,
         });
 
+        // Record local change for sync echo filtering
+        recordLocalChange(chatId);
+
         // Invalidate the bootstrap query cache so the updated message is fetched on reload
         queryClient.invalidateQueries({
           queryKey: ['chat', 'bootstrap', chatId],
@@ -890,7 +932,14 @@ export function useChatMessaging({
         throw error;
       }
     },
-    [chatId, ensureOperationsReady, isReadonly, queryClient, setMessages]
+    [
+      chatId,
+      ensureOperationsReady,
+      isReadonly,
+      queryClient,
+      recordLocalChange,
+      setMessages,
+    ]
   );
 
   const handleNavigate = useCallback(
