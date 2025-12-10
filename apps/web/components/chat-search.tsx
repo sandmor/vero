@@ -13,7 +13,6 @@ import {
   SortAsc,
   X,
 } from 'lucide-react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -72,44 +71,7 @@ import {
   endOfDay,
 } from 'date-fns';
 
-type SearchResults = {
-  chats: Chat[];
-  total: number;
-};
-
 const COMPACT_LIMIT = 8;
-const PAGE_SIZE = 20;
-
-async function fetchChatSearch(
-  query: string,
-  limit: number,
-  offset = 0
-): Promise<SearchResults & { nextOffset: number | null }> {
-  if (!query)
-    return {
-      chats: [],
-      total: 0,
-      nextOffset: null,
-    };
-
-  const res = await fetch(
-    `/api/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`
-  );
-
-  if (!res.ok) {
-    throw new Error('Failed to search chats');
-  }
-
-  const data: SearchResults = await res.json();
-
-  return {
-    ...data,
-    nextOffset:
-      data.chats.length < limit || data.total <= offset + data.chats.length
-        ? null
-        : offset + data.chats.length,
-  };
-}
 
 // Date filter presets
 type DatePreset = {
@@ -313,11 +275,9 @@ export function ChatSearch({
   const { setOpenMobile } = useSidebar();
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const cacheSyncRef = useRef<string | null>(null);
   const {
     cachedChats,
     ready: isCacheReady,
-    refreshCache,
     status: cacheStatus,
     error: cacheError,
   } = useEncryptedCache();
@@ -354,127 +314,16 @@ export function ChatSearch({
   // Search history for suggestions
   const { history, addToHistory, removeFromHistory } = useSearchHistory();
 
-  // Server search for comprehensive results
-  const {
-    data: serverResults,
-    isLoading: isServerLoading,
-    isFetching: isServerFetching,
-    isError: isServerError,
-  } = useQuery<SearchResults>({
-    queryKey: ['chat', 'search', debouncedQuery, 'compact'],
-    queryFn: async () => {
-      const response = await fetchChatSearch(debouncedQuery, COMPACT_LIMIT);
-      return {
-        chats: response.chats,
-        total: response.total,
-      };
-    },
-    enabled: debouncedQuery.length > 0,
-    staleTime: 30_000,
-  });
-
-  // Dialog infinite query for full results
-  const {
-    data: dialogPages,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-    isError: isInfiniteError,
-    isLoading: isInfiniteLoading,
-    isRefetching,
-  } = useInfiniteQuery<SearchResults & { nextOffset: number | null }>({
-    queryKey: ['chat', 'search', debouncedQuery, 'infinite'],
-    queryFn: async ({ pageParam = 0 }) =>
-      fetchChatSearch(
-        debouncedQuery,
-        PAGE_SIZE,
-        typeof pageParam === 'number' ? pageParam : 0
-      ),
-    getNextPageParam: (lastPage) =>
-      lastPage && lastPage.nextOffset !== null
-        ? lastPage.nextOffset
-        : undefined,
-    enabled: isDialogOpen && debouncedQuery.length > 0,
-    staleTime: 30_000,
-    initialPageParam: 0,
-  });
-
-  const dialogChats =
-    dialogPages?.pages.flatMap((page) => page?.chats ?? []) ?? [];
-  const dialogTotal = dialogPages?.pages[0]?.total ?? 0;
-  const isDialogLoading = isDialogOpen && isInfiniteLoading;
-  const isDialogFetching = isDialogOpen && (isFetchingNextPage || isRefetching);
-  const isDialogError = isDialogOpen && (isInfiniteError || isServerError);
-
-  // Sync cache when server returns results not in cache
-  useEffect(() => {
-    if (!isCacheReady) return;
-    if (!debouncedQuery) return;
-    if (!serverResults?.chats?.length) return;
-
-    const cachedIds = new Set(cachedChatEntities.map((chat) => chat.id));
-    const hasMissing = serverResults.chats.some(
-      (chat) => !cachedIds.has(chat.id)
-    );
-
-    if (hasMissing) {
-      const signature = `${debouncedQuery}-compact-${serverResults.chats.map((c) => c.id).join(',')}`;
-      if (cacheSyncRef.current !== signature) {
-        cacheSyncRef.current = signature;
-        void refreshCache();
-      }
-    }
-  }, [
-    isCacheReady,
-    debouncedQuery,
-    serverResults,
-    cachedChatEntities,
-    refreshCache,
-  ]);
-
-  useEffect(() => {
-    if (!isCacheReady) return;
-    if (!debouncedQuery) return;
-    if (!dialogChats.length) return;
-
-    const cachedIds = new Set(cachedChatEntities.map((chat) => chat.id));
-    const hasMissing = dialogChats.some((chat) => !cachedIds.has(chat.id));
-
-    if (hasMissing) {
-      const signature = `${debouncedQuery}-infinite-${dialogChats.map((c) => c.id).join(',')}`;
-      if (cacheSyncRef.current !== signature) {
-        cacheSyncRef.current = signature;
-        void refreshCache();
-      }
-    }
-  }, [
-    isCacheReady,
-    debouncedQuery,
-    dialogChats,
-    cachedChatEntities,
-    refreshCache,
-  ]);
-
-  // Combine client and server results for display
   const compactResults = useMemo(() => {
     if (!debouncedQuery) return [] as Chat[];
+    return clientResults.slice(0, COMPACT_LIMIT).map((r) => r.item);
+  }, [clientResults, debouncedQuery]);
 
-    const map = new Map<string, Chat>();
+  const totalResults = clientTotalCount;
 
-    // Add client results first (from cache - instant)
-    clientResults.slice(0, COMPACT_LIMIT).forEach((result) => {
-      map.set(result.item.id, result.item);
-    });
-
-    // Add server results (may have additional matches)
-    (serverResults?.chats ?? []).forEach((chat) => {
-      map.set(chat.id, chat);
-    });
-
-    return Array.from(map.values()).slice(0, COMPACT_LIMIT);
-  }, [clientResults, serverResults, debouncedQuery]);
-
-  const totalResults = Math.max(serverResults?.total ?? 0, clientTotalCount);
+  // For dialog
+  const dialogChats = useMemo(() => clientResults.map((r) => r.item), [clientResults]);
+  const dialogTotal = clientTotalCount;
 
   // Handle search submission (save to history)
   const handleSearchSubmit = useCallback(() => {
@@ -504,13 +353,6 @@ export function ChatSearch({
       setIsDialogOpen(false);
     }
   }, [debouncedQuery]);
-
-  // Reset cache sync ref when cache is not ready
-  useEffect(() => {
-    if (!isCacheReady) {
-      cacheSyncRef.current = null;
-    }
-  }, [isCacheReady]);
 
   // Track mounted state to prevent hydration flash
   useEffect(() => {
@@ -625,7 +467,7 @@ export function ChatSearch({
                     exit={{ opacity: 0, x: 10 }}
                     transition={{ duration: 0.15, ease: 'easeOut' }}
                   >
-                    {(isSearching || isServerLoading) && (
+                    {isSearching && (
                       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-1" />
                     )}
 
@@ -833,32 +675,13 @@ export function ChatSearch({
                 exit={{ opacity: 0, scale: 0.98 }}
                 transition={{ duration: 0.18, ease: 'easeOut' }}
               >
-                {(isServerLoading || isServerFetching) && !hasResults && (
-                  <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Searching conversations…
+                {!hasResults && (
+                  <div className="py-4 text-center text-sm text-muted-foreground">
+                    No conversations found for &quot;{debouncedQuery}&quot;.
                   </div>
                 )}
 
-                {isServerError &&
-                  !isServerLoading &&
-                  !isServerFetching &&
-                  !hasResults && (
-                    <div className="py-4 text-center text-sm text-destructive">
-                      Something went wrong while searching. Please try again.
-                    </div>
-                  )}
-
-                {!isServerError &&
-                  !isServerLoading &&
-                  !isServerFetching &&
-                  !hasResults && (
-                    <div className="py-4 text-center text-sm text-muted-foreground">
-                      No conversations found for &quot;{debouncedQuery}&quot;.
-                    </div>
-                  )}
-
-                {!isServerError && hasResults && (
+                {hasResults && (
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
                       <span>
@@ -946,24 +769,7 @@ export function ChatSearch({
                             </div>
                           </div>
 
-                          {(isDialogLoading || isDialogFetching) &&
-                            !dialogChats.length && (
-                              <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Fetching more conversations…
-                              </div>
-                            )}
-
-                          {isDialogError &&
-                            !isDialogLoading &&
-                            !dialogChats.length && (
-                              <div className="py-6 text-center text-sm text-destructive">
-                                We couldn&apos;t load the full results. Please
-                                try again later.
-                              </div>
-                            )}
-
-                          {!isDialogError && dialogChats.length > 0 && (
+                          {dialogChats.length > 0 && (
                             <ScrollArea className="max-h-[65vh] pr-4">
                               <div className="flex flex-col gap-3">
                                 <div className="text-xs text-muted-foreground">
@@ -985,32 +791,15 @@ export function ChatSearch({
                                     />
                                   ))}
                                 </SidebarMenu>
-
-                                {hasNextPage && (
-                                  <Button
-                                    className="mt-1 self-center"
-                                    disabled={isFetchingNextPage}
-                                    onClick={() => fetchNextPage()}
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                  >
-                                    {isFetchingNextPage
-                                      ? 'Loading more…'
-                                      : 'Load more results'}
-                                  </Button>
-                                )}
                               </div>
                             </ScrollArea>
                           )}
 
-                          {!isDialogError &&
-                            !dialogChats.length &&
-                            !isDialogLoading && (
-                              <div className="py-6 text-center text-sm text-muted-foreground">
-                                No additional conversations found.
-                              </div>
-                            )}
+                          {!dialogChats.length && (
+                            <div className="py-6 text-center text-sm text-muted-foreground">
+                              No additional conversations found.
+                            </div>
+                          )}
                         </DialogContent>
                       </Dialog>
                     )}
