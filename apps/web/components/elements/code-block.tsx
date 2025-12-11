@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils';
 import { BlockTopBar } from './block-top-bar';
 
 // Align the prism export with the React 19 JSX expectations once to avoid per-use casts.
-const PrismSyntaxHighlighter = SyntaxHighlighter as unknown as ComponentType<SyntaxHighlighterProps>;
+const PrismSyntaxHighlighter =
+  SyntaxHighlighter as unknown as ComponentType<SyntaxHighlighterProps>;
 
 export type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;

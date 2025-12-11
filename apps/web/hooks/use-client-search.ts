@@ -21,6 +21,15 @@ export interface UseClientSearchOptions {
   initialSort?: SortOption;
   /** Whether to search in message content (from bootstrap data) */
   searchMessages?: boolean;
+  /** Controlled state values */
+  value?: {
+    query: string;
+    sortBy: SortOption;
+    dateFilter: DateFilter | null;
+    onQueryChange: (query: string) => void;
+    onSortChange: (sort: SortOption) => void;
+    onDateChange: (filter: DateFilter | null) => void;
+  };
 }
 
 export interface ClientSearchState {
@@ -61,19 +70,67 @@ export function useClientSearch(
     debounceMs = 150,
     searchOptions = { fuzzy: true, prefixMatch: true },
     initialSort = 'relevance',
+    value,
   } = options;
 
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>(initialSort);
-  const [dateFilter, setDateFilter] = useState<DateFilter | null>(null);
+  // Internal state (used if not controlled)
+  const [internalQuery, setInternalQuery] = useState('');
+  const [internalSortBy, setInternalSortBy] = useState<SortOption>(initialSort);
+  const [internalDateFilter, setInternalDateFilter] =
+    useState<DateFilter | null>(null);
+
+  // Derived state (controlled or internal)
+  const query = value ? value.query : internalQuery;
+  const sortBy = value ? value.sortBy : internalSortBy;
+  const dateFilter = value ? value.dateFilter : internalDateFilter;
+
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
   const [isSearching, setIsSearching] = useState(false);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Handlers
+  const setQuery = useCallback(
+    (newQuery: string) => {
+      if (value) {
+        value.onQueryChange(newQuery);
+      } else {
+        setInternalQuery(newQuery);
+      }
+    },
+    [value]
+  );
+
+  const setSortBy = useCallback(
+    (newSort: SortOption) => {
+      if (value) {
+        value.onSortChange(newSort);
+      } else {
+        setInternalSortBy(newSort);
+      }
+    },
+    [value]
+  );
+
+  const setDateFilter = useCallback(
+    (newFilter: DateFilter | null) => {
+      if (value) {
+        value.onDateChange(newFilter);
+      } else {
+        setInternalDateFilter(newFilter);
+      }
+    },
+    [value]
+  );
 
   // Debounce the query
   useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
+    }
+
+    if (query === debouncedQuery) {
+      setIsSearching(false);
+      return;
     }
 
     setIsSearching(true);
@@ -88,7 +145,7 @@ export function useClientSearch(
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, debounceMs]);
+  }, [query, debounceMs, debouncedQuery]);
 
   // Parse the query
   const parsedQuery = useMemo(
@@ -163,7 +220,7 @@ export function useClientSearch(
     setDebouncedQuery('');
     setDateFilter(null);
     setSortBy(initialSort);
-  }, [initialSort]);
+  }, [initialSort, setQuery, setDateFilter, setSortBy]);
 
   const hasActiveFilters = useMemo(
     () => Boolean(debouncedQuery || dateFilter || sortBy !== 'relevance'),

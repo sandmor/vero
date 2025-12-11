@@ -21,7 +21,11 @@ export const BlockTopBar = ({
   const [isCopied, setIsCopied] = useState(false);
 
   const copyToClipboard = async () => {
-    if (typeof window === 'undefined' || !navigator.clipboard.writeText || !content) {
+    if (
+      typeof window === 'undefined' ||
+      !navigator.clipboard.writeText ||
+      !content
+    ) {
       return;
     }
 
