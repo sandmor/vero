@@ -1,25 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { deserializeChat } from '@/lib/chat/serialization';
+import type { CachedChatPayload } from '@/lib/cache/cache-manager';
+import type { CachedChatRecord } from '@/lib/cache/types';
 import type { Chat } from '@/lib/db/schema';
+import { searchIndexService } from '@/lib/search/search-index-service';
+import type { SortOption, WorkerSearchOptions } from '@/lib/search/search-index.types';
+import type { MessageSearchResult } from '@/lib/search/client-message-search';
 import {
-  search,
-  type SearchOptions,
-  type SearchResult,
   type ParsedQuery,
-  parseSearchQuery,
+  type SearchResult,
   applyDateFilter,
+  parseSearchQuery,
   type DateFilter,
 } from '@/lib/search/search-utils';
 
-export type SortOption = 'relevance' | 'newest' | 'oldest' | 'title';
+export type { SortOption } from '@/lib/search/search-index.types';
 
 export interface UseClientSearchOptions {
   /** Debounce delay in ms (default: 150) */
   debounceMs?: number;
-  /** Search options */
-  searchOptions?: SearchOptions;
   /** Initial sort option */
   initialSort?: SortOption;
-  /** Whether to search in message content (from bootstrap data) */
+  /** Whether to search message content */
   searchMessages?: boolean;
   /** Controlled state values */
   value?: {
@@ -41,14 +43,20 @@ export interface ClientSearchState {
   parsedQuery: ParsedQuery;
   /** Search results */
   results: SearchResult<Chat>[];
+  /** Message-level results */
+  messageResults: MessageSearchResult[];
   /** Whether search is in progress */
   isSearching: boolean;
+  /** Whether indexes are syncing/rebuilding */
+  isIndexing: boolean;
   /** Sort option */
   sortBy: SortOption;
   /** Date filter */
   dateFilter: DateFilter | null;
   /** Total count of results */
   totalCount: number;
+  /** Total count of message results */
+  messageCount: number;
 }
 
 export interface UseClientSearchReturn extends ClientSearchState {
@@ -59,17 +67,55 @@ export interface UseClientSearchReturn extends ClientSearchState {
   hasActiveFilters: boolean;
 }
 
+type SearchKey = string;
+
+class WorkerSearchManager {
+  private inFlight = new Map<
+    SearchKey,
+    Promise<Awaited<ReturnType<typeof searchIndexService.search>>>
+  >();
+
+  private makeKey(query: string, options: WorkerSearchOptions): SearchKey {
+    const after = options.dateFilter?.after ?? '';
+    const before = options.dateFilter?.before ?? '';
+    const searchMessages = options.searchMessages ? '1' : '0';
+    const sort = options.sortBy ?? 'relevance';
+    return [query, sort, after, before, searchMessages].join('||');
+  }
+
+  async search(
+    query: string,
+    options: WorkerSearchOptions,
+    cachedChats: CachedChatPayload<CachedChatRecord>[]
+  ) {
+    const key = this.makeKey(query, options);
+    const existing = this.inFlight.get(key);
+    if (existing) return existing;
+
+    const promise = searchIndexService
+      .search(query, options, cachedChats)
+      .finally(() => {
+        this.inFlight.delete(key);
+      });
+
+    this.inFlight.set(key, promise);
+    return promise;
+  }
+}
+
+const workerSearchManager = new WorkerSearchManager();
+
 /**
  * Hook for client-side chat search with debouncing, filtering, and sorting
  */
 export function useClientSearch(
-  chats: Chat[],
+  cachedChats: CachedChatPayload<CachedChatRecord>[],
   options: UseClientSearchOptions = {}
 ): UseClientSearchReturn {
   const {
     debounceMs = 150,
-    searchOptions = { fuzzy: true, prefixMatch: true },
     initialSort = 'relevance',
+    searchMessages = true,
     value,
   } = options;
 
@@ -86,7 +132,41 @@ export function useClientSearch(
 
   const [debouncedQuery, setDebouncedQuery] = useState(query);
   const [isSearching, setIsSearching] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [results, setResults] = useState<SearchResult<Chat>[]>([]);
+  const [messageResults, setMessageResults] = useState<MessageSearchResult[]>(
+    []
+  );
+
+  const deserializedChats = useMemo(
+    () => cachedChats.map((entry) => deserializeChat(entry.data.chat)),
+    [cachedChats]
+  );
+
+  const chatMap = useMemo(
+    () => new Map(deserializedChats.map((chat) => [chat.id, chat])),
+    [deserializedChats]
+  );
+
+  // Keep index in sync with encrypted cache
+  useEffect(() => {
+    let cancelled = false;
+    setIsIndexing(true);
+
+    searchIndexService
+      .syncChats(cachedChats)
+      .catch((error) => {
+        console.warn('Failed to sync search index', error);
+      })
+      .finally(() => {
+        if (!cancelled) setIsIndexing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedChats]);
 
   // Handlers
   const setQuery = useCallback(
@@ -153,67 +233,128 @@ export function useClientSearch(
     [debouncedQuery]
   );
 
-  // Apply date filter
-  const dateFilteredChats = useMemo(() => {
-    if (!dateFilter) return chats;
-    return applyDateFilter(chats, dateFilter);
-  }, [chats, dateFilter]);
+  // Local sort helper for empty-query scenarios
+  const sortChatsWithoutQuery = useCallback(
+    (chatsToSort: Chat[]) => {
+      const copy = [...chatsToSort];
+      switch (sortBy) {
+        case 'relevance':
+        case 'newest':
+          return copy.sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        case 'oldest':
+          return copy.sort(
+            (a, b) =>
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          );
+        case 'title':
+          return copy.sort((a, b) => a.title.localeCompare(b.title));
+        default:
+          return copy;
+      }
+    },
+    [sortBy]
+  );
 
-  // Perform search
-  const searchResults = useMemo(() => {
+  // Execute search in the web worker
+  useEffect(() => {
+    let cancelled = false;
+
+    // When query is empty, return locally filtered chats
     if (!debouncedQuery) {
-      // When no query, return all chats (respecting date filter)
-      return dateFilteredChats.map((chat) => ({
+      const filtered = dateFilter
+        ? applyDateFilter(deserializedChats, dateFilter)
+        : deserializedChats;
+      const sorted = sortChatsWithoutQuery(filtered).map((chat) => ({
         item: chat,
         score: 0,
         matches: [],
       }));
+
+      setResults(sorted);
+      setMessageResults([]);
+      setIsSearching(false);
+      return undefined;
     }
 
-    return search<Chat>(
-      dateFilteredChats,
-      debouncedQuery,
-      ['title'],
-      searchOptions
-    );
-  }, [dateFilteredChats, debouncedQuery, searchOptions]);
+    const serializedDateFilter = dateFilter
+      ? {
+        after: dateFilter.after?.toISOString(),
+        before: dateFilter.before?.toISOString(),
+      }
+      : null;
 
-  // Sort results
-  const sortedResults = useMemo(() => {
-    const results = [...searchResults];
+    const searchOptions: WorkerSearchOptions = {
+      sortBy,
+      dateFilter: serializedDateFilter,
+      searchMessages,
+    };
 
-    switch (sortBy) {
-      case 'relevance':
-        // Already sorted by relevance from search
-        if (debouncedQuery) return results;
-        // If no query, fall through to newest
-        return results.sort(
-          (a, b) =>
-            new Date(b.item.createdAt).getTime() -
-            new Date(a.item.createdAt).getTime()
-        );
+    setIsSearching(true);
 
-      case 'newest':
-        return results.sort(
-          (a, b) =>
-            new Date(b.item.createdAt).getTime() -
-            new Date(a.item.createdAt).getTime()
-        );
+    workerSearchManager
+      .search(debouncedQuery, searchOptions, cachedChats)
+      .then(({ chatResults, messageResults: workerMessages }) => {
+        if (cancelled) return;
 
-      case 'oldest':
-        return results.sort(
-          (a, b) =>
-            new Date(a.item.createdAt).getTime() -
-            new Date(b.item.createdAt).getTime()
-        );
+        const mappedChats = chatResults
+          .map((result) => {
+            const chat = chatMap.get(result.chatId);
+            return chat
+              ? ({
+                item: chat,
+                score: result.score,
+                matches: [],
+              } as SearchResult<Chat>)
+              : null;
+          })
+          .filter(Boolean) as SearchResult<Chat>[];
 
-      case 'title':
-        return results.sort((a, b) => a.item.title.localeCompare(b.item.title));
+        setResults(mappedChats);
 
-      default:
-        return results;
-    }
-  }, [searchResults, sortBy, debouncedQuery]);
+        if (searchMessages) {
+          const mappedMessages: MessageSearchResult[] = workerMessages.map(
+            (message) => ({
+              id: message.messageId,
+              chatId: message.chatId,
+              chatTitle: message.chatTitle,
+              createdAt: new Date(message.createdAt),
+              content: message.content,
+              snippet: message.snippet,
+              score: message.score,
+            })
+          );
+          setMessageResults(mappedMessages);
+        } else {
+          setMessageResults([]);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn('Search worker failed', error);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsSearching(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    debouncedQuery,
+    cachedChats,
+    chatMap,
+    dateFilter,
+    deserializedChats,
+    searchMessages,
+    sortBy,
+    sortChatsWithoutQuery,
+  ]);
 
   const clearSearch = useCallback(() => {
     setQuery('');
@@ -231,11 +372,14 @@ export function useClientSearch(
     query,
     debouncedQuery,
     parsedQuery,
-    results: sortedResults,
+    results,
+    messageResults,
     isSearching: isSearching && query !== debouncedQuery,
+    isIndexing,
     sortBy,
     dateFilter,
-    totalCount: sortedResults.length,
+    totalCount: results.length,
+    messageCount: messageResults.length,
     setQuery,
     setSortBy,
     setDateFilter,

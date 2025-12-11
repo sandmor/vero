@@ -15,7 +15,6 @@ import type { Chat } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
 import { ChatItem } from './sidebar-history-item';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
-import { deserializeChat } from '@/lib/chat/serialization';
 import { useClientSearch, useSearchHistory } from '@/hooks/use-client-search';
 import { useSearchStore } from '@/hooks/use-search-store';
 import { SearchActiveFilters } from './search/search-active-filters';
@@ -68,27 +67,18 @@ export function ChatSearch({
     error: cacheError,
   } = useEncryptedCache();
 
-  // Deserialize cached chats
-  const cachedChatEntities = useMemo(
-    () => cachedChats.map((entry) => deserializeChat(entry.data.chat)),
-    [cachedChats]
-  );
-
   // Client-side search with enhanced capabilities
   const {
     debouncedQuery,
     results: clientResults,
     isSearching,
+    isIndexing,
     totalCount: clientTotalCount,
     clearSearch,
     hasActiveFilters,
-  } = useClientSearch(cachedChatEntities, {
+  } = useClientSearch(cachedChats, {
     debounceMs: 150,
-    searchOptions: {
-      fuzzy: true,
-      prefixMatch: true,
-      caseSensitive: false,
-    },
+    searchMessages: true, // Even if we only show chat results here, perform the full search in case of the user opening the modal
     value: {
       query,
       sortBy,
@@ -238,7 +228,7 @@ export function ChatSearch({
                       exit={{ opacity: 0, x: 10 }}
                       transition={{ duration: 0.15, ease: 'easeOut' }}
                     >
-                      {isSearching && (
+                      {(isSearching || isIndexing) && (
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-1" />
                       )}
 

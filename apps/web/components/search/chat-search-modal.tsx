@@ -26,10 +26,8 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { SidebarMenu, useSidebar } from '@/components/ui/sidebar';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
-import { deserializeChat } from '@/lib/chat/serialization';
 import { useClientSearch, useSearchHistory } from '@/hooks/use-client-search';
 import { useSearchStore } from '@/hooks/use-search-store';
-import { useClientMessageSearch } from '@/hooks/use-client-message-search';
 import { getEncryptedCacheManager } from '@/lib/cache/cache-manager';
 import { ChatItem } from '../sidebar-history-item';
 import { SearchActiveFilters } from './search-active-filters';
@@ -88,25 +86,16 @@ export function ChatSearchModal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isModalOpen, setModalOpen]);
 
-  // Deserialize cached chats
-  const cachedChatEntities = useMemo(
-    () => cachedChats.map((entry) => deserializeChat(entry.data.chat)),
-    [cachedChats]
-  );
-
   const {
     debouncedQuery,
+    messageResults,
     results: clientResults,
     isSearching,
+    isIndexing,
     totalCount,
     clearSearch,
-  } = useClientSearch(cachedChatEntities, {
+  } = useClientSearch(cachedChats, {
     debounceMs: 150,
-    searchOptions: {
-      fuzzy: true,
-      prefixMatch: true,
-      caseSensitive: false,
-    },
     value: {
       query,
       sortBy,
@@ -116,22 +105,6 @@ export function ChatSearchModal({
       onDateChange: setDateFilter,
     },
   });
-
-  // Client-side search for message content
-  const {
-    results: messageResults,
-    isSearching: isMessageSearching,
-    setQuery: setMessageQuery,
-  } = useClientMessageSearch(cachedChats, {
-    debounceMs: 300,
-    sortBy,
-    dateFilter,
-  });
-
-  // Sync query to message search
-  useEffect(() => {
-    setMessageQuery(query);
-  }, [query, setMessageQuery]);
 
   // Search history for suggestions
   const { history, addToHistory, removeFromHistory } = useSearchHistory();
@@ -217,7 +190,7 @@ export function ChatSearchModal({
   const hasMessageResults = messageResults.length > 0;
   const hasClientResults = dialogChats.length > 0;
   const showSeparators = hasMessageResults && hasClientResults;
-  const isGlobalSearching = isSearching || isMessageSearching;
+  const isGlobalSearching = isSearching || isIndexing;
 
   return (
     <>
@@ -315,7 +288,7 @@ export function ChatSearchModal({
               {hasMessageResults || hasClientResults ? (
                 <ScrollArea className="h-full pr-4">
                   <div className="flex flex-col gap-6 pb-4">
-                    
+
                     {/* Message Matches */}
                     {hasMessageResults && (
                       <div className="space-y-2">
@@ -342,7 +315,7 @@ export function ChatSearchModal({
                     {hasClientResults && (
                       <div className="space-y-2">
                         <div className="text-xs font-medium text-muted-foreground sticky top-0 bg-background py-1 z-10 flex items-center gap-2">
-                           {showSeparators ? 'Conversation Titles' : `${totalCount} conversation${totalCount === 1 ? '' : 's'} found`}
+                          {showSeparators ? 'Conversation Titles' : `${totalCount} conversation${totalCount === 1 ? '' : 's'} found`}
                         </div>
                         <SidebarMenu className="gap-2">
                           {dialogChats.map((chat) => (
