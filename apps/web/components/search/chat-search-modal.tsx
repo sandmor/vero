@@ -29,11 +29,14 @@ import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { deserializeChat } from '@/lib/chat/serialization';
 import { useClientSearch, useSearchHistory } from '@/hooks/use-client-search';
 import { useSearchStore } from '@/hooks/use-search-store';
+import { useClientMessageSearch } from '@/hooks/use-client-message-search';
 import { getEncryptedCacheManager } from '@/lib/cache/cache-manager';
 import { ChatItem } from '../sidebar-history-item';
 import { SearchActiveFilters } from './search-active-filters';
 import { SearchFilterActions } from './search-filter-actions';
+import { SearchResultItem } from './search-result-item';
 import { SearchSuggestions } from './search-suggestions';
+import { Badge } from '../ui/badge';
 
 interface ChatSearchModalProps {
   currentChatId?: string;
@@ -113,6 +116,22 @@ export function ChatSearchModal({
       onDateChange: setDateFilter,
     },
   });
+
+  // Client-side search for message content
+  const {
+    results: messageResults,
+    isSearching: isMessageSearching,
+    setQuery: setMessageQuery,
+  } = useClientMessageSearch(cachedChats, {
+    debounceMs: 300,
+    sortBy,
+    dateFilter,
+  });
+
+  // Sync query to message search
+  useEffect(() => {
+    setMessageQuery(query);
+  }, [query, setMessageQuery]);
 
   // Search history for suggestions
   const { history, addToHistory, removeFromHistory } = useSearchHistory();
@@ -195,6 +214,11 @@ export function ChatSearchModal({
     }
   }, [isModalOpen]);
 
+  const hasMessageResults = messageResults.length > 0;
+  const hasClientResults = dialogChats.length > 0;
+  const showSeparators = hasMessageResults && hasClientResults;
+  const isGlobalSearching = isSearching || isMessageSearching;
+
   return (
     <>
       <Dialog open={isModalOpen} onOpenChange={setModalOpen}>
@@ -229,7 +253,7 @@ export function ChatSearchModal({
                     if (e.key === 'Escape') setShowSuggestions(false);
                   }}
                 />
-                {isSearching ? (
+                {isGlobalSearching ? (
                   <div className="absolute right-3 top-3">
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                   </div>
@@ -279,7 +303,7 @@ export function ChatSearchModal({
 
             {/* Results Area */}
             <div className="flex-1 min-h-0 overflow-hidden relative">
-              {!isCacheReady && (
+              {!isCacheReady && !hasMessageResults && (
                 <div className="absolute inset-0 z-10 bg-background/50 flex items-center justify-center">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -288,28 +312,55 @@ export function ChatSearchModal({
                 </div>
               )}
 
-              {dialogChats.length > 0 ? (
+              {hasMessageResults || hasClientResults ? (
                 <ScrollArea className="h-full pr-4">
-                  <div className="flex flex-col gap-3 pb-4">
-                    <div className="text-xs text-muted-foreground sticky top-0 bg-background py-1 z-10">
-                      {totalCount} conversation{totalCount === 1 ? '' : 's'}{' '}
-                      found
-                    </div>
-                    <SidebarMenu className="gap-2">
-                      {dialogChats.map((chat) => (
-                        <ChatItem
-                          chat={chat}
-                          isActive={chat.id === currentChatId}
-                          key={chat.id}
-                          onDelete={(chatId) => {
-                            setDeleteId(chatId);
-                            setShowDeleteDialog(true);
-                          }}
-                          onRename={onRename}
-                          setOpenMobile={setOpenMobile}
-                        />
-                      ))}
-                    </SidebarMenu>
+                  <div className="flex flex-col gap-6 pb-4">
+                    
+                    {/* Message Matches */}
+                    {hasMessageResults && (
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium text-muted-foreground sticky top-0 bg-background py-1 z-10 flex items-center gap-2">
+                          Message Matches
+                          <Badge variant="secondary" className="text-[10px] px-1 h-5">
+                            {messageResults.length}
+                          </Badge>
+                        </div>
+                        <SidebarMenu className="gap-2">
+                          {messageResults.map((result) => (
+                            <SearchResultItem
+                              key={result.id}
+                              result={result}
+                              query={query}
+                              onSelect={() => setModalOpen(false)}
+                            />
+                          ))}
+                        </SidebarMenu>
+                      </div>
+                    )}
+
+                    {/* Title Matches */}
+                    {hasClientResults && (
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium text-muted-foreground sticky top-0 bg-background py-1 z-10 flex items-center gap-2">
+                           {showSeparators ? 'Conversation Titles' : `${totalCount} conversation${totalCount === 1 ? '' : 's'} found`}
+                        </div>
+                        <SidebarMenu className="gap-2">
+                          {dialogChats.map((chat) => (
+                            <ChatItem
+                              chat={chat}
+                              isActive={chat.id === currentChatId}
+                              key={chat.id}
+                              onDelete={(chatId) => {
+                                setDeleteId(chatId);
+                                setShowDeleteDialog(true);
+                              }}
+                              onRename={onRename}
+                              setOpenMobile={setOpenMobile}
+                            />
+                          ))}
+                        </SidebarMenu>
+                      </div>
+                    )}
                   </div>
                 </ScrollArea>
               ) : (

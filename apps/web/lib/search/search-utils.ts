@@ -81,7 +81,7 @@ function levenshteinDistance(a: string, b: string): number {
 /**
  * Find all positions where a term matches in a text
  */
-function findMatchPositions(
+export function findMatchPositions(
   text: string,
   term: string,
   options: SearchOptions
@@ -155,7 +155,7 @@ function findMatchPositions(
 /**
  * Calculate a relevance score based on matches
  */
-function calculateScore(
+export function calculateScore(
   matches: SearchMatch[],
   textLength: number,
   termLength: number
