@@ -26,6 +26,43 @@ type MessagePart = NonNullable<ChatMessage['parts']>[number];
 const isToolPart = (part: MessagePart): part is ToolPart =>
   typeof part.type === 'string' && part.type.startsWith('tool-');
 
+const MessageAvatar = ({ role, model }: { role: string; model?: string }) => {
+  return (
+    <div
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center rounded-full ring-1 ring-border md:size-9',
+        role === 'assistant'
+          ? 'bg-background'
+          : 'bg-muted text-muted-foreground'
+      )}
+    >
+      {role === 'assistant' ? (
+        (() => {
+          const raw = model;
+          const derived = raw ? deriveChatModel(raw) : undefined;
+          const provider = derived
+            ? derived.provider
+            : raw
+              ? raw.split(':')[0]
+              : undefined;
+          switch (provider) {
+            case 'openai':
+              return <LogoOpenAI size={16} />;
+            case 'google':
+              return <LogoGoogle size={16} />;
+            case 'openrouter':
+              return <LogoOpenRouter size={16} />;
+            default:
+              return raw ? <Cpu size={16} /> : <Sparkle size={16} />;
+          }
+        })()
+      ) : (
+        <UserRound size={16} />
+      )}
+    </div>
+  );
+};
+
 const PurePreviewMessage = ({
   chatId,
   message,
@@ -109,38 +146,25 @@ const PurePreviewMessage = ({
       data-testid={`message-${message.role}`}
       initial={{ opacity: 0 }}
     >
-      <div className="flex w-full min-w-0 items-start gap-3 md:gap-4">
-        <div
-          className={cn(
-            '-mt-1 flex size-9 shrink-0 items-center justify-center rounded-full ring-1 ring-border',
-            message.role === 'assistant'
-              ? 'bg-background'
-              : 'bg-muted text-muted-foreground'
-          )}
-        >
-          {message.role === 'assistant' ? (
-            (() => {
-              const raw = message.metadata?.model as string | undefined;
-              const derived = raw ? deriveChatModel(raw) : undefined;
-              const provider = derived
-                ? derived.provider
-                : raw
-                  ? raw.split(':')[0]
-                  : undefined;
-              switch (provider) {
-                case 'openai':
-                  return <LogoOpenAI size={16} />;
-                case 'google':
-                  return <LogoGoogle size={16} />;
-                case 'openrouter':
-                  return <LogoOpenRouter size={16} />;
-                default:
-                  return raw ? <Cpu size={16} /> : <Sparkle size={16} />;
-              }
-            })()
-          ) : (
-            <UserRound size={16} />
-          )}
+      <div className="flex w-full min-w-0 flex-col gap-2 md:flex-row md:items-start md:gap-4">
+        <div className="flex items-center gap-2 md:hidden">
+          <MessageAvatar
+            role={message.role}
+            model={message.metadata?.model as string}
+          />
+          <span className="font-medium text-muted-foreground text-xs capitalize">
+            {message.role === 'user'
+              ? 'You'
+              : deriveChatModel(message.metadata?.model as string)?.name ||
+                'AI'}
+          </span>
+        </div>
+
+        <div className="-mt-1 hidden md:block">
+          <MessageAvatar
+            role={message.role}
+            model={message.metadata?.model as string}
+          />
         </div>
 
         <div
@@ -266,11 +290,11 @@ const PurePreviewMessage = ({
                                   onSubmitWithoutRegenerate={
                                     onEditMessageOnly
                                       ? async (nextText) => {
-                                        await onEditMessageOnly(
-                                          message.id,
-                                          nextText
-                                        );
-                                      }
+                                          await onEditMessageOnly(
+                                            message.id,
+                                            nextText
+                                          );
+                                        }
                                       : undefined
                                   }
                                 />
@@ -342,7 +366,7 @@ const PurePreviewMessage = ({
                     }
                   }
                   return (
-                    <span className="flex items-center gap-2 rounded-full bg-muted/30 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    <span className="hidden items-center gap-2 rounded-full bg-muted/30 px-2 py-0.5 text-xs font-medium text-muted-foreground md:flex">
                       <span className="truncate">{name}</span>
                       {isBYOK && (
                         <span className="rounded-full border border-primary/40 bg-primary/10 px-1 text-[9px] font-semibold uppercase tracking-wide text-primary">
@@ -430,12 +454,21 @@ const PureThinkingMessage = () => {
       data-testid="message-assistant-loading"
       initial={{ opacity: 0 }}
     >
-      <div className="flex items-start justify-start gap-3">
-        <div className="-mt-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
-          <Sparkle size={14} />
+      <div className="flex w-full min-w-0 flex-col gap-2 md:flex-row md:items-start md:gap-4">
+        <div className="flex items-center gap-2 md:hidden">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border">
+            <Sparkle size={14} />
+          </div>
+          <span className="font-medium text-muted-foreground text-xs">AI</span>
         </div>
 
-        <div className="flex w-full flex-col gap-2 md:gap-4">
+        <div className="-mt-1 hidden shrink-0 items-center justify-center md:flex">
+          <div className="flex size-9 items-center justify-center rounded-full bg-background ring-1 ring-border">
+            <Sparkle size={14} />
+          </div>
+        </div>
+
+        <div className="flex w-full min-w-0 flex-col gap-2 md:gap-4">
           <div className="p-0 text-muted-foreground text-sm">
             <LoadingDots aria-label="Generating response" />
           </div>

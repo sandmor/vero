@@ -58,7 +58,7 @@ function MessagesComponent({
     status,
   });
 
-  const MOBILE_BREAKPOINT = 768;
+  const MOBILE_BREAKPOINT = 480;
 
   const [isExpanded, setIsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
