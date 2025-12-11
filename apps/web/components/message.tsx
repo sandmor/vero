@@ -109,7 +109,7 @@ const PurePreviewMessage = ({
       data-testid={`message-${message.role}`}
       initial={{ opacity: 0 }}
     >
-      <div className="flex w-full items-start gap-3 md:gap-4">
+      <div className="flex w-full min-w-0 items-start gap-3 md:gap-4">
         <div
           className={cn(
             '-mt-1 flex size-9 shrink-0 items-center justify-center rounded-full ring-1 ring-border',
@@ -144,7 +144,7 @@ const PurePreviewMessage = ({
         </div>
 
         <div
-          className={cn('flex w-full flex-col gap-3 md:gap-4', {
+          className={cn('flex w-full min-w-0 flex-col gap-3 md:gap-4', {
             'min-h-96': message.role === 'assistant' && requiresScrollPadding,
           })}
         >
@@ -266,11 +266,11 @@ const PurePreviewMessage = ({
                                   onSubmitWithoutRegenerate={
                                     onEditMessageOnly
                                       ? async (nextText) => {
-                                          await onEditMessageOnly(
-                                            message.id,
-                                            nextText
-                                          );
-                                        }
+                                        await onEditMessageOnly(
+                                          message.id,
+                                          nextText
+                                        );
+                                      }
                                       : undefined
                                   }
                                 />
