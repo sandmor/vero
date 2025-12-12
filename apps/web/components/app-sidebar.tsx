@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { CheckSquare, Plus } from 'lucide-react';
+import { CheckSquare, Plus, BookSearch } from 'lucide-react';
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
 import { Button } from '@/components/ui/button';
@@ -17,11 +17,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { useMultiSelection } from '@/hooks/use-multi-selection';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useNewChatNavigation } from '@/hooks/use-new-chat-navigation';
+import { useSearchStore } from '@/hooks/use-search-store';
 
 export function AppSidebar() {
   const { setOpenMobile } = useSidebar();
   const { data, isLoading, isError, status: queryStatus } = useAppSession();
   const { startNewChat, isNavigating } = useNewChatNavigation();
+  const { setModalOpen } = useSearchStore();
 
   let sessionStatus: 'loading' | 'authenticated' | 'unauthenticated';
   if (queryStatus === 'pending') {
@@ -66,10 +68,23 @@ export function AppSidebar() {
               }}
             >
               <span className="cursor-pointer rounded-md px-2 font-semibold text-lg hover:bg-muted">
-                Chatbot
+                Virid Chat
               </span>
             </Link>
             <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setModalOpen(true)}
+                  >
+                    <BookSearch size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Search conversations (Cmd+K)</TooltipContent>
+              </Tooltip>
               {!isSelectionMode && (
                 <Tooltip>
                   <TooltipTrigger asChild>

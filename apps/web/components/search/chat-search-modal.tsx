@@ -22,9 +22,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/ui/input-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { SidebarMenu, useSidebar } from '@/components/ui/sidebar';
+import { Button } from '@/components/ui/button';
+import { useSidebar } from '@/components/ui/sidebar';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { useClientSearch, useSearchHistory } from '@/hooks/use-client-search';
 import { useSearchStore } from '@/hooks/use-search-store';
@@ -180,6 +185,14 @@ export function ChatSearchModal({
     [clientResults]
   );
 
+  /* State for pagination */
+  const [itemsLimit, setItemsLimit] = useState(20);
+
+  // Reset pagination when query changes
+  useEffect(() => {
+    setItemsLimit(20);
+  }, [query, sortBy, dateFilter]);
+
   // Focus input when modal opens
   useEffect(() => {
     if (isModalOpen) {
@@ -192,10 +205,60 @@ export function ChatSearchModal({
   const showSeparators = hasMessageResults && hasClientResults;
   const isGlobalSearching = isSearching || isIndexing;
 
+  const handleLoadMore = () => {
+    setItemsLimit((prev) => prev + 20);
+  };
+
+  const items = useMemo(() => {
+    const list: Array<{
+      type: 'header-message' | 'header-chat' | 'message' | 'chat';
+      data?: any;
+      key: string;
+      content?: string;
+      count?: number;
+    }> = [];
+
+    if (hasMessageResults) {
+      list.push({
+        type: 'header-message',
+        key: 'header-messages',
+        count: messageResults.length,
+      });
+      messageResults.forEach((result) => {
+        list.push({ type: 'message', data: result, key: result.id });
+      });
+    }
+
+    if (hasClientResults) {
+      list.push({
+        type: 'header-chat',
+        key: 'header-chats',
+        content: showSeparators
+          ? 'Conversation Titles'
+          : `${totalCount} conversation${totalCount === 1 ? '' : 's'} found`,
+      });
+      dialogChats.forEach((chat) => {
+        list.push({ type: 'chat', data: chat, key: chat.id });
+      });
+    }
+
+    return list;
+  }, [
+    hasMessageResults,
+    messageResults,
+    hasClientResults,
+    dialogChats,
+    showSeparators,
+    totalCount,
+  ]);
+
+  const visibleItems = items.slice(0, itemsLimit);
+  const hasMore = itemsLimit < items.length;
+
   return (
     <>
       <Dialog open={isModalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-3xl space-y-4 max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-3xl space-y-4 h-[85vh] flex flex-col overflow-hidden w-full">
           <DialogHeader className="flex-none">
             <DialogTitle>Search conversations</DialogTitle>
             <DialogDescription>
@@ -203,14 +266,16 @@ export function ChatSearchModal({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-4 flex-1 min-h-0">
+          <div className="flex flex-col gap-4 flex-1 min-h-0 w-full overflow-hidden">
             {/* Search Input Area */}
-            <div className="relative flex-none z-50">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
+            <div className="relative flex-none z-50 p-1">
+              <InputGroup className="w-full">
+                <InputGroupAddon>
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                </InputGroupAddon>
+                <InputGroupInput
                   ref={inputRef}
-                  className="h-10 w-full pl-9 pr-12"
+                  className="h-10"
                   placeholder="Search conversations..."
                   value={query}
                   onChange={(e) => {
@@ -226,22 +291,22 @@ export function ChatSearchModal({
                     if (e.key === 'Escape') setShowSuggestions(false);
                   }}
                 />
-                {isGlobalSearching ? (
-                  <div className="absolute right-3 top-3">
+                <InputGroupAddon align="inline-end">
+                  {isGlobalSearching ? (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  </div>
-                ) : query ? (
-                  <button
-                    onClick={() => {
-                      setQuery('');
-                      inputRef.current?.focus();
-                    }}
-                    className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                ) : null}
-              </div>
+                  ) : query ? (
+                    <button
+                      onClick={() => {
+                        setQuery('');
+                        inputRef.current?.focus();
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </InputGroupAddon>
+              </InputGroup>
 
               {/* Suggestions */}
               <SearchSuggestions
@@ -275,7 +340,7 @@ export function ChatSearchModal({
             </div>
 
             {/* Results Area */}
-            <div className="flex-1 min-h-0 overflow-hidden relative">
+            <div className="flex-1 min-h-0 relative w-full">
               {!isCacheReady && !hasMessageResults && (
                 <div className="absolute inset-0 z-10 bg-background/50 flex items-center justify-center">
                   <div className="flex items-center gap-2 text-muted-foreground">
@@ -285,44 +350,41 @@ export function ChatSearchModal({
                 </div>
               )}
 
-              {hasMessageResults || hasClientResults ? (
-                <ScrollArea className="h-full pr-4">
-                  <div className="flex flex-col gap-6 pb-4">
-
-                    {/* Message Matches */}
-                    {hasMessageResults && (
-                      <div className="space-y-2">
-                        <div className="text-xs font-medium text-muted-foreground sticky top-0 bg-background py-1 z-10 flex items-center gap-2">
-                          Message Matches
-                          <Badge variant="secondary" className="text-[10px] px-1 h-5">
-                            {messageResults.length}
-                          </Badge>
-                        </div>
-                        <SidebarMenu className="gap-2">
-                          {messageResults.map((result) => (
+              {items.length > 0 ? (
+                <div className="h-full overflow-y-auto pr-4 w-full">
+                  <div className="flex flex-col gap-2 pb-4 w-full">
+                    {visibleItems.map((item) => (
+                      <div key={item.key} className="min-w-0 w-full max-w-full">
+                        {item.type === 'header-message' && (
+                          <div className="text-xs font-medium text-muted-foreground bg-background py-1 z-10 flex items-center gap-2 mb-2 pl-1 sticky top-0">
+                            Message Matches
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] px-1 h-5"
+                            >
+                              {item.count}
+                            </Badge>
+                          </div>
+                        )}
+                        {item.type === 'header-chat' && (
+                          <div className="text-xs font-medium text-muted-foreground bg-background py-1 z-10 flex items-center gap-2 mb-2 mt-2 pl-1 sticky top-0">
+                            {item.content}
+                          </div>
+                        )}
+                        {item.type === 'message' && (
+                          <div className="px-1 min-w-0">
                             <SearchResultItem
-                              key={result.id}
-                              result={result}
+                              result={item.data}
                               query={query}
                               onSelect={() => setModalOpen(false)}
                             />
-                          ))}
-                        </SidebarMenu>
-                      </div>
-                    )}
-
-                    {/* Title Matches */}
-                    {hasClientResults && (
-                      <div className="space-y-2">
-                        <div className="text-xs font-medium text-muted-foreground sticky top-0 bg-background py-1 z-10 flex items-center gap-2">
-                          {showSeparators ? 'Conversation Titles' : `${totalCount} conversation${totalCount === 1 ? '' : 's'} found`}
-                        </div>
-                        <SidebarMenu className="gap-2">
-                          {dialogChats.map((chat) => (
+                          </div>
+                        )}
+                        {item.type === 'chat' && (
+                          <div className="px-1 min-w-0">
                             <ChatItem
-                              chat={chat}
-                              isActive={chat.id === currentChatId}
-                              key={chat.id}
+                              chat={item.data}
+                              isActive={item.data.id === currentChatId}
                               onDelete={(chatId) => {
                                 setDeleteId(chatId);
                                 setShowDeleteDialog(true);
@@ -330,12 +392,25 @@ export function ChatSearchModal({
                               onRename={onRename}
                               setOpenMobile={setOpenMobile}
                             />
-                          ))}
-                        </SidebarMenu>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {hasMore && (
+                      <div className="pt-4 pb-2 flex justify-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleLoadMore}
+                          className="w-full max-w-xs"
+                        >
+                          Load more results
+                        </Button>
                       </div>
                     )}
                   </div>
-                </ScrollArea>
+                </div>
               ) : (
                 <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
                   {query ? (

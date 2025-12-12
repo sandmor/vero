@@ -1,6 +1,12 @@
 'use client';
 
-import { ArrowUpDown, Calendar, ChevronDown } from 'lucide-react';
+import {
+  ArrowUpDown,
+  Calendar,
+  ChevronDown,
+  Settings,
+  Check,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -9,6 +15,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
   Popover,
@@ -59,6 +68,89 @@ export function SearchFilterActions({
     onDateOpenChange?.(open);
   };
 
+  if (compact) {
+    return (
+      <TooltipProvider delayDuration={300}>
+        <DropdownMenu onOpenChange={handleSortOpenChange}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'h-7 w-7',
+                    (sortBy !== 'relevance' || dateFilter) && 'text-primary'
+                  )}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Search settings</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>Search Settings</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+
+            {/* Sort Submenu */}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <ArrowUpDown className="mr-2 h-4 w-4" />
+                <span>Sort by</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-48">
+                {sortOptions.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onClick={() => setSortBy(option.value)}
+                    className="cursor-pointer"
+                  >
+                    <span>{option.label}</span>
+                    {sortBy === option.value && (
+                      <Check className="ml-auto h-4 w-4" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+
+            {/* Date Submenu */}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Calendar className="mr-2 h-4 w-4" />
+                <span>Date range</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-48">
+                {datePresets.map((preset) => (
+                  <DropdownMenuItem
+                    key={preset.value}
+                    onClick={() => setDateFilter(preset.getFilter())}
+                    className="cursor-pointer"
+                  >
+                    <span>{preset.label}</span>
+                    {dateFilter?.after?.getTime() ===
+                      preset.getFilter().after?.getTime() && (
+                      <Check className="ml-auto h-4 w-4" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setDateFilter(null)}
+                  disabled={!dateFilter}
+                  className="cursor-pointer"
+                >
+                  Clear date filter
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TooltipProvider>
+    );
+  }
+
   return (
     <>
       {/* Sort dropdown */}
@@ -67,24 +159,11 @@ export function SearchFilterActions({
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                {compact ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn(
-                      'h-7 w-7',
-                      sortBy !== 'relevance' && 'text-primary'
-                    )}
-                  >
-                    <ArrowUpDown className="h-3.5 w-3.5" />
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm">
-                    <ArrowUpDown className="mr-2 h-3.5 w-3.5" />
-                    Sort
-                    <ChevronDown className="ml-2 h-3.5 w-3.5" />
-                  </Button>
-                )}
+                <Button variant="outline" size="sm">
+                  <ArrowUpDown className="mr-2 h-3.5 w-3.5" />
+                  Sort
+                  <ChevronDown className="ml-2 h-3.5 w-3.5" />
+                </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
             <TooltipContent side="bottom">Sort results</TooltipContent>
@@ -117,14 +196,11 @@ export function SearchFilterActions({
               <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
-                  size={compact ? 'icon' : 'sm'}
-                  className={cn(
-                    compact ? 'h-7 w-7' : 'h-8 px-2',
-                    dateFilter && 'text-primary'
-                  )}
+                  size="sm"
+                  className={cn('h-8 px-2', dateFilter && 'text-primary')}
                 >
                   <Calendar className="h-3.5 w-3.5" />
-                  {!compact && <span className="ml-2">Date</span>}
+                  <span className="ml-2">Date</span>
                 </Button>
               </PopoverTrigger>
             </TooltipTrigger>

@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, Maximize2, Search, X } from 'lucide-react';
+import { Loader2, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/ui/input-group';
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -176,105 +180,93 @@ export function ChatSearch({
                 }}
                 transition={{ duration: 0.2, ease: 'easeOut' }}
               >
-                <Search
-                  className={cn(
-                    'absolute top-2.5 left-2 transition-colors duration-200',
-                    shouldExpand ? 'text-foreground' : 'text-muted-foreground'
-                  )}
-                  size={16}
-                />
-                <Input
-                  className={cn(
-                    'h-9 w-full pl-8 transition-all duration-200',
-                    shouldExpand ? 'pr-20' : 'pr-8'
-                  )}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  onFocus={() => {
-                    setIsExpanded(true);
-                    setShowSuggestions(true);
-                  }}
-                  onBlur={() => {
-                    // Delay to allow click on suggestions
-                    setTimeout(() => setShowSuggestions(false), 200);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSearchSubmit();
-                    }
-                    if (e.key === 'Escape') {
-                      setShowSuggestions(false);
-                      if (!query && !hasActiveFilters) {
-                        setIsExpanded(false);
+                <InputGroup>
+                  <InputGroupAddon>
+                    <Search
+                      className={cn(
+                        'transition-colors duration-200',
+                        shouldExpand
+                          ? 'text-foreground'
+                          : 'text-muted-foreground'
+                      )}
+                      size={16}
+                    />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    className="h-9"
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => {
+                      setIsExpanded(true);
+                      setShowSuggestions(true);
+                    }}
+                    onBlur={() => {
+                      // Delay to allow click on suggestions
+                      setTimeout(() => setShowSuggestions(false), 200);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSearchSubmit();
                       }
-                      inputRef.current?.blur();
-                    }
-                  }}
-                  placeholder="Search..."
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                />
+                      if (e.key === 'Escape') {
+                        setShowSuggestions(false);
+                        if (!query && !hasActiveFilters) {
+                          setIsExpanded(false);
+                        }
+                        inputRef.current?.blur();
+                      }
+                    }}
+                    placeholder="Search..."
+                    ref={inputRef}
+                    type="text"
+                    value={query}
+                  />
 
-                {/* Action buttons - only show when expanded */}
-                <AnimatePresence>
-                  {shouldExpand && (
-                    <motion.div
-                      className="absolute right-1 top-1 flex items-center gap-0.5"
-                      initial={{ opacity: 0, x: 10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                      transition={{ duration: 0.15, ease: 'easeOut' }}
-                    >
-                      {(isSearching || isIndexing) && (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-1" />
-                      )}
-
-                      <SearchFilterActions
-                        sortBy={sortBy}
-                        setSortBy={setSortBy}
-                        dateFilter={dateFilter}
-                        setDateFilter={setDateFilter}
-                        compact={true}
-                        onSortOpenChange={setIsDropdownOpen}
-                        onDateOpenChange={setIsPopoverOpen}
-                      />
-
-                      {/* Expand button */}
-                      <TooltipProvider delayDuration={300}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => setModalOpen(true)}
-                            >
-                              <Maximize2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Full search (Cmd+K)</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-
-                      {/* Clear button */}
-                      {query && (
-                        <Button
-                          className="h-7 w-7 p-0"
-                          onClick={handleClear}
-                          size="icon"
-                          type="button"
-                          variant="ghost"
+                  {/* Action buttons - only show when expanded */}
+                  <InputGroupAddon align="inline-end">
+                    <AnimatePresence>
+                      {shouldExpand && (
+                        <motion.div
+                          className="flex items-center gap-0.5"
+                          initial={{ opacity: 0, x: 10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 10 }}
+                          transition={{ duration: 0.15, ease: 'easeOut' }}
                         >
-                          <X size={14} />
-                          <span className="sr-only">Clear search</span>
-                        </Button>
+                          {(isSearching || isIndexing) && (
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-1" />
+                          )}
+
+                          <SearchFilterActions
+                            sortBy={sortBy}
+                            setSortBy={setSortBy}
+                            dateFilter={dateFilter}
+                            setDateFilter={setDateFilter}
+                            compact={true}
+                            onSortOpenChange={setIsDropdownOpen}
+                            onDateOpenChange={setIsPopoverOpen}
+                          />
+
+                          {/* Clear button */}
+                          {query && (
+                            <Button
+                              className="h-7 w-7 p-0"
+                              onClick={handleClear}
+                              size="icon"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <X size={14} />
+                              <span className="sr-only">Clear search</span>
+                            </Button>
+                          )}
+                        </motion.div>
                       )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    </AnimatePresence>
+                  </InputGroupAddon>
+                </InputGroup>
               </motion.div>
 
               {/* Suggestions dropdown */}
@@ -379,20 +371,12 @@ export function ChatSearch({
 
                   {hasResults && (
                     <div className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+                      <div className="flex items-center px-1 text-xs text-muted-foreground">
                         <span>
                           Showing {compactResults.length} of {totalResults}{' '}
                           result
                           {totalResults === 1 ? '' : 's'}
                         </span>
-                        {isCacheReady && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0"
-                          >
-                            Instant
-                          </Badge>
-                        )}
                       </div>
                       <SidebarMenu>
                         {compactResults.map((chat) => (
