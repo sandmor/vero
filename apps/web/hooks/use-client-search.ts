@@ -4,7 +4,10 @@ import type { CachedChatPayload } from '@/lib/cache/cache-manager';
 import type { CachedChatRecord } from '@/lib/cache/types';
 import type { Chat } from '@/lib/db/schema';
 import { searchIndexService } from '@/lib/search/search-index-service';
-import type { SortOption, WorkerSearchOptions } from '@/lib/search/search-index.types';
+import type {
+  SortOption,
+  WorkerSearchOptions,
+} from '@/lib/search/search-index.types';
 import type { MessageSearchResult } from '@/lib/search/client-message-search';
 import {
   type ParsedQuery,
@@ -281,9 +284,9 @@ export function useClientSearch(
 
     const serializedDateFilter = dateFilter
       ? {
-        after: dateFilter.after?.toISOString(),
-        before: dateFilter.before?.toISOString(),
-      }
+          after: dateFilter.after?.toISOString(),
+          before: dateFilter.before?.toISOString(),
+        }
       : null;
 
     const searchOptions: WorkerSearchOptions = {
@@ -304,10 +307,10 @@ export function useClientSearch(
             const chat = chatMap.get(result.chatId);
             return chat
               ? ({
-                item: chat,
-                score: result.score,
-                matches: [],
-              } as SearchResult<Chat>)
+                  item: chat,
+                  score: result.score,
+                  matches: [],
+                } as SearchResult<Chat>)
               : null;
           })
           .filter(Boolean) as SearchResult<Chat>[];

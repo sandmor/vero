@@ -1,253 +1,269 @@
-"use client";
+'use client';
 
-import { getEncryptedCacheManager, type CachedChatPayload } from '@/lib/cache/cache-manager';
+import {
+  getEncryptedCacheManager,
+  type CachedChatPayload,
+} from '@/lib/cache/cache-manager';
 import type { CachedChatRecord } from '@/lib/cache/types';
 import type {
-    IndexableChat,
-    SearchIndexSnapshot,
-    WorkerChatResult,
-    WorkerMessageResult,
-    WorkerPayload,
-    WorkerResponse,
-    WorkerSearchOptions,
+  IndexableChat,
+  SearchIndexSnapshot,
+  WorkerChatResult,
+  WorkerMessageResult,
+  WorkerPayload,
+  WorkerResponse,
+  WorkerSearchOptions,
 } from '@/lib/search/search-index.types';
 
 const METADATA_KEY = 'search-index-v1';
 const WORKER_TIMEOUT_MS = 20000;
 const WORKER_URL = new URL('./search-index.worker.ts', import.meta.url);
 
-function toIndexableChat(entry: CachedChatPayload<CachedChatRecord>): IndexableChat {
-    const bootstrapMessages = entry.data.bootstrap?.initialMessages ?? [];
+function toIndexableChat(
+  entry: CachedChatPayload<CachedChatRecord>
+): IndexableChat {
+  const bootstrapMessages = entry.data.bootstrap?.initialMessages ?? [];
 
-    return {
-        chatId: entry.chatId,
-        title: entry.data.chat.title ?? 'Untitled',
-        createdAt: String(entry.data.chat.createdAt),
-        updatedAt: String(entry.data.chat.updatedAt ?? entry.data.lastUpdatedAt),
-        lastUpdatedAt: String(entry.data.lastUpdatedAt),
-        messages: bootstrapMessages.map((message: any) => ({
-            id: String(message.id ?? message.messageId ?? crypto.randomUUID()),
-            createdAt: String(message.createdAt ?? entry.data.lastUpdatedAt),
-            parts: message.parts,
-        })),
-    };
+  return {
+    chatId: entry.chatId,
+    title: entry.data.chat.title ?? 'Untitled',
+    createdAt: String(entry.data.chat.createdAt),
+    updatedAt: String(entry.data.chat.updatedAt ?? entry.data.lastUpdatedAt),
+    lastUpdatedAt: String(entry.data.lastUpdatedAt),
+    messages: bootstrapMessages.map((message: any) => ({
+      id: String(message.id ?? message.messageId ?? crypto.randomUUID()),
+      createdAt: String(message.createdAt ?? entry.data.lastUpdatedAt),
+      parts: message.parts,
+    })),
+  };
 }
 
 function isLoadedResponse(
-    response: WorkerResponse
+  response: WorkerResponse
 ): response is Extract<WorkerResponse, { type: 'loaded' }> {
-    return response.type === 'loaded';
+  return response.type === 'loaded';
 }
 
 function isSyncedResponse(
-    response: WorkerResponse
+  response: WorkerResponse
 ): response is Extract<WorkerResponse, { type: 'synced' }> {
-    return response.type === 'synced';
+  return response.type === 'synced';
 }
 
 function isSearchResponse(
-    response: WorkerResponse
+  response: WorkerResponse
 ): response is Extract<WorkerResponse, { type: 'searchResults' }> {
-    return response.type === 'searchResults';
+  return response.type === 'searchResults';
 }
 
 class SearchIndexService {
-    private workerPromise: Promise<Worker> | null = null;
+  private workerPromise: Promise<Worker> | null = null;
 
-    private pendingRequests = new Map<
-        string,
-        {
-            resolve: (value: WorkerResponse) => void;
-            reject: (error: Error) => void;
-            timeout: ReturnType<typeof setTimeout>;
-        }
-    >();
-
-    private snapshotLoaded = false;
-
-    private loadPromise: Promise<void> | null = null;
-
-    private syncPromise: Promise<{ changed: boolean }> | null = null;
-
-    private manager = getEncryptedCacheManager();
-
-    private ready = false;
-
-    private indexing = false;
-
-    isReady(): boolean {
-        return this.ready;
+  private pendingRequests = new Map<
+    string,
+    {
+      resolve: (value: WorkerResponse) => void;
+      reject: (error: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
     }
+  >();
 
-    isIndexing(): boolean {
-        return this.indexing || Boolean(this.syncPromise);
-    }
+  private snapshotLoaded = false;
 
-    private async getWorker(): Promise<Worker> {
-        if (!this.workerPromise) {
-            this.workerPromise = Promise.resolve(
-                new Worker(WORKER_URL, { type: 'module', name: 'search-index-worker' })
-            );
-            const worker = await this.workerPromise;
-            worker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
-                const { requestId } = event.data as WorkerResponse & { requestId: string };
-                const pending = this.pendingRequests.get(requestId);
-                if (!pending) return;
+  private loadPromise: Promise<void> | null = null;
 
-                const refreshTimeout = () => {
-                    clearTimeout(pending.timeout);
-                    pending.timeout = setTimeout(() => {
-                        this.pendingRequests.delete(requestId);
-                        pending.reject(new Error('Search worker request timed out'));
-                    }, WORKER_TIMEOUT_MS);
-                };
+  private syncPromise: Promise<{ changed: boolean }> | null = null;
 
-                if (event.data.type === 'keepalive') {
-                    refreshTimeout();
-                    return;
-                }
+  private manager = getEncryptedCacheManager();
 
-                clearTimeout(pending.timeout);
-                this.pendingRequests.delete(requestId);
+  private ready = false;
 
-                if (event.data.type === 'error') {
-                    pending.reject(new Error(event.data.message));
-                    return;
-                }
+  private indexing = false;
 
-                pending.resolve(event.data);
-            });
-        }
+  isReady(): boolean {
+    return this.ready;
+  }
 
-        return this.workerPromise;
-    }
+  isIndexing(): boolean {
+    return this.indexing || Boolean(this.syncPromise);
+  }
 
-    private async callWorker(payload: WorkerPayload): Promise<WorkerResponse> {
-        const worker = await this.getWorker();
-        const requestId = crypto.randomUUID();
+  private async getWorker(): Promise<Worker> {
+    if (!this.workerPromise) {
+      this.workerPromise = Promise.resolve(
+        new Worker(WORKER_URL, { type: 'module', name: 'search-index-worker' })
+      );
+      const worker = await this.workerPromise;
+      worker.addEventListener(
+        'message',
+        (event: MessageEvent<WorkerResponse>) => {
+          const { requestId } = event.data as WorkerResponse & {
+            requestId: string;
+          };
+          const pending = this.pendingRequests.get(requestId);
+          if (!pending) return;
 
-        const message = { ...payload, requestId } as const;
-
-        return new Promise<WorkerResponse>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.pendingRequests.delete(requestId);
-                reject(new Error('Search worker request timed out'));
+          const refreshTimeout = () => {
+            clearTimeout(pending.timeout);
+            pending.timeout = setTimeout(() => {
+              this.pendingRequests.delete(requestId);
+              pending.reject(new Error('Search worker request timed out'));
             }, WORKER_TIMEOUT_MS);
+          };
 
-            this.pendingRequests.set(requestId, { resolve, reject, timeout });
-            worker.postMessage(message);
-        });
-    }
+          if (event.data.type === 'keepalive') {
+            refreshTimeout();
+            return;
+          }
 
-    private async persistSnapshot(snapshot?: SearchIndexSnapshot | null): Promise<void> {
-        if (!snapshot) return;
-        if (!this.manager.isInitialized()) return;
-        await this.manager.storeMetadata(METADATA_KEY, snapshot);
-    }
+          clearTimeout(pending.timeout);
+          this.pendingRequests.delete(requestId);
 
-    private async ensureSnapshotLoaded(): Promise<void> {
-        if (this.snapshotLoaded) return;
-        if (this.loadPromise) return this.loadPromise;
+          if (event.data.type === 'error') {
+            pending.reject(new Error(event.data.message));
+            return;
+          }
 
-        this.loadPromise = (async () => {
-            if (!this.manager.isInitialized()) {
-                this.snapshotLoaded = true;
-                return;
-            }
-
-            const stored = await this.manager.readMetadata<SearchIndexSnapshot>(METADATA_KEY);
-
-            try {
-                const response = await this.callWorker({
-                    type: 'load',
-                    snapshot: stored?.data ?? null,
-                });
-
-                if (!isLoadedResponse(response)) {
-                    throw new Error('Unexpected worker response while loading index');
-                }
-
-                this.snapshotLoaded = true;
-                this.ready = true;
-            } catch (error) {
-                // If legacy or corrupt snapshot, reset and continue with empty index
-                console.warn('Search index snapshot invalid, resetting to empty', error);
-                await this.callWorker({ type: 'load', snapshot: null });
-                this.snapshotLoaded = true;
-                this.ready = true;
-            }
-        })().finally(() => {
-            this.loadPromise = null;
-        });
-
-        return this.loadPromise;
-    }
-
-    async syncChats(
-        cachedChats: CachedChatPayload<CachedChatRecord>[]
-    ): Promise<{ changed: boolean }> {
-        await this.ensureSnapshotLoaded();
-        const payload: IndexableChat[] = cachedChats.map(toIndexableChat);
-
-        const runSync = async () => {
-            this.indexing = true;
-            const response = await this.callWorker({ type: 'sync', chats: payload });
-
-            if (!isSyncedResponse(response)) {
-                throw new Error('Search worker returned an unexpected sync response');
-            }
-
-            await this.persistSnapshot(response.snapshot ?? null);
-
-            return { changed: response.changed };
-        };
-
-        // Deduplicate concurrent syncs
-        if (!this.syncPromise) {
-            this.syncPromise = runSync().finally(() => {
-                this.indexing = false;
-                this.syncPromise = null;
-            });
+          pending.resolve(event.data);
         }
-
-        return this.syncPromise;
+      );
     }
 
-    async search(
-        query: string,
-        options: WorkerSearchOptions,
-        cachedChats: CachedChatPayload<CachedChatRecord>[]
-    ): Promise<{
-        chatResults: WorkerChatResult[];
-        messageResults: WorkerMessageResult[];
-    }> {
-        await this.ensureSnapshotLoaded();
-        // If a sync is in flight, wait for it so we search fresh data
-        if (this.syncPromise) {
-            await this.syncPromise.catch(() => {
-                /* swallow sync errors here; search will proceed on current index */
-            });
-        }
-        const knownChatIds = cachedChats.map((chat) => chat.chatId);
+    return this.workerPromise;
+  }
 
+  private async callWorker(payload: WorkerPayload): Promise<WorkerResponse> {
+    const worker = await this.getWorker();
+    const requestId = crypto.randomUUID();
+
+    const message = { ...payload, requestId } as const;
+
+    return new Promise<WorkerResponse>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error('Search worker request timed out'));
+      }, WORKER_TIMEOUT_MS);
+
+      this.pendingRequests.set(requestId, { resolve, reject, timeout });
+      worker.postMessage(message);
+    });
+  }
+
+  private async persistSnapshot(
+    snapshot?: SearchIndexSnapshot | null
+  ): Promise<void> {
+    if (!snapshot) return;
+    if (!this.manager.isInitialized()) return;
+    await this.manager.storeMetadata(METADATA_KEY, snapshot);
+  }
+
+  private async ensureSnapshotLoaded(): Promise<void> {
+    if (this.snapshotLoaded) return;
+    if (this.loadPromise) return this.loadPromise;
+
+    this.loadPromise = (async () => {
+      if (!this.manager.isInitialized()) {
+        this.snapshotLoaded = true;
+        return;
+      }
+
+      const stored =
+        await this.manager.readMetadata<SearchIndexSnapshot>(METADATA_KEY);
+
+      try {
         const response = await this.callWorker({
-            type: 'search',
-            query,
-            options,
-            knownChatIds,
+          type: 'load',
+          snapshot: stored?.data ?? null,
         });
 
-        if (!isSearchResponse(response)) {
-            throw new Error('Search worker returned an unexpected search response');
+        if (!isLoadedResponse(response)) {
+          throw new Error('Unexpected worker response while loading index');
         }
 
-        await this.persistSnapshot(response.snapshot ?? null);
+        this.snapshotLoaded = true;
+        this.ready = true;
+      } catch (error) {
+        // If legacy or corrupt snapshot, reset and continue with empty index
+        console.warn(
+          'Search index snapshot invalid, resetting to empty',
+          error
+        );
+        await this.callWorker({ type: 'load', snapshot: null });
+        this.snapshotLoaded = true;
+        this.ready = true;
+      }
+    })().finally(() => {
+      this.loadPromise = null;
+    });
 
-        return {
-            chatResults: response.chatResults,
-            messageResults: response.messageResults,
-        };
+    return this.loadPromise;
+  }
+
+  async syncChats(
+    cachedChats: CachedChatPayload<CachedChatRecord>[]
+  ): Promise<{ changed: boolean }> {
+    await this.ensureSnapshotLoaded();
+    const payload: IndexableChat[] = cachedChats.map(toIndexableChat);
+
+    const runSync = async () => {
+      this.indexing = true;
+      const response = await this.callWorker({ type: 'sync', chats: payload });
+
+      if (!isSyncedResponse(response)) {
+        throw new Error('Search worker returned an unexpected sync response');
+      }
+
+      await this.persistSnapshot(response.snapshot ?? null);
+
+      return { changed: response.changed };
+    };
+
+    // Deduplicate concurrent syncs
+    if (!this.syncPromise) {
+      this.syncPromise = runSync().finally(() => {
+        this.indexing = false;
+        this.syncPromise = null;
+      });
     }
+
+    return this.syncPromise;
+  }
+
+  async search(
+    query: string,
+    options: WorkerSearchOptions,
+    cachedChats: CachedChatPayload<CachedChatRecord>[]
+  ): Promise<{
+    chatResults: WorkerChatResult[];
+    messageResults: WorkerMessageResult[];
+  }> {
+    await this.ensureSnapshotLoaded();
+    // If a sync is in flight, wait for it so we search fresh data
+    if (this.syncPromise) {
+      await this.syncPromise.catch(() => {
+        /* swallow sync errors here; search will proceed on current index */
+      });
+    }
+    const knownChatIds = cachedChats.map((chat) => chat.chatId);
+
+    const response = await this.callWorker({
+      type: 'search',
+      query,
+      options,
+      knownChatIds,
+    });
+
+    if (!isSearchResponse(response)) {
+      throw new Error('Search worker returned an unexpected search response');
+    }
+
+    await this.persistSnapshot(response.snapshot ?? null);
+
+    return {
+      chatResults: response.chatResults,
+      messageResults: response.messageResults,
+    };
+  }
 }
 
 export const searchIndexService = new SearchIndexService();

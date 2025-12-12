@@ -47,6 +47,7 @@ function MessagesComponent({
   onEditMessageOnly,
   disableRegenerate,
   allowedModels,
+  selectedModelId,
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -132,6 +133,7 @@ function MessagesComponent({
               onEditMessageOnly={onEditMessageOnly}
               disableRegenerate={disableRegenerate}
               allowedModels={allowedModels}
+              selectedModelId={selectedModelId}
               isExpanded={isExpanded}
               onReasoningCollapse={handleReasoningCollapse}
             />

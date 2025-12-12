@@ -47,9 +47,9 @@ export function useClientMessageSearch(
       const run = async () => {
         const serializedDate = dateFilter
           ? {
-            after: dateFilter.after?.toISOString(),
-            before: dateFilter.before?.toISOString(),
-          }
+              after: dateFilter.after?.toISOString(),
+              before: dateFilter.before?.toISOString(),
+            }
           : null;
 
         try {
@@ -76,9 +76,13 @@ export function useClientMessageSearch(
 
           // Sort results
           if (sortBy === 'newest') {
-            mapped.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+            mapped.sort(
+              (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+            );
           } else if (sortBy === 'oldest') {
-            mapped.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+            mapped.sort(
+              (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+            );
           } else if (sortBy === 'title') {
             mapped.sort((a, b) => a.chatTitle.localeCompare(b.chatTitle));
           }

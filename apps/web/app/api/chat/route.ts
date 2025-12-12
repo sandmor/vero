@@ -501,7 +501,7 @@ export async function POST(request: Request) {
         // Immediately send init event to flush headers early
         dataStream.write({
           type: 'data-init',
-          data: { chatId: id, createdNewChat },
+          data: { chatId: id, createdNewChat, modelId: selectedChatModel },
         });
         // Kick off context gathering in parallel while we prepare persistence.
         const streamIdPromise =

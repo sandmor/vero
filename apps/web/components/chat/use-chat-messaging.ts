@@ -195,6 +195,35 @@ export function useChatMessaging({
       if (dataPart.type === 'data-usage') {
         setUsage(dataPart.data);
       }
+      if (dataPart.type === 'data-init') {
+        const { modelId } = dataPart.data as { modelId?: string };
+        if (modelId) {
+          setMessages((currentMessages) => {
+            const lastMessage = currentMessages.at(-1);
+            if (!lastMessage || lastMessage.role !== 'assistant') {
+              return currentMessages;
+            }
+            // Create a new array and new message object to trigger re-render
+            const newMessages = [...currentMessages];
+            // Ensure strict typing for metadata update
+            const currentMetadata = lastMessage.metadata || {
+              createdAt: new Date().toISOString(),
+              siblingIndex: 0,
+              siblingsCount: 1,
+            };
+            newMessages[newMessages.length - 1] = {
+              ...lastMessage,
+              metadata: {
+                ...currentMetadata,
+                createdAt:
+                  currentMetadata.createdAt ?? new Date().toISOString(),
+                model: modelId,
+              },
+            };
+            return newMessages;
+          });
+        }
+      }
     },
     onFinish: () => {
       if (!chatHasStartedRef.current) {

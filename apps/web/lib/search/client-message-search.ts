@@ -1,10 +1,6 @@
-import {
-  type CachedChatPayload,
-} from '@/lib/cache/cache-manager';
+import { type CachedChatPayload } from '@/lib/cache/cache-manager';
 import type { CachedChatRecord } from '@/lib/cache/types';
-import {
-  generateSnippet,
-} from '@/lib/search/snippet-helper';
+import { generateSnippet } from '@/lib/search/snippet-helper';
 import {
   findMatchPositions,
   calculateScore,
@@ -26,8 +22,8 @@ export interface MessageSearchResult {
 
 /**
  * Perform a search through cached chats and their message history.
- * 
- * NOTE: This function is computationally intensive as it iterates through 
+ *
+ * NOTE: This function is computationally intensive as it iterates through
  * all messages in all cached chats. It should be used with debounce and possibly
  * inside a Web Worker if the dataset grows very large.
  */
@@ -56,9 +52,10 @@ export function searchCachedMessages(
 
     for (const message of messages) {
       // Check date filter
-      const createdAt = message.createdAt instanceof Date
-        ? message.createdAt
-        : new Date(message.createdAt);
+      const createdAt =
+        message.createdAt instanceof Date
+          ? message.createdAt
+          : new Date(message.createdAt);
 
       if (dateFilter) {
         if (dateFilter.after && createdAt < dateFilter.after) continue;

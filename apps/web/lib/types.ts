@@ -44,6 +44,7 @@ export type CustomUIDataTypes = {
   appendMessage: string;
   id: string;
 
+  init: { chatId: string; createdNewChat: boolean; modelId: string };
   clear: null;
   finish: null;
   usage: AppUsage;

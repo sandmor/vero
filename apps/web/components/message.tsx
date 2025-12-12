@@ -80,6 +80,7 @@ const PurePreviewMessage = ({
   onEditMessage,
   onEditMessageOnly,
   allowedModels,
+  selectedModelId,
   isExpanded,
   onReasoningCollapse,
 }: {
@@ -102,6 +103,7 @@ const PurePreviewMessage = ({
   onEditMessage?: (messageId: string, text: string) => Promise<void>;
   onEditMessageOnly?: (messageId: string, text: string) => Promise<void>;
   allowedModels?: ChatModelOption[];
+  selectedModelId?: string;
   isExpanded?: boolean;
   onReasoningCollapse?: () => void;
 }) => {
@@ -138,6 +140,10 @@ const PurePreviewMessage = ({
     [message.id, onNavigate]
   );
 
+  // Use message metadata model if available, otherwise fall back to selectedModelId (for correct avatar during stream start)
+  const effectiveModelId =
+    (message.metadata?.model as string) || selectedModelId || '';
+
   return (
     <motion.div
       animate={{ opacity: 1 }}
@@ -148,23 +154,16 @@ const PurePreviewMessage = ({
     >
       <div className="flex w-full min-w-0 flex-col gap-2 md:flex-row md:items-start md:gap-4">
         <div className="flex items-center gap-2 md:hidden">
-          <MessageAvatar
-            role={message.role}
-            model={message.metadata?.model as string}
-          />
+          <MessageAvatar role={message.role} model={effectiveModelId} />
           <span className="font-medium text-muted-foreground text-xs capitalize">
             {message.role === 'user'
               ? 'You'
-              : deriveChatModel(message.metadata?.model as string)?.name ||
-                'AI'}
+              : deriveChatModel(effectiveModelId)?.name || 'AI'}
           </span>
         </div>
 
         <div className="-mt-1 hidden md:block">
-          <MessageAvatar
-            role={message.role}
-            model={message.metadata?.model as string}
-          />
+          <MessageAvatar role={message.role} model={effectiveModelId} />
         </div>
 
         <div
@@ -434,6 +433,7 @@ export const PreviewMessage = memo(
     if (prevProps.onEditMessageOnly !== nextProps.onEditMessageOnly)
       return false;
     if (!equal(prevProps.allowedModels, nextProps.allowedModels)) return false;
+    if (prevProps.selectedModelId !== nextProps.selectedModelId) return false;
     if (prevProps.isExpanded !== nextProps.isExpanded) return false;
     if (prevProps.onReasoningCollapse !== nextProps.onReasoningCollapse)
       return false;
