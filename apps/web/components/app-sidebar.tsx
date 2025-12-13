@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { useMultiSelection } from '@/hooks/use-multi-selection';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useNewChatNavigation } from '@/hooks/use-new-chat-navigation';
-import { useSearchStore } from '@/hooks/use-search-store';
+import { useSearchStore } from '@/lib/stores/search-store';
 
 export function AppSidebar() {
   const { setOpenMobile } = useSidebar();

@@ -28,6 +28,7 @@ import { AnimatedButtonLabel } from '@/components/ui/animated-button';
 import { SUPPORTED_PROVIDERS, displayProviderName } from '@/lib/ai/registry';
 import { UserModelManager } from '@/components/shared/user-model-manager';
 import { DataExportImport } from '@/components/data-export-import';
+import { ProviderLogo } from '@/components/provider-logo';
 import type { UserPreferences } from '@/lib/db/schema';
 
 type FeedbackState = 'idle' | 'saved' | 'deleted' | 'error';
@@ -336,7 +337,7 @@ export function UserPreferencesEditor() {
 
   if (isProfileLoading) {
     return (
-      <div className="space-y-10 px-2 py-6 max-w-5xl mx-auto w-full animate-in fade-in-0 slide-in-from-bottom-4">
+      <div className="space-y-10 px-2 py-6 w-full animate-in fade-in-0 slide-in-from-bottom-4">
         {/* Profile skeleton */}
         <div className="rounded-3xl border border-border/60 bg-card/40 p-6 shadow-sm backdrop-blur">
           <div className="mb-2">
@@ -400,7 +401,7 @@ export function UserPreferencesEditor() {
   }
 
   return (
-    <div className="space-y-10 px-2 py-6 max-w-5xl mx-auto w-full animate-in fade-in-0 slide-in-from-bottom-4">
+    <div className="space-y-10 px-2 py-6 w-full animate-in fade-in-0 slide-in-from-bottom-4">
       <div className="mb-4 text-sm text-muted-foreground">
         Personalize your AI assistant by providing your name, occupation, and
         custom instructions. These preferences will be used to tailor responses
@@ -412,15 +413,17 @@ export function UserPreferencesEditor() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
       >
-        <Card className="border-border/60 bg-card/40 backdrop-blur">
+        <Card className="border-border/40 bg-card/50 backdrop-blur shadow-sm">
           <CardHeader>
-            <CardTitle>User Profile</CardTitle>
+            <CardTitle className="text-xl font-bold tracking-tight">
+              User Profile
+            </CardTitle>
             <CardDescription>
               Basic information about you that helps personalize the AI
               responses
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -428,8 +431,9 @@ export function UserPreferencesEditor() {
                 placeholder="Your name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                className="bg-background/50 border-border/40 focus-visible:ring-primary/20"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground/80">
                 How you'd like the AI to address you
               </p>
             </div>
@@ -441,8 +445,9 @@ export function UserPreferencesEditor() {
                 placeholder="Your occupation or role"
                 value={occupation}
                 onChange={(e) => setOccupation(e.target.value)}
+                className="bg-background/50 border-border/40 focus-visible:ring-primary/20"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground/80">
                 Helps the AI understand your background and expertise
               </p>
             </div>
@@ -455,8 +460,9 @@ export function UserPreferencesEditor() {
                 value={customInstructions}
                 onChange={(e) => setCustomInstructions(e.target.value)}
                 rows={4}
+                className="bg-background/50 border-border/40 focus-visible:ring-primary/20"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground/80">
                 Specific preferences for AI behavior, communication style, or
                 context
               </p>
@@ -519,9 +525,11 @@ export function UserPreferencesEditor() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1], delay: 0.1 }}
       >
-        <Card className="border-border/60 bg-card/40 backdrop-blur">
+        <Card className="border-border/40 bg-card/50 backdrop-blur shadow-sm">
           <CardHeader>
-            <CardTitle>API Keys</CardTitle>
+            <CardTitle className="text-xl font-bold tracking-tight">
+              API Keys
+            </CardTitle>
             <CardDescription>
               Add your own API keys to use with supported providers. These keys
               are stored securely and used only for your requests.
@@ -553,11 +561,11 @@ export function UserPreferencesEditor() {
                       <Button
                         asChild
                         variant="outline"
-                        className="w-full justify-between rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-left transition-all hover:border-primary/30 hover:bg-card/80"
+                        className="w-full justify-between rounded-xl border border-border/40 bg-card/60 px-4 py-4 h-auto text-left transition-all hover:bg-muted/50 hover:border-primary/20 group"
                       >
                         <motion.button
                           type="button"
-                          whileTap={{ scale: 0.98 }}
+                          whileTap={{ scale: 0.99 }}
                           transition={{
                             type: 'spring',
                             stiffness: 420,
@@ -565,15 +573,34 @@ export function UserPreferencesEditor() {
                           }}
                           className="flex w-full items-center justify-between"
                         >
-                          <span className="font-medium tracking-tight">
-                            {displayProviderName(p)}
-                          </span>
-                          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/80">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background border border-border/40 shadow-sm group-hover:scale-105 transition-transform">
+                              <ProviderLogo
+                                providerId={p}
+                                className="h-6 w-6"
+                              />
+                            </div>
+                            <div className="flex flex-col text-left">
+                              <span className="text-base font-semibold tracking-tight">
+                                {displayProviderName(p)}
+                              </span>
+                              {keys[p] ? (
+                                <span className="text-[10px] text-emerald-600/80 font-medium">
+                                  Configured
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground/60">
+                                  Not set
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
                             <AnimatePresence initial={false} mode="popLayout">
                               {status === 'saved' || status === 'deleted' ? (
                                 <motion.span
                                   key="status-pill"
-                                  className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-emerald-500"
+                                  className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-500"
                                   initial={{ opacity: 0, scale: 0.85 }}
                                   animate={{ opacity: 1, scale: 1 }}
                                   exit={{ opacity: 0, scale: 0.9 }}
@@ -584,7 +611,7 @@ export function UserPreferencesEditor() {
                                 </motion.span>
                               ) : null}
                             </AnimatePresence>
-                            <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
+                            <ChevronDown className="h-4 w-4 text-muted-foreground/50 transition-transform data-[state=open]:rotate-180 group-hover:text-foreground" />
                           </div>
                         </motion.button>
                       </Button>

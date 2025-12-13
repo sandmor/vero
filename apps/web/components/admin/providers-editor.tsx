@@ -17,6 +17,7 @@ import {
 import { toast } from '@/components/toast';
 import { AnimatedButtonLabel } from '@/components/ui/animated-button';
 import { SUPPORTED_PROVIDERS, displayProviderName } from '@/lib/ai/registry';
+import { ProviderLogo } from '@/components/provider-logo';
 
 type FeedbackState = 'idle' | 'saved' | 'deleted' | 'error';
 
@@ -182,23 +183,40 @@ export function ProvidersEditor({
                 <Button
                   asChild
                   variant="outline"
-                  className="w-full justify-between rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-left transition-all hover:border-primary/30 hover:bg-card/80"
+                  className="w-full justify-between rounded-xl border border-border/40 bg-card/60 px-4 py-4 h-auto text-left transition-all hover:bg-muted/50 hover:border-primary/20 group"
                 >
                   <motion.button
                     type="button"
-                    whileTap={{ scale: 0.98 }}
+                    whileTap={{ scale: 0.99 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 32 }}
                     className="flex w-full items-center justify-between"
                   >
-                    <span className="font-medium tracking-tight">
-                      {displayProviderName(p)}
-                    </span>
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/80">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background border border-border/40 shadow-sm group-hover:scale-105 transition-transform">
+                        <ProviderLogo providerId={p} className="h-6 w-6" />
+                      </div>
+                      <div className="flex flex-col text-left">
+                        <span className="text-base font-semibold tracking-tight">
+                          {displayProviderName(p)}
+                        </span>
+                        {keys[p] ? (
+                          <span className="text-[10px] text-emerald-600/80 font-medium">
+                            Configured
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground/60">
+                            Not set
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
                       <AnimatePresence initial={false} mode="popLayout">
                         {status === 'saved' || status === 'deleted' ? (
                           <motion.span
                             key="status-pill"
-                            className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-emerald-500"
+                            className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-500"
                             initial={{ opacity: 0, scale: 0.85 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.9 }}
@@ -209,7 +227,7 @@ export function ProvidersEditor({
                           </motion.span>
                         ) : null}
                       </AnimatePresence>
-                      <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
+                      <ChevronDown className="h-4 w-4 text-muted-foreground/50 transition-transform data-[state=open]:rotate-180 group-hover:text-foreground" />
                     </div>
                   </motion.button>
                 </Button>

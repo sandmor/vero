@@ -1,275 +1,111 @@
 'use client';
-import {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  type CSSProperties,
-  type ReactNode,
-} from 'react';
-import { motion } from 'framer-motion';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { type ReactNode } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ArchiveExplorer } from '@/components/archive/archive-explorer';
 import { AgentsManagement } from '@/components/agents-management';
 import { UserPreferencesEditor } from '@/components/user-preferences-editor';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
+import { Settings, Archive, Bot, Shield } from 'lucide-react';
+import { useSettingsStore } from '@/lib/stores/settings-store';
 
 export default function SettingsView({
-  defaultTab,
   isAdmin,
   adminContent,
 }: {
-  defaultTab: 'archive' | 'agents' | 'admin' | 'preferences';
   isAdmin: boolean;
   adminContent?: ReactNode;
 }) {
-  const router = useRouter();
-  const search = useSearchParams();
-  const [tab, setTab] = useState<
-    'archive' | 'agents' | 'admin' | 'preferences'
-  >(defaultTab);
-  const tabHeightsRef = useRef<
-    Partial<Record<'archive' | 'agents' | 'admin' | 'preferences', number>>
-  >({});
-  const activeTabRef = useRef<'archive' | 'agents' | 'admin' | 'preferences'>(
-    defaultTab
-  );
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const observedNodeRef = useRef<HTMLDivElement | null>(null);
-  const baselineHeightRef = useRef<number>(0);
-  const [activeTabHeight, setActiveTabHeight] = useState<number | null>(null);
+  const { tab, setTab } = useSettingsStore();
 
-  // Keep URL in sync (avoid full page reload; just push shallow)
-  useEffect(() => {
-    const current = search.get('tab');
-    if (current !== tab) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('tab', tab);
-      router.replace(url.pathname + '?' + url.searchParams.toString());
-    }
-  }, [tab]);
-
-  useEffect(() => {
-    activeTabRef.current = tab;
-    const storedHeight = tabHeightsRef.current[tab];
-    if (typeof storedHeight === 'number') {
-      setActiveTabHeight(storedHeight);
-      return;
-    }
-    if (baselineHeightRef.current > 0) {
-      tabHeightsRef.current[tab] = baselineHeightRef.current;
-      setActiveTabHeight(baselineHeightRef.current);
-    }
-  }, [tab]);
-
-  useEffect(() => {
-    return () => {
-      if (resizeObserverRef.current) {
-        resizeObserverRef.current.disconnect();
-        resizeObserverRef.current = null;
-      }
-      observedNodeRef.current = null;
-    };
-  }, []);
-
-  const registerActiveContent = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (observedNodeRef.current === node) {
-        return;
-      }
-
-      if (resizeObserverRef.current) {
-        resizeObserverRef.current.disconnect();
-        resizeObserverRef.current = null;
-      }
-
-      if (!node) {
-        observedNodeRef.current = null;
-        return;
-      }
-
-      observedNodeRef.current = node;
-
-      const parentElement = node.parentElement as HTMLElement | null;
-      const parentHeight = parentElement?.getBoundingClientRect().height ?? 0;
-      if (parentHeight > 0) {
-        baselineHeightRef.current = parentHeight;
-      }
-
-      if (
-        typeof window === 'undefined' ||
-        typeof ResizeObserver === 'undefined'
-      ) {
-        return;
-      }
-
-      const updateHeight = (height: number) => {
-        const baseline = baselineHeightRef.current || height;
-        const nextHeight = baseline;
-        const previous = tabHeightsRef.current[activeTabRef.current];
-        if (
-          typeof previous === 'number' &&
-          Math.abs(previous - nextHeight) < 0.5
-        ) {
-          if (activeTabHeight === null) {
-            setActiveTabHeight(nextHeight);
-          }
-          return;
-        }
-        tabHeightsRef.current[activeTabRef.current] = nextHeight;
-        setActiveTabHeight(nextHeight);
-      };
-
-      const initialHeight = node.getBoundingClientRect().height;
-      if (initialHeight > 0) {
-        updateHeight(initialHeight);
-      }
-
-      const observer = new ResizeObserver((entries) => {
-        const entry = entries[0];
-        if (!entry) return;
-        const height = Array.isArray(entry.borderBoxSize)
-          ? (entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height)
-          : // @ts-expect-error Support browsers exposing blockSize directly
-            (entry.borderBoxSize?.blockSize ?? entry.contentRect.height);
-        const parentRect = (
-          observedNodeRef.current?.parentElement as HTMLElement | null
-        )?.getBoundingClientRect();
-        if (parentRect?.height) {
-          baselineHeightRef.current = parentRect.height;
-        }
-        updateHeight(height);
-      });
-
-      observer.observe(node);
-      resizeObserverRef.current = observer;
-    },
-    [activeTabHeight]
-  );
-
-  const contentRegionStyle = activeTabHeight
-    ? ({
-        '--settings-tab-height': `${Math.ceil(activeTabHeight)}px`,
-      } as CSSProperties)
-    : undefined;
-
-  const activeContentStyle: CSSProperties = activeTabHeight
-    ? {
-        minHeight: 'var(--settings-tab-height)',
-        height: '100%',
-      }
-    : { height: '100%' };
+  const navItems = [
+    { id: 'preferences', label: 'Preferences', icon: Settings },
+    { id: 'archive', label: 'Archive', icon: Archive },
+    { id: 'agents', label: 'Agents', icon: Bot },
+    ...(isAdmin ? [{ id: 'admin', label: 'Admin', icon: Shield }] : []),
+  ];
 
   return (
-    <Tabs
-      value={tab}
-      onValueChange={(v) =>
-        setTab(v as 'archive' | 'agents' | 'admin' | 'preferences')
-      }
-      className="flex flex-col h-full min-h-0"
-    >
-      <div className="px-6 pb-3">
-        <TabsList className="rounded-full border border-border/60 bg-muted/50 px-1.5 py-1 shadow-sm backdrop-blur">
-          <TabsTrigger value="preferences" className="rounded-full px-4 py-1.5">
-            Preferences
-          </TabsTrigger>
-          <TabsTrigger value="archive" className="rounded-full px-4 py-1.5">
-            Archive
-          </TabsTrigger>
-          <TabsTrigger value="agents" className="rounded-full px-4 py-1.5">
-            Agents
-          </TabsTrigger>
-          {isAdmin && (
-            <TabsTrigger value="admin" className="rounded-full px-4 py-1.5">
-              Admin
-            </TabsTrigger>
-          )}
-        </TabsList>
+    <div className="flex gap-6">
+      {/* Sidebar */}
+      <div className="hidden md:block w-56 shrink-0 lg:w-64">
+        <nav className="sticky top-[146px] rounded-2xl border border-border/40 bg-card/50 backdrop-blur-sm p-4">
+          <div className="flex flex-col gap-1">
+            {navItems.map((item) => {
+              const isActive = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setTab(item.id as any)}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                    isActive
+                      ? 'bg-primary/10 text-primary hover:bg-primary/15'
+                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                  )}
+                >
+                  <item.icon size={18} strokeWidth={isActive ? 2.5 : 2} />
+                  <span className="whitespace-nowrap">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
       </div>
-      <div
-        className="flex-1 min-h-0 overflow-hidden pt-2"
-        style={contentRegionStyle}
-      >
-        <TabsContent
-          value="archive"
-          className="flex h-full min-h-0 flex-col overflow-hidden"
-        >
+
+      {/* Main content area */}
+      <main className="flex-1 min-w-0 rounded-2xl border border-border/40 bg-card/30 backdrop-blur-sm p-6 lg:p-10">
+        <AnimatePresence mode="wait">
           {tab === 'archive' && (
             <motion.div
               key="archive"
-              initial={{ opacity: 0, y: 16 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
-              className="flex-1 min-h-0 overflow-hidden"
-              ref={registerActiveContent}
-              style={activeContentStyle}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
             >
               <ArchiveExplorer />
             </motion.div>
           )}
-        </TabsContent>
-        <TabsContent
-          value="agents"
-          className="flex h-full min-h-0 flex-col overflow-hidden"
-        >
           {tab === 'agents' && (
             <motion.div
               key="agents"
-              initial={{ opacity: 0, y: 16 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
-              className="flex-1 min-h-0 overflow-hidden"
-              ref={registerActiveContent}
-              style={activeContentStyle}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
             >
               <AgentsManagement />
             </motion.div>
           )}
-        </TabsContent>
-        <TabsContent
-          value="preferences"
-          className="flex h-full min-h-0 flex-col overflow-auto"
-        >
           {tab === 'preferences' && (
             <motion.div
               key="preferences"
-              initial={{ opacity: 0, y: 16 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
-              className="flex-1"
-              ref={registerActiveContent}
-              style={activeContentStyle}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
             >
               <UserPreferencesEditor />
             </motion.div>
           )}
-        </TabsContent>
-        {isAdmin && (
-          <TabsContent
-            value="admin"
-            className="flex h-full min-h-0 flex-col overflow-auto"
-          >
-            {tab === 'admin' && (
-              <motion.div
-                key="admin"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, ease: [0.21, 1.02, 0.73, 1] }}
-                className="flex-1"
-                ref={registerActiveContent}
-                style={activeContentStyle}
-              >
-                {adminContent}
-              </motion.div>
-            )}
-          </TabsContent>
-        )}
-        {!isAdmin && tab === 'admin' && (
-          <div className="p-6 text-sm text-muted-foreground">
-            Access denied.
-          </div>
-        )}
-      </div>
-    </Tabs>
+          {isAdmin && tab === 'admin' && (
+            <motion.div
+              key="admin"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              {adminContent}
+            </motion.div>
+          )}
+          {!isAdmin && tab === 'admin' && (
+            <div className="p-6 text-sm text-muted-foreground">
+              Access denied.
+            </div>
+          )}
+        </AnimatePresence>
+      </main>
+    </div>
   );
 }

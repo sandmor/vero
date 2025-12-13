@@ -32,7 +32,7 @@ import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { useClientSearch, useSearchHistory } from '@/hooks/use-client-search';
-import { useSearchStore } from '@/hooks/use-search-store';
+import { useSearchStore } from '@/lib/stores/search-store';
 import { getEncryptedCacheManager } from '@/lib/cache/cache-manager';
 import { ChatItem } from '../sidebar-history-item';
 import { SearchActiveFilters } from './search-active-filters';

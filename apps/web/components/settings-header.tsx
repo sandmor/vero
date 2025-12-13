@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
-import { useNavigationStore } from '@/lib/navigation-store';
+import { useNavigationStore } from '@/lib/stores/navigation-store';
 
 export default function SettingsHeader({
   title,

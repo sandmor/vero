@@ -221,7 +221,6 @@
 
   body {
     @apply bg-background text-foreground;
-    overflow-x: hidden;
     position: relative;
   }
 
@@ -287,6 +286,18 @@
 
 .suggestion-highlight {
   @apply bg-blue-200 hover:bg-blue-300 dark:hover:bg-blue-400/50 dark:text-blue-50 dark:bg-blue-500/40;
+}
+
+/* hide scrollbar but allow scrolling */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* minimal scrollbar styling */

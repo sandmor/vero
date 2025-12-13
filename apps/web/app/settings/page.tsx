@@ -7,13 +7,14 @@ import { HydrationBoundary } from '@tanstack/react-query';
 import { isAdmin } from '@/lib/auth/admin';
 import SettingsView from './view';
 import AdminSections from './AdminSections';
+import { SettingsMobileNav } from './_mobile-nav';
+import { SettingsStoreInitializer } from './_store-initializer';
 import SettingsHeader from '@/components/settings-header';
 
 export const metadata: Metadata = {
   title: 'Account Settings',
 };
 
-// Server helper to prefetch archive list when archive tab is active so first paint is immediate.
 async function prefetchArchive() {
   const qc = new QueryClient();
   await qc.prefetchInfiniteQuery({
@@ -66,6 +67,7 @@ export default async function SettingsPage({
         : tabParam === 'archive'
           ? 'archive'
           : 'preferences';
+
   const dehydrated =
     defaultTab === 'archive'
       ? await prefetchArchive()
@@ -73,22 +75,29 @@ export default async function SettingsPage({
         ? await prefetchAgents()
         : undefined;
   const adminContent = adminAllowed ? <AdminSections /> : null;
+
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="px-6 pt-6">
-        <SettingsHeader
-          title="Account Settings"
-          subtitle="Manage your knowledge archive, AI agents, API keys, and personal preferences."
-        />
+    <div className="min-h-screen bg-muted/5">
+      <SettingsStoreInitializer defaultTab={defaultTab as any} />
+
+      {/* Fixed Header */}
+      <header className="fixed top-0 left-0 right-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/40">
+        <div className="px-6 pt-6 pb-4">
+          <SettingsHeader
+            title="Account Settings"
+            subtitle="Manage your knowledge archive, AI agents, API keys, and personal preferences."
+          />
+        </div>
+        <SettingsMobileNav isAdmin={adminAllowed} />
       </header>
-      <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 mt-4">
+
+      {/* Spacer for fixed header */}
+      <div className="h-[200px] md:h-[130px] w-full" aria-hidden="true" />
+
+      <div className="w-full px-4 pb-8 md:px-6 lg:px-8">
         <HydrationBoundary state={dehydrated}>
           <Suspense fallback={<div className="flex-1 rounded-md border" />}>
-            <SettingsView
-              defaultTab={defaultTab}
-              isAdmin={adminAllowed}
-              adminContent={adminContent}
-            />
+            <SettingsView isAdmin={adminAllowed} adminContent={adminContent} />
           </Suspense>
         </HydrationBoundary>
       </div>

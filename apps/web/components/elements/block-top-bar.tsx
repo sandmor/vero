@@ -46,9 +46,7 @@ export const BlockTopBar = ({
         className
       )}
     >
-      <span className="text-xs font-medium text-muted-foreground">
-        {title}
-      </span>
+      <span className="text-xs font-medium text-muted-foreground">{title}</span>
       {content && (
         <Button
           variant="ghost"

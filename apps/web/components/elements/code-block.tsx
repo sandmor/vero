@@ -16,12 +16,29 @@ function getLanguageDisplayName(langId: string): string {
 
   // Exceptions & Acronyms
   const overrides: Record<string, string> = {
-    cpp: 'C++', abap: 'ABAP', cobol: 'COBOL', matlab: 'MATLAB',
-    graphql: 'GraphQL', latex: 'LaTeX', powershell: 'PowerShell',
-    objectivec: 'Objective-C', vbnet: 'VB.NET', plsql: 'PL/SQL',
-    css: 'CSS', sql: 'SQL', json: 'JSON', xml: 'XML', yaml: 'YAML',
-    html: 'HTML', php: 'PHP', toml: 'TOML', csv: 'CSV', wasm: 'WebAssembly',
-    ts: 'TypeScript', tsx: 'TSX', jsx: 'JSX',
+    cpp: 'C++',
+    abap: 'ABAP',
+    cobol: 'COBOL',
+    matlab: 'MATLAB',
+    graphql: 'GraphQL',
+    latex: 'LaTeX',
+    powershell: 'PowerShell',
+    objectivec: 'Objective-C',
+    vbnet: 'VB.NET',
+    plsql: 'PL/SQL',
+    css: 'CSS',
+    sql: 'SQL',
+    json: 'JSON',
+    xml: 'XML',
+    yaml: 'YAML',
+    html: 'HTML',
+    php: 'PHP',
+    toml: 'TOML',
+    csv: 'CSV',
+    wasm: 'WebAssembly',
+    ts: 'TypeScript',
+    tsx: 'TSX',
+    jsx: 'JSX',
   };
 
   if (overrides[id]) return overrides[id];

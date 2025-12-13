@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import { ChatItem } from './sidebar-history-item';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { useClientSearch, useSearchHistory } from '@/hooks/use-client-search';
-import { useSearchStore } from '@/hooks/use-search-store';
+import { useSearchStore } from '@/lib/stores/search-store';
 import { SearchActiveFilters } from './search/search-active-filters';
 import { SearchFilterActions } from './search/search-filter-actions';
 import { SearchSuggestions } from './search/search-suggestions';
