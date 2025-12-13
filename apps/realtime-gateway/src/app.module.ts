@@ -5,7 +5,7 @@ import { AppController } from './app.controller.js';
 import { RealtimeGateway } from './realtime.gateway.js';
 import { PrismaService } from './prisma.service.js';
 import { TerminusModule } from '@nestjs/terminus';
-import { HealthController } from './health.controller.js';
+import { HealthController, EnvHealthIndicator } from './health.controller.js';
 
 @Module({
   imports: [
@@ -18,6 +18,6 @@ import { HealthController } from './health.controller.js';
     TerminusModule,
   ],
   controllers: [AppController, HealthController],
-  providers: [RealtimeGateway, PrismaService],
+  providers: [RealtimeGateway, PrismaService, EnvHealthIndicator],
 })
 export class AppModule { }
