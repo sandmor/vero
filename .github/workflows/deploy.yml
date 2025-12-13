@@ -8,7 +8,7 @@ env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_REPOSITORY: realtime-gateway
-  IMAGE_NAME: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/realtime-gateway
+  IMAGE_NAME: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/virid-realtime-gateway
 
 jobs:
   build-and-push:
@@ -35,7 +35,6 @@ jobs:
             -f infra/Dockerfile.realtime-gateway \
             -t $IMAGE_NAME:latest \
             -t $IMAGE_NAME:$IMAGE_TAG \
-            -f Dockerfile \
             .
           docker push $IMAGE_NAME:latest
           docker push $IMAGE_NAME:$IMAGE_TAG
