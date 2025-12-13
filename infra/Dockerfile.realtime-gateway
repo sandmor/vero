@@ -56,6 +56,13 @@ RUN bun install --frozen-lockfile --production
 FROM oven/bun:1-slim AS runner
 WORKDIR /usr/src/app
 
+# Install curl for healthcheck
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl \
+  && rm -rf /var/lib/apt/lists/*
+USER bun
+
 ENV NODE_ENV=production
 
 # Production node_modules
