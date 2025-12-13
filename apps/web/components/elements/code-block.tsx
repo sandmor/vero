@@ -10,6 +10,44 @@ import {
 import { cn } from '@/lib/utils';
 import { BlockTopBar } from './block-top-bar';
 
+function getLanguageDisplayName(langId: string): string {
+  if (!langId) return '';
+  const id = langId.toLowerCase().trim();
+
+  // Exceptions & Acronyms
+  const overrides: Record<string, string> = {
+    cpp: 'C++', abap: 'ABAP', cobol: 'COBOL', matlab: 'MATLAB',
+    graphql: 'GraphQL', latex: 'LaTeX', powershell: 'PowerShell',
+    objectivec: 'Objective-C', vbnet: 'VB.NET', plsql: 'PL/SQL',
+    css: 'CSS', sql: 'SQL', json: 'JSON', xml: 'XML', yaml: 'YAML',
+    html: 'HTML', php: 'PHP', toml: 'TOML', csv: 'CSV', wasm: 'WebAssembly',
+    ts: 'TypeScript', tsx: 'TSX', jsx: 'JSX',
+  };
+
+  if (overrides[id]) return overrides[id];
+
+  // Heuristics
+  // Handles: csharp, fsharp, qsharp -> C#, F#, Q#
+  if (id.endsWith('sharp') && id.length < 8) {
+    return id.replace('sharp', '#').toUpperCase();
+  }
+
+  // Handles: typescript, coffeescript -> TypeScript, CoffeeScript
+  if (id.endsWith('script') && id !== 'script') {
+    return capitalize(id.slice(0, -6)) + 'Script';
+  }
+
+  // Handles: dns-zone-file, visual-basic -> Dns Zone File, Visual Basic
+  if (id.includes('-')) {
+    return id.split('-').map(capitalize).join(' ');
+  }
+
+  // Fallback: zig, python, java -> Zig, Python, Java
+  return capitalize(id);
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 // Align the prism export with the React 19 JSX expectations once to avoid per-use casts.
 const PrismSyntaxHighlighter =
   SyntaxHighlighter as unknown as ComponentType<SyntaxHighlighterProps>;
@@ -34,7 +72,7 @@ export const CodeBlock = ({
     )}
     {...props}
   >
-    <BlockTopBar title={language} content={code} />
+    <BlockTopBar title={getLanguageDisplayName(language)} content={code} />
     <div className="relative">
       <PrismSyntaxHighlighter
         className="overflow-hidden dark:hidden"

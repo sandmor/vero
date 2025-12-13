@@ -46,7 +46,7 @@ export const BlockTopBar = ({
         className
       )}
     >
-      <span className="text-xs font-medium text-muted-foreground uppercase">
+      <span className="text-xs font-medium text-muted-foreground">
         {title}
       </span>
       {content && (
