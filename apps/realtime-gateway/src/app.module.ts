@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller.js';
 import { RealtimeGateway } from './realtime.gateway.js';
 import { PrismaService } from './prisma.service.js';
+import { TerminusModule } from '@nestjs/terminus';
+import { HealthController } from './health.controller.js';
 
 @Module({
   imports: [
@@ -13,8 +15,9 @@ import { PrismaService } from './prisma.service.js';
         path.join(process.cwd(), '.env'),
       ],
     }),
+    TerminusModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
   providers: [RealtimeGateway, PrismaService],
 })
 export class AppModule { }

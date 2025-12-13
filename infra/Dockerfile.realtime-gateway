@@ -1,0 +1,80 @@
+FROM oven/bun:1 AS base
+WORKDIR /usr/src/app
+
+# Root manifests and shared config
+COPY package.json bun.lock tsconfig.base.json ./
+
+# Workspace manifests needed for dependency graph
+COPY apps/realtime-gateway/package.json ./apps/realtime-gateway/package.json
+COPY packages/db/package.json ./packages/db/package.json
+COPY packages/db/prisma.config.ts ./packages/db/prisma.config.ts
+COPY packages/db/prisma ./packages/db/prisma
+# apps/web is a workspace dependency; we only need its package.json for resolution
+COPY apps/web/package.json ./apps/web/package.json
+
+ARG DATABASE_URL="postgresql://user:password@localhost:5432/db?schema=public"
+ENV DATABASE_URL=${DATABASE_URL}
+
+# Install all deps (dev + prod) for building
+RUN bun install --frozen-lockfile
+
+# ---------- Build stage ----------
+FROM base AS build
+WORKDIR /usr/src/app
+
+# Copy sources for the packages we actually build
+COPY packages/db ./packages/db
+COPY apps/realtime-gateway ./apps/realtime-gateway
+
+# Build DB (prisma generate + tsc -> dist)
+RUN bun run --cwd packages/db build
+
+# Ensure Prisma client + binaries live alongside compiled JS
+RUN cp -r packages/db/generated packages/db/dist/
+
+# Build gateway app (must output dist/main.js)
+RUN bun run --cwd apps/realtime-gateway build
+
+# ---------- Production dependencies ----------
+FROM oven/bun:1 AS prod-deps
+WORKDIR /usr/src/app
+
+# Only manifests for a clean production-only install
+COPY package.json bun.lock tsconfig.base.json ./
+COPY apps/realtime-gateway/package.json ./apps/realtime-gateway/package.json
+COPY packages/db/package.json ./packages/db/package.json
+COPY packages/db/prisma.config.ts ./packages/db/prisma.config.ts
+COPY packages/db/prisma ./packages/db/prisma
+COPY apps/web/package.json ./apps/web/package.json
+
+ARG DATABASE_URL="postgresql://user:password@localhost:5432/db?schema=public"
+ENV DATABASE_URL=${DATABASE_URL}
+
+RUN bun install --frozen-lockfile --production
+
+# ---------- Runner ----------
+FROM oven/bun:1-slim AS runner
+WORKDIR /usr/src/app
+
+ENV NODE_ENV=production
+
+# Production node_modules
+COPY --from=prod-deps --chown=bun:bun /usr/src/app/node_modules ./node_modules
+
+# Built DB artifacts
+COPY --from=build --chown=bun:bun /usr/src/app/packages/db/package.json ./packages/db/package.json
+COPY --from=build --chown=bun:bun /usr/src/app/packages/db/dist ./packages/db/dist
+
+# Built gateway app
+COPY --from=build --chown=bun:bun /usr/src/app/apps/realtime-gateway/package.json ./apps/realtime-gateway/package.json
+COPY --from=build --chown=bun:bun /usr/src/app/apps/realtime-gateway/dist ./apps/realtime-gateway/dist
+
+WORKDIR /usr/src/app/apps/realtime-gateway
+
+USER bun
+EXPOSE 3001
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
+  CMD curl -f http://localhost:3001/health || exit 1
+
+CMD ["bun", "dist/main.js"]

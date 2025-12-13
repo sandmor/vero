@@ -1,0 +1,14 @@
+**/node_modules
+node_modules
+dist
+.git
+.env
+.env.*
+*.log
+coverage
+test-results
+playwright-report
+.DS_Store
+.next
+.vscode
+*.md
