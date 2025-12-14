@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import MiniSearch from 'minisearch';
+import { Document, type DocumentOptions } from 'flexsearch';
 import type {
   ChatDoc,
   ChatIndexMeta,
@@ -16,20 +16,38 @@ const CHAT_DOC_PREFIX = 'chat:';
 const MESSAGE_DOC_PREFIX = 'msg:';
 const INDEX_VERSION = 1;
 
-const chatIndexOptions = {
-  fields: ['title'],
-  storeFields: ['id', 'chatId', 'title', 'createdAt', 'updatedAt', 'type'],
-  searchOptions: { prefix: true, fuzzy: 0.2 },
+/**
+ * Configuration for the chat index.
+ * Context enabled to improve relevance of multi-term queries.
+ */
+const chatIndexOptions: DocumentOptions<ChatDoc> = {
+  document: {
+    id: 'id',
+    index: ['title'],
+  },
+  tokenize: 'tolerant',
+  preset: 'match',
+  context: true,
 };
 
-const messageIndexOptions = {
-  fields: ['content', 'title'],
-  storeFields: ['id', 'chatId', 'chatTitle', 'content', 'createdAt', 'type'],
-  searchOptions: { prefix: true, fuzzy: 0.2 },
+/**
+ * Configuration for the message index.
+ * Context enabled to improve relevance of multi-term queries.
+ */
+const messageIndexOptions: DocumentOptions<MessageDoc> = {
+  document: {
+    id: 'id',
+    index: ['content', 'chatTitle'],
+  },
+  tokenize: 'tolerant',
+  preset: 'match',
+  context: true,
 };
 
-let chatIndex = new MiniSearch<ChatDoc>(chatIndexOptions);
-let messageIndex = new MiniSearch<MessageDoc>(messageIndexOptions);
+// Start with empty indexes
+let chatIndex = new Document<ChatDoc>(chatIndexOptions);
+let messageIndex = new Document<MessageDoc>(messageIndexOptions);
+
 let chatDocs = new Map<string, ChatDoc>();
 let messageDocs = new Map<string, MessageDoc>();
 let chatMeta = new Map<string, ChatIndexMeta>();
@@ -75,7 +93,7 @@ function buildSnippet(content: string, query: string): string {
   const matchIndex = lowerContent.indexOf(normalizedQuery);
 
   if (matchIndex === -1) {
-    return normalizedContent.length > 180
+    return normalizedContent.length > 50
       ? `${normalizedContent.slice(0, 180)}...`
       : normalizedContent;
   }
@@ -92,32 +110,36 @@ function buildSnippet(content: string, query: string): string {
 }
 
 function resetIndexes(): void {
-  chatIndex = new MiniSearch<ChatDoc>(chatIndexOptions);
-  messageIndex = new MiniSearch<MessageDoc>(messageIndexOptions);
+  chatIndex = new Document<ChatDoc>(chatIndexOptions);
+  messageIndex = new Document<MessageDoc>(messageIndexOptions);
   chatDocs = new Map();
   messageDocs = new Map();
   chatMeta = new Map();
 }
 
-function hydrateFromSnapshot(snapshot: SearchIndexSnapshot | null): void {
+async function hydrateFromSnapshot(
+  snapshot: SearchIndexSnapshot | null
+): Promise<void> {
   resetIndexes();
   if (!snapshot || snapshot.version !== INDEX_VERSION) return;
 
   try {
-    chatIndex = MiniSearch.loadJSON<ChatDoc>(
-      snapshot.chatIndex,
-      chatIndexOptions
-    );
-    messageIndex = MiniSearch.loadJSON<MessageDoc>(
-      snapshot.messageIndex,
-      messageIndexOptions
-    );
+    // Import chat index keys
+    const chatKeys = Object.keys(snapshot.chatIndex);
+    for (const key of chatKeys) {
+      await chatIndex.import(key, snapshot.chatIndex[key]);
+    }
+
+    // Import message index keys
+    const messageKeys = Object.keys(snapshot.messageIndex);
+    for (const key of messageKeys) {
+      await messageIndex.import(key, snapshot.messageIndex[key]);
+    }
 
     chatDocs = new Map(Object.entries(snapshot.chatDocs));
     messageDocs = new Map(Object.entries(snapshot.messageDocs));
     chatMeta = new Map(Object.entries(snapshot.chatMeta));
   } catch (error) {
-    // If snapshot is corrupt, fall back to empty indexes
     console.warn(
       '[SearchWorker] Failed to hydrate snapshot, resetting index',
       error
@@ -126,11 +148,21 @@ function hydrateFromSnapshot(snapshot: SearchIndexSnapshot | null): void {
   }
 }
 
-function buildSnapshot(): SearchIndexSnapshot {
+async function buildSnapshot(): Promise<SearchIndexSnapshot> {
+  const chatExport: Record<string, string> = {};
+  await chatIndex.export((key, data) => {
+    chatExport[key] = data;
+  });
+
+  const messageExport: Record<string, string> = {};
+  await messageIndex.export((key, data) => {
+    messageExport[key] = data;
+  });
+
   return {
     version: INDEX_VERSION,
-    chatIndex: JSON.stringify(chatIndex.toJSON()),
-    messageIndex: JSON.stringify(messageIndex.toJSON()),
+    chatIndex: chatExport,
+    messageIndex: messageExport,
     chatDocs: Object.fromEntries(chatDocs),
     messageDocs: Object.fromEntries(messageDocs),
     chatMeta: Object.fromEntries(chatMeta),
@@ -143,14 +175,14 @@ function removeChat(chatId: string): boolean {
 
   const chatDoc = chatDocs.get(meta.chatDocId);
   if (chatDoc) {
-    chatIndex.remove(chatDoc);
+    chatIndex.remove(chatDoc.id);
     chatDocs.delete(meta.chatDocId);
   }
 
   for (const docId of meta.messageDocIds) {
     const messageDoc = messageDocs.get(docId);
     if (messageDoc) {
-      messageIndex.remove(messageDoc);
+      messageIndex.remove(messageDoc.id);
       messageDocs.delete(docId);
     }
   }
@@ -204,10 +236,10 @@ function reindexChat(chat: IndexableChat): boolean {
   return true;
 }
 
-function handleSync(
+async function handleSync(
   chats: IndexableChat[],
   requestId?: string
-): { changed: boolean; snapshot?: SearchIndexSnapshot } {
+): Promise<{ changed: boolean; snapshot?: SearchIndexSnapshot }> {
   let changed = false;
   const incomingIds = new Set(chats.map((chat) => chat.chatId));
 
@@ -245,7 +277,7 @@ function handleSync(
   maybeKeepAlive(requestId);
 
   return changed
-    ? { changed: true, snapshot: buildSnapshot() }
+    ? { changed: true, snapshot: await buildSnapshot() }
     : { changed: false };
 }
 
@@ -285,7 +317,8 @@ function sortChatResults(
       );
     case 'relevance':
     default:
-      return chatResults;
+      // FlexSearch results are already sorted by relevance (score)
+      return sorted;
   }
 }
 
@@ -313,11 +346,28 @@ function sortMessageResults(
   }
 }
 
-function handleSearch(
+/**
+ * Helper to flatten FlexSearch results which are grouped by field.
+ */
+function getIdsFromResults(results: any[]): Set<string> {
+  const ids = new Set<string>();
+  for (const fieldResult of results) {
+    for (const id of fieldResult.result) {
+      ids.add(String(id));
+    }
+  }
+  return ids;
+}
+
+/**
+ * Performs a search across chat and message indexes.
+ * Returns results sorted by the requested sort order (or relevance).
+ */
+async function handleSearch(
   query: string,
   options: WorkerSearchOptions,
   knownChatIds: string[]
-): {
+): Promise<{
   chatResults: { chatId: string; score: number }[];
   messageResults: {
     messageId: string;
@@ -329,7 +379,7 @@ function handleSearch(
     snippet: string;
   }[];
   snapshot?: SearchIndexSnapshot;
-} {
+}> {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) {
     return { chatResults: [], messageResults: [] };
@@ -338,56 +388,75 @@ function handleSearch(
   const knownIds = new Set(knownChatIds);
   let changed = false;
 
-  const chatResultsRaw = chatIndex.search(normalizedQuery, {
-    prefix: true,
-    fuzzy: 0.2,
-    boost: { title: 2 },
+  // Search Chat Index
+  const chatSearchResults = await chatIndex.searchAsync(normalizedQuery, {
+    suggest: true,
+    limit: 1000,
   });
+  const chatDocIds = getIdsFromResults(chatSearchResults);
 
-  const filteredChatResults = chatResultsRaw
-    .map((result) => ({
-      chatId: (result as any).chatId,
-      title: (result as any).title,
-      createdAt: (result as any).createdAt,
-      updatedAt: (result as any).updatedAt,
-      score: (result as any).score as number,
-    }))
-    .filter((result) => {
-      if (!knownIds.has(result.chatId)) {
-        changed = removeChat(result.chatId) || changed;
-        return false;
+  const filteredChatResults: any[] = [];
+  let chatScore = 1000;
+
+  // FlexSearch doesn't guarantee order across fields easily when simplified,
+  // but within a field it is sorted by score.
+  // We assume the iteration order roughly correlates to relevance.
+  for (const id of chatDocIds) {
+    const doc = chatDocs.get(id);
+    if (!doc) continue;
+
+    if (!knownIds.has(doc.chatId)) {
+      changed = removeChat(doc.chatId) || changed;
+      continue;
+    }
+
+    if (passesDateFilter(doc.createdAt ?? doc.updatedAt, options)) {
+      filteredChatResults.push({
+        chatId: doc.chatId,
+        title: doc.title,
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+        score: chatScore--,
+      });
+    }
+  }
+
+  // Search Message Index
+  const filteredMessageResults: any[] = [];
+
+  if (options.searchMessages !== false) {
+    const messageSearchResults = await messageIndex.searchAsync(
+      normalizedQuery,
+      {
+        suggest: true,
+        limit: 1000,
       }
-      return passesDateFilter(result.createdAt ?? result.updatedAt, options);
-    });
+    );
+    const messageDocIds = getIdsFromResults(messageSearchResults);
+    let messageScore = 1000;
 
-  const messageResultsRaw =
-    options.searchMessages === false
-      ? []
-      : messageIndex.search(normalizedQuery, {
-          prefix: true,
-          fuzzy: 0.2,
+    for (const id of messageDocIds) {
+      const doc = messageDocs.get(id);
+      if (!doc) continue;
+
+      if (!knownIds.has(doc.chatId)) {
+        changed = removeChat(doc.chatId) || changed;
+        continue;
+      }
+
+      if (passesDateFilter(doc.createdAt, options)) {
+        filteredMessageResults.push({
+          messageId: doc.id,
+          chatId: doc.chatId,
+          chatTitle: doc.chatTitle,
+          content: doc.content,
+          createdAt: doc.createdAt,
+          score: messageScore--,
+          snippet: buildSnippet(doc.content, normalizedQuery),
         });
-
-  const filteredMessageResults = messageResultsRaw
-    .map((result) => ({
-      messageId: (result as any).id,
-      chatId: (result as any).chatId,
-      chatTitle: (result as any).chatTitle,
-      content: (result as any).content,
-      createdAt: (result as any).createdAt,
-      score: (result as any).score as number,
-    }))
-    .filter((result) => {
-      if (!knownIds.has(result.chatId)) {
-        changed = removeChat(result.chatId) || changed;
-        return false;
       }
-      return passesDateFilter(result.createdAt, options);
-    })
-    .map((result) => ({
-      ...result,
-      snippet: buildSnippet(result.content, normalizedQuery),
-    }));
+    }
+  }
 
   const sortedChatResults = sortChatResults(filteredChatResults, options).map(
     (result) => ({ chatId: result.chatId, score: result.score })
@@ -400,7 +469,7 @@ function handleSearch(
   return {
     chatResults: sortedChatResults,
     messageResults: sortedMessageResults,
-    snapshot: changed ? buildSnapshot() : undefined,
+    snapshot: changed ? await buildSnapshot() : undefined,
   };
 }
 
@@ -411,50 +480,55 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
     (self as unknown as DedicatedWorkerGlobalScope).postMessage(message);
   };
 
-  try {
-    if (payload.type === 'load') {
-      hydrateFromSnapshot(payload.snapshot);
-      respond({ type: 'loaded', requestId });
-      return;
-    }
+  const run = async () => {
+    try {
+      if (payload.type === 'load') {
+        await hydrateFromSnapshot(payload.snapshot);
+        respond({ type: 'loaded', requestId });
+        return;
+      }
 
-    if (payload.type === 'sync') {
-      const result = handleSync(payload.chats, requestId);
+      if (payload.type === 'sync') {
+        const result = await handleSync(payload.chats, requestId);
+        respond({
+          type: 'synced',
+          requestId,
+          changed: result.changed,
+          snapshot: result.snapshot,
+        });
+        return;
+      }
+
+      if (payload.type === 'search') {
+        const result = await handleSearch(
+          payload.query,
+          payload.options,
+          payload.knownChatIds
+        );
+        respond({
+          type: 'searchResults',
+          requestId,
+          chatResults: result.chatResults,
+          messageResults: result.messageResults,
+          snapshot: result.snapshot,
+        });
+        return;
+      }
+
       respond({
-        type: 'synced',
+        type: 'error',
         requestId,
-        changed: result.changed,
-        snapshot: result.snapshot,
+        message: 'Unknown worker request',
       });
-      return;
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error ? error.message : 'Search worker failed';
+      respond({ type: 'error', requestId, message });
     }
+  };
 
-    if (payload.type === 'search') {
-      const result = handleSearch(
-        payload.query,
-        payload.options,
-        payload.knownChatIds
-      );
-      respond({
-        type: 'searchResults',
-        requestId,
-        chatResults: result.chatResults,
-        messageResults: result.messageResults,
-        snapshot: result.snapshot,
-      });
-      return;
-    }
-
-    respond({
-      type: 'error',
-      requestId,
-      message: 'Unknown worker request',
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Search worker failed';
-    respond({ type: 'error', requestId, message });
-  }
+  run();
 });
 
 export {};

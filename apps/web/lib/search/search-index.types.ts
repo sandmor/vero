@@ -1,4 +1,4 @@
-export type SerializedIndexJSON = string;
+export type SerializedIndexJSON = Record<string, string>;
 
 export type SortOption = 'relevance' | 'newest' | 'oldest' | 'title';
 
