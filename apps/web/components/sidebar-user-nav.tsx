@@ -4,6 +4,7 @@ import { useClerk, useUser } from '@clerk/nextjs';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronUp } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
@@ -141,11 +142,14 @@ export function SidebarUserNav({
             side="top"
           >
             {canOpenSettings && (
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onSelect={() => router.push('/settings')}
-              >
-                Account & Settings
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/settings"
+                  className="w-full cursor-pointer"
+                  data-testid="user-nav-item-settings"
+                >
+                  Account & Settings
+                </Link>
               </DropdownMenuItem>
             )}
             <DropdownMenuItem

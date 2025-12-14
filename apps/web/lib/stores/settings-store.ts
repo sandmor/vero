@@ -15,7 +15,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', tab);
-      window.history.pushState({}, '', url.toString());
+      window.history.replaceState({}, '', url.toString());
     }
   },
   initialize: (tab) => set({ tab }),

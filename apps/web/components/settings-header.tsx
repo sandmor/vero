@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
-import { useNavigationStore } from '@/lib/stores/navigation-store';
 
 export default function SettingsHeader({
   title,
@@ -14,7 +13,6 @@ export default function SettingsHeader({
   subtitle?: string;
 }) {
   const router = useRouter();
-  const lastChatUrl = useNavigationStore((state) => state.lastChatUrl);
 
   return (
     <motion.div
@@ -42,8 +40,11 @@ export default function SettingsHeader({
             variant="outline"
             size="sm"
             onClick={() => {
-              const targetUrl = lastChatUrl || '/chat';
-              router.push(targetUrl);
+              if (window.history.length > 1) {
+                router.back();
+              } else {
+                router.push('/chat');
+              }
             }}
           >
             <ArrowLeft size={16} />

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Chat } from '@/components/chat';
-import { SetLastChatUrl } from '@/components/set-last-chat-url';
 import type {
   BranchSelectionSnapshot,
   ChatBootstrapResponse,
@@ -173,7 +172,6 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
 
   return (
     <>
-      {validBootstrap.shouldSetLastChatUrl ? <SetLastChatUrl /> : null}
       {validBootstrap.kind === 'existing' ? (
         <Chat
           key={validBootstrap.chatId}

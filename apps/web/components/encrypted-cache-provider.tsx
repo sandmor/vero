@@ -1599,8 +1599,6 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       initialSettings,
       initialAgent: null,
       initialBranchState: { rootMessageIndex: null },
-      shouldSetLastChatUrl:
-        !!cookieModelId && isModelIdAllowed(cookieModelId, allowedModelIds),
     };
   }, [state.metadata]);
 

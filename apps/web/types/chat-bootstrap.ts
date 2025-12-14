@@ -12,7 +12,6 @@ interface ChatBootstrapCommon {
   allowedModels: ChatModelOption[];
   initialSettings: ChatSettings | null;
   initialAgent: AgentPreset | null;
-  shouldSetLastChatUrl: boolean;
 }
 
 export type BranchSelectionSnapshot = {

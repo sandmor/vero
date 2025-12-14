@@ -239,7 +239,6 @@ export async function POST(request: NextRequest) {
       initialMessages: messages,
       initialBranchState: effectiveBranchState,
       initialLastContext: chatForSerialization.lastContext,
-      shouldSetLastChatUrl: false,
       prefetchedChat: serializeChat(chatForSerialization),
     };
 

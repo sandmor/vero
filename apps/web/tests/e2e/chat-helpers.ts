@@ -20,7 +20,6 @@ export type ChatBootstrapResponse = {
   allowedModels: ChatModelOption[];
   initialSettings: unknown;
   initialAgent: unknown;
-  shouldSetLastChatUrl: boolean;
   autoResume: boolean;
   isReadonly: boolean;
   agentId?: string;
@@ -86,7 +85,6 @@ export const DEFAULT_BOOTSTRAP: ChatBootstrapResponse = {
   allowedModels: [VISION_MODEL, TEXT_MODEL],
   initialSettings: null,
   initialAgent: null,
-  shouldSetLastChatUrl: false,
   autoResume: false,
   isReadonly: false,
   initialBranchState: { rootMessageIndex: null },
@@ -115,6 +113,28 @@ export async function configureChatMocks(
         ? allowedModels[0].id
         : DEFAULT_BOOTSTRAP.initialChatModel),
   };
+
+  let finalHistoryPages = historyPages;
+  if (bootstrap.kind === 'existing' && finalHistoryPages.length === 0) {
+    // Auto-generate history record for existing chat bootstrap
+    const record: any = {
+      chatId: bootstrap.chatId,
+      lastUpdatedAt: new Date().toISOString(),
+      bootstrap,
+      chat: {
+        id: bootstrap.chatId,
+        title: 'Mock Chat',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userId: 'user-mock',
+        visibility: 'private',
+        agent: null,
+        lastContext: null,
+        settings: null,
+      },
+    };
+    finalHistoryPages = [{ chats: [record], hasMore: false }];
+  }
 
   if (
     bootstrap.allowedModels.length > 0 &&
@@ -239,12 +259,15 @@ export async function configureChatMocks(
           );
           return new Response(
             JSON.stringify({
-              upserts: [],
+              upserts: pageResponse.chats,
               deletions: [],
               serverTimestamp: new Date().toISOString(),
               hasMore: false,
               nextCursor: null,
-              totalChats: 0,
+              totalChats:
+                Array.isArray(pageResponse.chats) && pageResponse.chats.length
+                  ? pageResponse.chats.length
+                  : 0,
               metadata: {
                 version: 1,
                 generatedAt: new Date().toISOString(),
@@ -365,7 +388,7 @@ export async function configureChatMocks(
     },
     {
       bootstrap: serializedBootstrap,
-      historyPages: historyPages.length ? historyPages : undefined,
+      historyPages: finalHistoryPages.length ? finalHistoryPages : undefined,
     }
   );
 }
@@ -375,7 +398,13 @@ export async function openChat(
   options?: ConfigureChatMocksOptions
 ) {
   await configureChatMocks(page, options);
-  await page.goto('/chat');
+
+  const bootstrap = options?.bootstrap;
+  if (bootstrap?.kind === 'existing' && bootstrap.chatId) {
+    await page.goto(`/chat/${bootstrap.chatId}`);
+  } else {
+    await page.goto('/chat');
+  }
   await expect(page.getByTestId('multimodal-input')).toBeVisible();
 }
 
