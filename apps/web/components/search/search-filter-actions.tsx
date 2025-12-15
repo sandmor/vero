@@ -6,6 +6,8 @@ import {
   ChevronDown,
   Settings,
   Check,
+  FileText,
+  Type,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { datePresets, sortOptions } from '@/lib/search/search-constants';
 import type { SortOption } from '@/hooks/use-client-search';
 import type { DateFilter } from '@/lib/search/search-utils';
+import type { SearchScope } from '@/lib/stores/search-store';
 import { useState } from 'react';
 
 interface SearchFilterActionsProps {
@@ -41,6 +44,8 @@ interface SearchFilterActionsProps {
   setSortBy: (sort: SortOption) => void;
   dateFilter: DateFilter | null;
   setDateFilter: (filter: DateFilter | null) => void;
+  searchScope?: SearchScope;
+  setSearchScope?: (scope: SearchScope) => void;
   compact?: boolean;
   onSortOpenChange?: (open: boolean) => void;
   onDateOpenChange?: (open: boolean) => void;
@@ -51,6 +56,8 @@ export function SearchFilterActions({
   setSortBy,
   dateFilter,
   setDateFilter,
+  searchScope = 'content',
+  setSearchScope,
   compact = true,
   onSortOpenChange,
   onDateOpenChange,
@@ -68,6 +75,21 @@ export function SearchFilterActions({
     onDateOpenChange?.(open);
   };
 
+  const searchScopeOptions = [
+    {
+      value: 'content' as SearchScope,
+      label: 'Titles & content',
+      description: 'Search in conversation titles and messages',
+      icon: FileText,
+    },
+    {
+      value: 'titles' as SearchScope,
+      label: 'Titles only',
+      description: 'Search only in conversation titles',
+      icon: Type,
+    },
+  ];
+
   if (compact) {
     return (
       <TooltipProvider delayDuration={300}>
@@ -80,7 +102,7 @@ export function SearchFilterActions({
                   size="icon"
                   className={cn(
                     'h-7 w-7',
-                    (sortBy !== 'relevance' || dateFilter) && 'text-primary'
+                    (sortBy !== 'relevance' || dateFilter || searchScope === 'titles') && 'text-primary'
                   )}
                 >
                   <Settings className="h-3.5 w-3.5" />
@@ -92,6 +114,36 @@ export function SearchFilterActions({
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>Search Settings</DropdownMenuLabel>
             <DropdownMenuSeparator />
+
+            {/* Search Scope Submenu */}
+            {setSearchScope && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <FileText className="mr-2 h-4 w-4" />
+                  <span>Search in</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-52">
+                  {searchScopeOptions.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      onClick={() => setSearchScope(option.value)}
+                      className="cursor-pointer flex-col items-start gap-0.5"
+                    >
+                      <div className="flex items-center w-full">
+                        <option.icon className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="flex-1">{option.label}</span>
+                        {searchScope === option.value && (
+                          <Check className="ml-auto h-4 w-4 shrink-0" />
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground ml-6">
+                        {option.description}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
 
             {/* Sort Submenu */}
             <DropdownMenuSub>
@@ -131,8 +183,8 @@ export function SearchFilterActions({
                     <span>{preset.label}</span>
                     {dateFilter?.after?.getTime() ===
                       preset.getFilter().after?.getTime() && (
-                      <Check className="ml-auto h-4 w-4" />
-                    )}
+                        <Check className="ml-auto h-4 w-4" />
+                      )}
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
@@ -153,6 +205,65 @@ export function SearchFilterActions({
 
   return (
     <>
+      {/* Search Scope Toggle */}
+      {setSearchScope && (
+        <TooltipProvider delayDuration={300}>
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      searchScope === 'titles' && 'border-primary text-primary'
+                    )}
+                  >
+                    {searchScope === 'content' ? (
+                      <FileText className="mr-2 h-3.5 w-3.5" />
+                    ) : (
+                      <Type className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    {searchScope === 'content' ? 'All' : 'Titles'}
+                    <ChevronDown className="ml-2 h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {searchScope === 'content'
+                  ? 'Searching titles and content'
+                  : 'Searching titles only'}
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuLabel>Search in</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {searchScopeOptions.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => setSearchScope(option.value)}
+                  className={cn(
+                    'cursor-pointer flex-col items-start gap-0.5',
+                    searchScope === option.value && 'bg-accent'
+                  )}
+                >
+                  <div className="flex items-center w-full">
+                    <option.icon className="mr-2 h-4 w-4 shrink-0" />
+                    <span className="flex-1">{option.label}</span>
+                    {searchScope === option.value && (
+                      <Check className="ml-auto h-4 w-4 shrink-0" />
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground ml-6">
+                    {option.description}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TooltipProvider>
+      )}
+
       {/* Sort dropdown */}
       <TooltipProvider delayDuration={300}>
         <DropdownMenu onOpenChange={handleSortOpenChange}>
@@ -217,7 +328,7 @@ export function SearchFilterActions({
                 className={cn(
                   'w-full text-left px-2 py-1.5 text-sm rounded-sm hover:bg-accent',
                   dateFilter?.after?.getTime() ===
-                    preset.getFilter().after?.getTime() && 'bg-accent'
+                  preset.getFilter().after?.getTime() && 'bg-accent'
                 )}
               >
                 {preset.label}

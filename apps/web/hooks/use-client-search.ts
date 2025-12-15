@@ -310,6 +310,7 @@ export function useClientSearch(
       .then(({ chatResults, messageResults: workerMessages }) => {
         if (cancelled) return;
 
+        // Base chat results (title matches)
         const mappedChats = chatResults
           .map((result) => {
             const chat = chatMap.get(result.chatId);
@@ -323,9 +324,15 @@ export function useClientSearch(
           })
           .filter(Boolean) as SearchResult<Chat>[];
 
-        setResults(mappedChats);
-
+        // When searching content, also rank chats by their message hits
         if (searchMessages) {
+          const chatResultMap = new Map<string, SearchResult<Chat>>();
+          mappedChats.forEach((result) =>
+            chatResultMap.set(result.item.id, { ...result })
+          );
+
+          const messageChatScores = new Map<string, number>();
+
           const mappedMessages: MessageSearchResult[] = workerMessages.map(
             (message) => ({
               id: message.messageId,
@@ -337,8 +344,45 @@ export function useClientSearch(
               score: message.score,
             })
           );
+
+          // Track the highest-scoring message per chat
+          mappedMessages.forEach((message) => {
+            const chatId = message.chatId;
+            const current = messageChatScores.get(chatId) ?? -Infinity;
+            if (message.score > current) {
+              messageChatScores.set(chatId, message.score);
+            }
+          });
+
+          // Merge message-backed chats into the chat results list
+          messageChatScores.forEach((score, chatId) => {
+            const chat = chatMap.get(chatId);
+            if (!chat) return;
+
+            const existing = chatResultMap.get(chatId);
+            if (existing) {
+              // Lift score if message match is stronger
+              if (score > existing.score) {
+                chatResultMap.set(chatId, { ...existing, score });
+              }
+              return;
+            }
+
+            chatResultMap.set(chatId, {
+              item: chat,
+              score,
+              matches: [],
+            });
+          });
+
+          const mergedChatResults = Array.from(chatResultMap.values()).sort(
+            (a, b) => b.score - a.score
+          );
+
+          setResults(mergedChatResults);
           setMessageResults(mappedMessages);
         } else {
+          setResults(mappedChats);
           setMessageResults([]);
         }
       })

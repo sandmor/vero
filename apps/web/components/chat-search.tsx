@@ -48,10 +48,12 @@ export function ChatSearch({
     query,
     sortBy,
     dateFilter,
+    searchScope,
     isModalOpen,
     setQuery,
     setSortBy,
     setDateFilter,
+    setSearchScope,
     setModalOpen,
     resetFilters,
   } = useSearchStore();
@@ -82,7 +84,7 @@ export function ChatSearch({
     hasActiveFilters,
   } = useClientSearch(cachedChats, {
     debounceMs: 150,
-    searchMessages: true, // Even if we only show chat results here, perform the full search in case of the user opening the modal
+    searchMessages: searchScope === 'content',
     value: {
       query,
       sortBy,
@@ -137,7 +139,7 @@ export function ChatSearch({
   // Determine if search should be expanded (focused, has query, or has active filters)
   // Only expand after mounted to prevent hydration flash
   const shouldExpand =
-    isMounted && (isExpanded || showResults || hasActiveFilters);
+    isMounted && (isExpanded || showResults || hasActiveFilters || searchScope === 'titles');
 
   // Handle click outside to collapse
   useEffect(() => {
@@ -154,14 +156,14 @@ export function ChatSearch({
       }
 
       // Only collapse if no active search/filters
-      if (!query && !hasActiveFilters) {
+      if (!query && !hasActiveFilters && searchScope !== 'titles') {
         setIsExpanded(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [query, hasActiveFilters, isModalOpen, isDropdownOpen, isPopoverOpen]);
+  }, [query, hasActiveFilters, searchScope, isModalOpen, isDropdownOpen, isPopoverOpen]);
 
   return (
     <>
@@ -244,6 +246,8 @@ export function ChatSearch({
                             setSortBy={setSortBy}
                             dateFilter={dateFilter}
                             setDateFilter={setDateFilter}
+                            searchScope={searchScope}
+                            setSearchScope={setSearchScope}
                             compact={true}
                             onSortOpenChange={setIsDropdownOpen}
                             onDateOpenChange={setIsPopoverOpen}
@@ -285,7 +289,7 @@ export function ChatSearch({
 
             {/* Active filters - only show when expanded and has filters */}
             <AnimatePresence>
-              {shouldExpand && hasActiveFilters && (
+              {shouldExpand && (hasActiveFilters || searchScope === 'titles') && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -295,8 +299,10 @@ export function ChatSearch({
                   <SearchActiveFilters
                     dateFilter={dateFilter}
                     sortBy={sortBy}
+                    searchScope={searchScope}
                     onClearDate={() => setDateFilter(null)}
                     onResetSort={() => setSortBy('relevance')}
+                    onResetScope={() => setSearchScope('content')}
                   />
                 </motion.div>
               )}
@@ -304,7 +310,7 @@ export function ChatSearch({
 
             {/* Search tips - shown when expanded but no active search */}
             <AnimatePresence>
-              {shouldExpand && !showResults && !hasActiveFilters && (
+              {shouldExpand && !showResults && !hasActiveFilters && searchScope !== 'titles' && (
                 <motion.div
                   className="text-xs text-muted-foreground space-y-1 px-1 overflow-hidden"
                   initial={{ opacity: 0, height: 0 }}
