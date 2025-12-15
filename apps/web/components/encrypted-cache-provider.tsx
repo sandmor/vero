@@ -27,6 +27,10 @@ import {
   destroySyncManager,
   getSyncManager,
 } from '@/lib/cache/sync-manager';
+import {
+  getSettingsSyncManager,
+  type SettingsChangeEvent,
+} from '@/lib/cache/settings-sync';
 import { searchIndexService } from '@/lib/search/search-index-service';
 import { useAppSession } from '@/hooks/use-app-session';
 import type {
@@ -43,6 +47,8 @@ const CACHE_METADATA_VERSION = 1;
 const SYNC_PAGE_SIZE = 100;
 // Sync interval: how often to check for updates (5 minutes)
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+// Settings sync interval: how often to check for settings updates (2 minutes)
+const SETTINGS_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
 const manager = getEncryptedCacheManager();
 
@@ -630,6 +636,7 @@ type CacheContextValue = {
   refreshCache: (options?: {
     force?: boolean;
     excludeChatIds?: Set<string>;
+    settingsOnly?: boolean;
   }) => Promise<void>;
   upsertChatRecord: (
     record: CachedChatRecord,
@@ -663,6 +670,14 @@ type CacheContextValue = {
    * Record a local change to a chat (for echo filtering).
    */
   recordLocalChange: (chatId: string) => void;
+  /**
+   * Check if this tab is the sync leader.
+   */
+  isSyncLeader: () => boolean;
+  /**
+   * Request a settings-only refresh.
+   */
+  refreshSettings: () => void;
 };
 
 const EncryptedCacheContext = createContext<CacheContextValue>({
@@ -681,6 +696,8 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   markGenerationStarted: () => { },
   markGenerationEnded: () => { },
   recordLocalChange: () => { },
+  isSyncLeader: () => true,
+  refreshSettings: () => { },
 });
 
 export function useEncryptedCache(): CacheContextValue {
@@ -1188,6 +1205,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     (options?: {
       force?: boolean;
       excludeChatIds?: Set<string>;
+      settingsOnly?: boolean;
     }): Promise<void> => {
       const currentState = stateRef.current;
       const currentIsLoggedIn = isLoggedInRef.current;
@@ -1196,7 +1214,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         cacheDebug('refreshCache: skipped (user not logged in)');
         return Promise.resolve();
       }
-      if (!options?.force && currentState.isIntegrityValid) {
+      if (!options?.force && !options?.settingsOnly && currentState.isIntegrityValid) {
         cacheDebug('refreshCache: skipped (cache integrity still valid)');
         return Promise.resolve();
       }
@@ -1206,6 +1224,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       }
 
       const excludeChatIds = options?.excludeChatIds;
+      const isSettingsOnly = options?.settingsOnly;
 
       const promise = (async () => {
         // Re-read state at start of async operation
@@ -1213,6 +1232,33 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         const qc = queryClientRef.current;
 
         try {
+          if (isSettingsOnly) {
+            // Settings-only sync - just refresh metadata
+            cacheDebug('refreshCache: starting settings-only sync');
+            await ensureManagerActivated();
+
+            const settingsSyncManager = getSettingsSyncManager();
+            const result = await settingsSyncManager.sync({
+              currentMetadata: state.metadata,
+              signal: abortControllerRef.current?.signal,
+              onMetadataUpdate: async (metadata) => {
+                await manager.storeMetadata(CACHE_METADATA_KEY, metadata);
+              },
+              onSettingsChanged: (event: SettingsChangeEvent) => {
+                cacheDebug('Settings changed:', event.changes);
+              },
+            });
+
+            if (result.success && result.hasChanges && result.metadata) {
+              setState((prev) => ({
+                ...prev,
+                metadata: result.metadata,
+              }));
+            }
+
+            return;
+          }
+
           cacheDebug('refreshCache: starting incremental sync', {
             forced: Boolean(options?.force),
             priorStatus: state.status,
@@ -1493,8 +1539,17 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     }
 
     const syncManager = initializeSyncManager({
-      onSync: async ({ force, excludeChatIds }) => {
-        await refreshCacheRef.current({ force, excludeChatIds });
+      onSync: async ({ force, excludeChatIds, settingsOnly }) => {
+        await refreshCacheRef.current({ force, excludeChatIds, settingsOnly });
+      },
+      onSettingsRefresh: async () => {
+        await refreshCacheRef.current({ settingsOnly: true });
+      },
+      onCacheReload: async () => {
+        // This is called when another tab completes a sync
+        // Reload cache from storage to pick up changes
+        cacheDebug('Reloading cache from storage (triggered by another tab)');
+        await loadFromCache({ forceUpdateQueries: true });
       },
       debounceMs: 500,
       postGenerationProtectionMs: 2000,
@@ -1506,7 +1561,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     return () => {
       destroySyncManager();
     };
-  }, [isLoggedIn, state.status]);
+  }, [isLoggedIn, state.status, loadFromCache]);
 
   // Periodic sync effect - uses SyncManager for coordination
   useEffect(() => {
@@ -1524,6 +1579,26 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       clearInterval(intervalId);
     };
   }, [isLoggedIn, state.status]); // Only re-setup interval when login or ready state changes
+
+  // Periodic settings sync effect - more frequent than full sync
+  useEffect(() => {
+    if (!isLoggedIn || state.status !== 'ready') {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      const syncManager = getSyncManager();
+      // Only the leader tab should perform settings sync
+      if (syncManager?.isLeader()) {
+        cacheDebug('Periodic settings sync: requesting through SyncManager');
+        syncManager.requestSettingsSync();
+      }
+    }, SETTINGS_SYNC_INTERVAL_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isLoggedIn, state.status]);
 
   // Sync manager method wrappers
   const setActiveChat = useCallback((chatId: string | null) => {
@@ -1544,6 +1619,16 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   const recordLocalChange = useCallback((chatId: string) => {
     const syncManager = getSyncManager();
     syncManager?.recordLocalChange(chatId);
+  }, []);
+
+  const isSyncLeader = useCallback(() => {
+    const syncManager = getSyncManager();
+    return syncManager?.isLeader() ?? true;
+  }, []);
+
+  const refreshSettings = useCallback(() => {
+    const syncManager = getSyncManager();
+    syncManager?.requestSettingsSync();
   }, []);
 
   const getCachedBootstrap = useCallback(
@@ -1717,6 +1802,8 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       markGenerationStarted,
       markGenerationEnded,
       recordLocalChange,
+      isSyncLeader,
+      refreshSettings,
     }),
     [
       state.status,
@@ -1734,6 +1821,8 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       markGenerationStarted,
       markGenerationEnded,
       recordLocalChange,
+      isSyncLeader,
+      refreshSettings,
     ]
   );
 

@@ -28,6 +28,8 @@ export type CacheMetadataPayload = {
   newChatDefaults: NewChatDefaults;
   // Sync tracking
   lastSyncedAt?: string;
+  /** Timestamp of last settings-specific sync */
+  settingsSyncedAt?: string;
   totalChats?: number;
 };
 

@@ -8,17 +8,27 @@
  * - Debouncing and coalescing: multiple sync requests within a window
  *   are coalesced into a single operation
  * - Sovereignty: the active chat's local state is authoritative during generation
+ * - Tab coordination: only leader tabs perform sync, followers listen
  */
+
+import {
+  TabLeaderElection,
+  initializeTabLeader,
+  destroyTabLeader,
+  getTabLeader,
+} from './tab-leader';
 
 type SyncCallback = (options: {
   force: boolean;
   excludeChatIds?: Set<string>;
+  settingsOnly?: boolean;
 }) => Promise<void>;
 
 type SyncRequest = {
-  source: 'realtime' | 'periodic' | 'manual' | 'cache-miss';
+  source: 'realtime' | 'periodic' | 'manual' | 'cache-miss' | 'settings-change' | 'tab-request';
   chatId?: string;
   timestamp: number;
+  settingsOnly?: boolean;
 };
 
 interface ActiveChatState {
@@ -33,6 +43,10 @@ interface ActiveChatState {
 type SyncManagerOptions = {
   /** Callback to execute the actual sync operation */
   onSync: SyncCallback;
+  /** Callback when settings need to be refreshed */
+  onSettingsRefresh?: () => Promise<void>;
+  /** Callback when cache should be reloaded from storage (for follower tabs) */
+  onCacheReload?: () => Promise<void>;
   /** Debounce window in ms for coalescing sync requests */
   debounceMs?: number;
   /** How long after generation ends to protect the active chat (ms) */
@@ -47,6 +61,8 @@ const SYNC_MANAGER_TAG = '[SyncManager]';
 
 export class SyncManager {
   private onSync: SyncCallback;
+  private onSettingsRefresh?: () => Promise<void>;
+  private onCacheReload?: () => Promise<void>;
   private debounceMs: number;
   private postGenerationProtectionMs: number;
   private debug: boolean;
@@ -64,19 +80,89 @@ export class SyncManager {
   private recentOwnChanges = new Map<string, number>();
   private readonly ownChangeWindowMs = 5000; // 5 second window to ignore echoes
 
+  // Tab leader coordination
+  private tabLeader: TabLeaderElection | null = null;
+
   constructor(options: SyncManagerOptions) {
     this.onSync = options.onSync;
+    this.onSettingsRefresh = options.onSettingsRefresh;
+    this.onCacheReload = options.onCacheReload;
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.postGenerationProtectionMs =
       options.postGenerationProtectionMs ??
       DEFAULT_POST_GENERATION_PROTECTION_MS;
     this.debug = options.debug ?? false;
+
+    // Initialize tab leader election
+    this.initializeTabLeader();
   }
 
   private log(...args: unknown[]): void {
     if (!this.debug) return;
     // eslint-disable-next-line no-console
     console.info(SYNC_MANAGER_TAG, ...args);
+  }
+
+  /**
+   * Initialize tab leader election and register callbacks.
+   */
+  private initializeTabLeader(): void {
+    this.tabLeader = initializeTabLeader({
+      onBecomeLeader: () => {
+        this.log('This tab became the sync leader');
+        // Trigger an immediate sync when becoming leader to ensure freshness
+        this.requestSync('manual');
+      },
+      onLoseLeadership: () => {
+        this.log('This tab lost sync leadership');
+        // Cancel any pending sync operations
+        if (this.debounceTimer) {
+          clearTimeout(this.debounceTimer);
+          this.debounceTimer = null;
+        }
+        this.pendingRequests = [];
+      },
+      onSyncComplete: (timestamp) => {
+        this.log('Another tab completed sync at:', timestamp);
+        // Reload cache from storage to pick up changes
+        this.onCacheReload?.();
+      },
+      onSettingsUpdated: (timestamp) => {
+        this.log('Settings updated by another tab at:', timestamp);
+        // Reload cache to pick up settings changes
+        this.onCacheReload?.();
+      },
+      onSyncRequested: (reason) => {
+        this.log('Sync requested by another tab:', reason);
+        // Handle the sync request
+        this.requestSync('tab-request');
+      },
+      debug: this.debug,
+    });
+
+    // Start the leader election
+    void this.tabLeader.start();
+  }
+
+  /**
+   * Check if this tab is the current sync leader.
+   */
+  isLeader(): boolean {
+    return this.tabLeader?.isLeader() ?? true;
+  }
+
+  /**
+   * Notify other tabs that a sync has completed.
+   */
+  notifySyncComplete(timestamp: string): void {
+    this.tabLeader?.notifySyncComplete(timestamp);
+  }
+
+  /**
+   * Notify other tabs that settings have been updated.
+   */
+  notifySettingsUpdated(timestamp: string): void {
+    this.tabLeader?.notifySettingsUpdated(timestamp);
   }
 
   /**
@@ -208,6 +294,7 @@ export class SyncManager {
 
   /**
    * Request a cache sync. Requests are debounced and coalesced.
+   * Only the leader tab will execute the sync.
    *
    * @param source - What triggered the sync request
    * @param chatId - Optional chat ID that triggered the sync (for realtime)
@@ -220,10 +307,40 @@ export class SyncManager {
       return;
     }
 
+    // If not the leader, request the leader to sync
+    if (!this.isLeader()) {
+      this.log('Not leader, delegating sync request to leader tab');
+      this.tabLeader?.requestSync(source);
+      return;
+    }
+
     this.pendingRequests.push({
       source,
       chatId,
       timestamp: Date.now(),
+    });
+
+    this.scheduleSync();
+  }
+
+  /**
+   * Request a settings-only sync.
+   * This is lighter weight than a full sync and only updates metadata.
+   */
+  requestSettingsSync(): void {
+    this.log('Settings sync requested');
+
+    // If not the leader, request the leader to sync
+    if (!this.isLeader()) {
+      this.log('Not leader, delegating settings sync to leader tab');
+      this.tabLeader?.requestSync('settings-change');
+      return;
+    }
+
+    this.pendingRequests.push({
+      source: 'settings-change',
+      timestamp: Date.now(),
+      settingsOnly: true,
     });
 
     this.scheduleSync();
@@ -279,6 +396,13 @@ export class SyncManager {
       return;
     }
 
+    // Double-check leadership before executing
+    if (!this.isLeader()) {
+      this.log('Lost leadership, skipping sync execution');
+      this.pendingRequests = [];
+      return;
+    }
+
     // Collect and clear pending requests
     const requests = [...this.pendingRequests];
     this.pendingRequests = [];
@@ -289,6 +413,9 @@ export class SyncManager {
     }
 
     this.log('Executing sync:', { requestCount: requests.length, force });
+
+    // Check if this is a settings-only sync
+    const isSettingsOnly = requests.length > 0 && requests.every((r) => r.settingsOnly);
 
     // Determine which chats to exclude from sync (protected chats)
     const excludeChatIds = new Set<string>();
@@ -307,10 +434,21 @@ export class SyncManager {
     }
 
     this.isSyncing = true;
+    const syncStartTime = new Date().toISOString();
+
     this.syncPromise = this.onSync({
       force,
       excludeChatIds: excludeChatIds.size > 0 ? excludeChatIds : undefined,
+      settingsOnly: isSettingsOnly,
     })
+      .then(() => {
+        // Notify other tabs about the completed sync
+        if (isSettingsOnly) {
+          this.notifySettingsUpdated(syncStartTime);
+        } else {
+          this.notifySyncComplete(syncStartTime);
+        }
+      })
       .catch((error) => {
         this.log('Sync failed:', error);
         // Re-queue failed requests for retry
@@ -340,6 +478,12 @@ export class SyncManager {
     this.pendingRequests = [];
     this.recentOwnChanges.clear();
     this.activeChat = null;
+
+    // Clean up tab leader
+    if (this.tabLeader) {
+      this.tabLeader.destroy();
+      this.tabLeader = null;
+    }
   }
 }
 
@@ -365,4 +509,6 @@ export function destroySyncManager(): void {
     globalSyncManager.destroy();
     globalSyncManager = null;
   }
+  // Also destroy the tab leader
+  destroyTabLeader();
 }
