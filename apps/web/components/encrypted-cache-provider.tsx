@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { fetchAndImportEncryptionKey } from '@/lib/cache/encryption';
+import { fetchEncryptionKey } from '@/lib/cache/encryption';
 import {
   getEncryptedCacheManager,
   type CachedChatPayload,
@@ -27,6 +27,7 @@ import {
   destroySyncManager,
   getSyncManager,
 } from '@/lib/cache/sync-manager';
+import { searchIndexService } from '@/lib/search/search-index-service';
 import { useAppSession } from '@/hooks/use-app-session';
 import type {
   ChatBootstrapResponse,
@@ -480,9 +481,9 @@ async function repairCacheState(
 type MetadataValidationResult =
   | { ok: true; metadata: CacheMetadataPayload }
   | {
-      ok: false;
-      reason: 'missing' | 'version-mismatch' | 'invalid-structure';
-    };
+    ok: false;
+    reason: 'missing' | 'version-mismatch' | 'invalid-structure';
+  };
 
 type ChatValidationResult =
   | { ok: true }
@@ -669,17 +670,17 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   ready: false,
   metadata: null,
   cachedChats: [],
-  refreshCache: async () => {},
-  upsertChatRecord: async () => {},
+  refreshCache: async () => { },
+  upsertChatRecord: async () => { },
   getCachedBootstrap: () => undefined,
   generateNewChatBootstrap: () => null,
-  addOptimisticChat: () => {},
-  removeOptimisticChat: () => {},
-  updateChatTitle: () => {},
-  setActiveChat: () => {},
-  markGenerationStarted: () => {},
-  markGenerationEnded: () => {},
-  recordLocalChange: () => {},
+  addOptimisticChat: () => { },
+  removeOptimisticChat: () => { },
+  updateChatTitle: () => { },
+  setActiveChat: () => { },
+  markGenerationStarted: () => { },
+  markGenerationEnded: () => { },
+  recordLocalChange: () => { },
 });
 
 export function useEncryptedCache(): CacheContextValue {
@@ -1291,19 +1292,19 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
           const updatedMetadata: CacheMetadataPayload = {
             ...(syncResult.metadata ??
               state.metadata ?? {
-                version: CACHE_METADATA_VERSION,
-                generatedAt: syncResult.serverTimestamp,
-                cacheCompletionMarker: {
-                  completeFromDate: null,
-                  completeToDate: null,
-                  hasOlderChats: false,
-                },
-                allowedModels: [],
-                newChatDefaults: {
-                  defaultModelId: '',
-                  allowedModelIds: [],
-                },
-              }),
+              version: CACHE_METADATA_VERSION,
+              generatedAt: syncResult.serverTimestamp,
+              cacheCompletionMarker: {
+                completeFromDate: null,
+                completeToDate: null,
+                hasOlderChats: false,
+              },
+              allowedModels: [],
+              newChatDefaults: {
+                defaultModelId: '',
+                allowedModelIds: [],
+              },
+            }),
             lastSyncedAt: syncResult.serverTimestamp,
             totalChats: syncResult.totalChats,
           };
@@ -1429,12 +1430,16 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
       try {
         cacheDebug('CacheProvider effect: fetching encryption key');
-        const key = await fetchAndImportEncryptionKey(abortController.signal);
+        const { cryptoKey: key, base64Key } = await fetchEncryptionKey(abortController.signal);
 
         if (cancelled) return;
 
         encryptionKeyRef.current = key;
         await manager.activate(key);
+
+        // Initialize the search index worker with the encryption key
+        // so it can handle its own persistence without blocking the main thread
+        await searchIndexService.initializeWorker(base64Key);
 
         if (cancelled) return;
 

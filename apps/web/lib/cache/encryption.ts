@@ -22,10 +22,10 @@ function createAlgorithm(iv: Uint8Array, aad?: Uint8Array): AesGcmParams {
   }
   return aad
     ? {
-        name: 'AES-GCM',
-        iv: iv as BufferSource,
-        additionalData: aad as BufferSource,
-      }
+      name: 'AES-GCM',
+      iv: iv as BufferSource,
+      additionalData: aad as BufferSource,
+    }
     : { name: 'AES-GCM', iv: iv as BufferSource };
 }
 
@@ -76,7 +76,7 @@ export async function encryptBytes(
   const algorithm = createAlgorithm(iv, aad);
   const plaintextSource: ArrayBuffer =
     plaintext.byteOffset === 0 &&
-    plaintext.byteLength === plaintext.buffer.byteLength
+      plaintext.byteLength === plaintext.buffer.byteLength
       ? (plaintext.buffer as ArrayBuffer)
       : plaintext.slice().buffer;
   const ciphertextBuffer = await cryptoRef.subtle.encrypt(
@@ -99,7 +99,7 @@ export async function decryptBytes(
   const algorithm = createAlgorithm(envelope.iv, envelope.aad);
   const ciphertextSource: ArrayBuffer =
     envelope.ciphertext.byteOffset === 0 &&
-    envelope.ciphertext.byteLength === envelope.ciphertext.buffer.byteLength
+      envelope.ciphertext.byteLength === envelope.ciphertext.buffer.byteLength
       ? (envelope.ciphertext.buffer as ArrayBuffer)
       : envelope.ciphertext.slice().buffer;
   const plaintextBuffer = await cryptoRef.subtle.decrypt(
@@ -128,9 +128,9 @@ export async function decryptJson<T>(
   return JSON.parse(decoded) as T;
 }
 
-export async function fetchAndImportEncryptionKey(
+export async function fetchEncryptionKey(
   signal?: AbortSignal
-): Promise<CryptoKey> {
+): Promise<{ cryptoKey: CryptoKey; base64Key: string }> {
   const response = await fetch('/api/cache/encryption-key', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -146,14 +146,6 @@ export async function fetchAndImportEncryptionKey(
     throw new Error('Received malformed encryption key response.');
   }
 
-  return importAesKeyFromBase64(key);
-}
-
-export function wipeUint8Array(buffer: Uint8Array): void {
-  buffer.fill(0);
-}
-
-export function wipeCryptoKey(_key: CryptoKey): void {
-  // Web Crypto keys are managed by the user agent; there is no direct zeroization API.
-  // Function left intentionally blank for future extension (e.g., wrapping keys as JWKs).
+  const cryptoKey = await importAesKeyFromBase64(key);
+  return { cryptoKey, base64Key: key };
 }

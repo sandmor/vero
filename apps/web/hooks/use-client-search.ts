@@ -152,10 +152,18 @@ export function useClientSearch(
     [deserializedChats]
   );
 
-  // Keep index in sync with encrypted cache
+  // Keep index in sync with encrypted cache (non-blocking)
+  // We run sync in the background without blocking the UI.
+  // The isIndexing flag is only set for visual feedback, not for blocking.
   useEffect(() => {
     let cancelled = false;
-    setIsIndexing(true);
+
+    // Only show indexing indicator if we have no cached results yet
+    // This prevents UI blocking on subsequent syncs
+    const showIndicator = cachedChats.length === 0;
+    if (showIndicator) {
+      setIsIndexing(true);
+    }
 
     searchIndexService
       .syncChats(cachedChats)
@@ -163,7 +171,7 @@ export function useClientSearch(
         console.warn('Failed to sync search index', error);
       })
       .finally(() => {
-        if (!cancelled) setIsIndexing(false);
+        if (!cancelled && showIndicator) setIsIndexing(false);
       });
 
     return () => {
@@ -284,9 +292,9 @@ export function useClientSearch(
 
     const serializedDateFilter = dateFilter
       ? {
-          after: dateFilter.after?.toISOString(),
-          before: dateFilter.before?.toISOString(),
-        }
+        after: dateFilter.after?.toISOString(),
+        before: dateFilter.before?.toISOString(),
+      }
       : null;
 
     const searchOptions: WorkerSearchOptions = {
@@ -307,10 +315,10 @@ export function useClientSearch(
             const chat = chatMap.get(result.chatId);
             return chat
               ? ({
-                  item: chat,
-                  score: result.score,
-                  matches: [],
-                } as SearchResult<Chat>)
+                item: chat,
+                score: result.score,
+                matches: [],
+              } as SearchResult<Chat>)
               : null;
           })
           .filter(Boolean) as SearchResult<Chat>[];

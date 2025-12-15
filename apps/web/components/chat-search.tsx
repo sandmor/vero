@@ -336,7 +336,7 @@ export function ChatSearch({
             </AnimatePresence>
 
             {/* Cache status messages */}
-            {cacheStatus === 'initializing' && (
+            {cacheStatus === 'initializing' && cachedChats.length === 0 && (
               <div className="rounded-md border border-border/40 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                 Syncing cache for faster search results…
               </div>

@@ -7,7 +7,6 @@ import {
 import type { CachedChatRecord } from '@/lib/cache/types';
 import type {
   IndexableChat,
-  SearchIndexSnapshot,
   WorkerChatResult,
   WorkerMessageResult,
   WorkerPayload,
@@ -15,7 +14,6 @@ import type {
   WorkerSearchOptions,
 } from '@/lib/search/search-index.types';
 
-const METADATA_KEY = 'search-index-v1';
 const WORKER_TIMEOUT_MS = 20000;
 const WORKER_URL = new URL('./search-index.worker.ts', import.meta.url);
 
@@ -42,6 +40,12 @@ function isLoadedResponse(
   response: WorkerResponse
 ): response is Extract<WorkerResponse, { type: 'loaded' }> {
   return response.type === 'loaded';
+}
+
+function isInitializedResponse(
+  response: WorkerResponse
+): response is Extract<WorkerResponse, { type: 'initialized' }> {
+  return response.type === 'initialized';
 }
 
 function isSyncedResponse(
@@ -79,6 +83,10 @@ class SearchIndexService {
   private ready = false;
 
   private indexing = false;
+
+  private workerInitialized = false;
+
+  private initPromise: Promise<void> | null = null;
 
   isReady(): boolean {
     return this.ready;
@@ -149,12 +157,30 @@ class SearchIndexService {
     });
   }
 
-  private async persistSnapshot(
-    snapshot?: SearchIndexSnapshot | null
-  ): Promise<void> {
-    if (!snapshot) return;
-    if (!this.manager.isInitialized()) return;
-    await this.manager.storeMetadata(METADATA_KEY, snapshot);
+  /**
+   * Initialize the worker with the encryption key.
+   * Must be called before load/sync/search operations.
+   */
+  async initializeWorker(encryptionKeyBase64: string): Promise<void> {
+    if (this.workerInitialized) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      const response = await this.callWorker({
+        type: 'init',
+        encryptionKey: encryptionKeyBase64,
+      });
+
+      if (!isInitializedResponse(response)) {
+        throw new Error('Unexpected worker response while initializing');
+      }
+
+      this.workerInitialized = true;
+    })().finally(() => {
+      this.initPromise = null;
+    });
+
+    return this.initPromise;
   }
 
   private async ensureSnapshotLoaded(): Promise<void> {
@@ -167,13 +193,10 @@ class SearchIndexService {
         return;
       }
 
-      const stored =
-        await this.manager.readMetadata<SearchIndexSnapshot>(METADATA_KEY);
-
       try {
+        // Worker now handles loading from its own IndexedDB storage
         const response = await this.callWorker({
           type: 'load',
-          snapshot: stored?.data ?? null,
         });
 
         if (!isLoadedResponse(response)) {
@@ -188,7 +211,7 @@ class SearchIndexService {
           'Search index snapshot invalid, resetting to empty',
           error
         );
-        await this.callWorker({ type: 'load', snapshot: null });
+        await this.callWorker({ type: 'load' });
         this.snapshotLoaded = true;
         this.ready = true;
       }
@@ -213,8 +236,6 @@ class SearchIndexService {
         throw new Error('Search worker returned an unexpected sync response');
       }
 
-      await this.persistSnapshot(response.snapshot ?? null);
-
       return { changed: response.changed };
     };
 
@@ -238,12 +259,10 @@ class SearchIndexService {
     messageResults: WorkerMessageResult[];
   }> {
     await this.ensureSnapshotLoaded();
-    // If a sync is in flight, wait for it so we search fresh data
-    if (this.syncPromise) {
-      await this.syncPromise.catch(() => {
-        /* swallow sync errors here; search will proceed on current index */
-      });
-    }
+    // Note: We intentionally don't wait for syncPromise here.
+    // This allows searches to proceed immediately with the current index state,
+    // providing a responsive UX. Results will update when sync completes
+    // and the component re-renders with fresh cachedChats.
     const knownChatIds = cachedChats.map((chat) => chat.chatId);
 
     const response = await this.callWorker({
@@ -257,7 +276,7 @@ class SearchIndexService {
       throw new Error('Search worker returned an unexpected search response');
     }
 
-    await this.persistSnapshot(response.snapshot ?? null);
+    // Persistence is now handled by the worker in the background
 
     return {
       chatResults: response.chatResults,

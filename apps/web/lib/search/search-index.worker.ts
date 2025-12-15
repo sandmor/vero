@@ -11,6 +11,12 @@ import type {
   WorkerResponse,
   WorkerSearchOptions,
 } from '@/lib/search/search-index.types';
+import {
+  initializeEncryptionKey,
+  hasEncryptionKey,
+  persistSnapshot,
+  loadSnapshot,
+} from '@/lib/search/worker-storage';
 
 const CHAT_DOC_PREFIX = 'chat:';
 const MESSAGE_DOC_PREFIX = 'msg:';
@@ -25,7 +31,7 @@ const chatIndexOptions: DocumentOptions<ChatDoc> = {
     id: 'id',
     index: ['title'],
   },
-  tokenize: 'tolerant',
+  tokenize: 'bidirectional',
   preset: 'match',
   context: true,
 };
@@ -39,7 +45,7 @@ const messageIndexOptions: DocumentOptions<MessageDoc> = {
     id: 'id',
     index: ['content', 'chatTitle'],
   },
-  tokenize: 'tolerant',
+  tokenize: 'bidirectional',
   preset: 'match',
   context: true,
 };
@@ -239,7 +245,7 @@ function reindexChat(chat: IndexableChat): boolean {
 async function handleSync(
   chats: IndexableChat[],
   requestId?: string
-): Promise<{ changed: boolean; snapshot?: SearchIndexSnapshot }> {
+): Promise<{ changed: boolean }> {
   let changed = false;
   const incomingIds = new Set(chats.map((chat) => chat.chatId));
 
@@ -276,9 +282,16 @@ async function handleSync(
 
   maybeKeepAlive(requestId);
 
-  return changed
-    ? { changed: true, snapshot: await buildSnapshot() }
-    : { changed: false };
+  // Persist snapshot in the background (within the worker) if changed
+  if (changed && hasEncryptionKey()) {
+    const snapshot = await buildSnapshot();
+    // Fire and forget - don't block the response
+    persistSnapshot(snapshot).catch((error) => {
+      console.warn('[SearchWorker] Failed to persist snapshot:', error);
+    });
+  }
+
+  return { changed };
 }
 
 function passesDateFilter(
@@ -378,7 +391,6 @@ async function handleSearch(
     score: number;
     snippet: string;
   }[];
-  snapshot?: SearchIndexSnapshot;
 }> {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) {
@@ -466,10 +478,17 @@ async function handleSearch(
     options
   );
 
+  // Persist snapshot in the background if index was modified
+  if (changed && hasEncryptionKey()) {
+    const snapshot = await buildSnapshot();
+    persistSnapshot(snapshot).catch((error) => {
+      console.warn('[SearchWorker] Failed to persist snapshot after search:', error);
+    });
+  }
+
   return {
     chatResults: sortedChatResults,
     messageResults: sortedMessageResults,
-    snapshot: changed ? await buildSnapshot() : undefined,
   };
 }
 
@@ -482,8 +501,18 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
 
   const run = async () => {
     try {
+      if (payload.type === 'init') {
+        await initializeEncryptionKey(payload.encryptionKey);
+        respond({ type: 'initialized', requestId });
+        return;
+      }
+
       if (payload.type === 'load') {
-        await hydrateFromSnapshot(payload.snapshot);
+        // Load snapshot from worker-side IndexedDB storage
+        const storedSnapshot = hasEncryptionKey()
+          ? await loadSnapshot<SearchIndexSnapshot>()
+          : null;
+        await hydrateFromSnapshot(storedSnapshot);
         respond({ type: 'loaded', requestId });
         return;
       }
@@ -494,7 +523,6 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
           type: 'synced',
           requestId,
           changed: result.changed,
-          snapshot: result.snapshot,
         });
         return;
       }
@@ -510,7 +538,6 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
           requestId,
           chatResults: result.chatResults,
           messageResults: result.messageResults,
-          snapshot: result.snapshot,
         });
         return;
       }
@@ -531,4 +558,4 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
   run();
 });
 
-export {};
+export { };

@@ -74,44 +74,45 @@ export type WorkerMessageResult = {
 };
 
 export type WorkerRequest =
-  | { type: 'load'; snapshot: SearchIndexSnapshot | null; requestId: string }
+  | { type: 'init'; encryptionKey: string; requestId: string }
+  | { type: 'load'; requestId: string }
   | {
-      type: 'sync';
-      chats: IndexableChat[];
-      requestId: string;
-    }
+    type: 'sync';
+    chats: IndexableChat[];
+    requestId: string;
+  }
   | {
-      type: 'search';
-      query: string;
-      options: WorkerSearchOptions;
-      knownChatIds: string[];
-      requestId: string;
-    };
+    type: 'search';
+    query: string;
+    options: WorkerSearchOptions;
+    knownChatIds: string[];
+    requestId: string;
+  };
 
 export type WorkerPayload =
-  | { type: 'load'; snapshot: SearchIndexSnapshot | null }
+  | { type: 'init'; encryptionKey: string }
+  | { type: 'load' }
   | { type: 'sync'; chats: IndexableChat[] }
   | {
-      type: 'search';
-      query: string;
-      options: WorkerSearchOptions;
-      knownChatIds: string[];
-    };
+    type: 'search';
+    query: string;
+    options: WorkerSearchOptions;
+    knownChatIds: string[];
+  };
 
 type WorkerResponseBase = { requestId: string };
 
 export type WorkerResponse =
+  | ({ type: 'initialized' } & WorkerResponseBase)
   | ({ type: 'loaded' } & WorkerResponseBase)
   | ({
-      type: 'synced';
-      changed: boolean;
-      snapshot?: SearchIndexSnapshot;
-    } & WorkerResponseBase)
+    type: 'synced';
+    changed: boolean;
+  } & WorkerResponseBase)
   | ({
-      type: 'searchResults';
-      chatResults: WorkerChatResult[];
-      messageResults: WorkerMessageResult[];
-      snapshot?: SearchIndexSnapshot;
-    } & WorkerResponseBase)
+    type: 'searchResults';
+    chatResults: WorkerChatResult[];
+    messageResults: WorkerMessageResult[];
+  } & WorkerResponseBase)
   | ({ type: 'keepalive' } & WorkerResponseBase)
   | ({ type: 'error'; message: string } & WorkerResponseBase);

@@ -341,7 +341,7 @@ export function ChatSearchModal({
 
             {/* Results Area */}
             <div className="flex-1 min-h-0 relative w-full">
-              {!isCacheReady && !hasMessageResults && (
+              {!isCacheReady && !hasMessageResults && !hasClientResults && (
                 <div className="absolute inset-0 z-10 bg-background/50 flex items-center justify-center">
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />

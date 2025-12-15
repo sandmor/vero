@@ -47,13 +47,18 @@ export function useClientMessageSearch(
       const run = async () => {
         const serializedDate = dateFilter
           ? {
-              after: dateFilter.after?.toISOString(),
-              before: dateFilter.before?.toISOString(),
-            }
+            after: dateFilter.after?.toISOString(),
+            before: dateFilter.before?.toISOString(),
+          }
           : null;
 
         try {
-          await searchIndexService.syncChats(cachedChats);
+          // Start sync in background but don't wait for it
+          // Search will use current index state for responsive UX
+          searchIndexService.syncChats(cachedChats).catch((error) => {
+            console.warn('Failed to sync search index', error);
+          });
+
           const { messageResults } = await searchIndexService.search(
             trimmed,
             { sortBy, dateFilter: serializedDate },
