@@ -122,13 +122,6 @@ const PurePreviewMessage = ({
     'px-5 py-4'
   );
 
-  const bubbleContainerClass = cn(
-    'flex flex-col w-full rounded-2xl border border-border/60 overflow-hidden',
-    message.role === 'user'
-      ? 'bg-primary/5 text-foreground dark:bg-primary/15'
-      : 'bg-muted text-foreground/90 dark:bg-muted/40'
-  );
-
   let inlineReasoningAttached = false;
   const inlineReasoningTrimmed = inlineReasoningText.trim();
   const hasInlineReasoning = inlineReasoningTrimmed.length > 0;
@@ -189,7 +182,7 @@ const PurePreviewMessage = ({
             </div>
           )}
 
-          <div className={bubbleContainerClass}>
+          <div className='flex flex-col w-full rounded-2xl border border-border/60 overflow-hidden bg-muted text-foreground/90 dark:bg-muted/40'>
             {shouldShowPlaceholder ? (
               <div className="px-5 py-4">
                 <EmptyMessagePlaceholder
@@ -289,11 +282,11 @@ const PurePreviewMessage = ({
                                   onSubmitWithoutRegenerate={
                                     onEditMessageOnly
                                       ? async (nextText) => {
-                                          await onEditMessageOnly(
-                                            message.id,
-                                            nextText
-                                          );
-                                        }
+                                        await onEditMessageOnly(
+                                          message.id,
+                                          nextText
+                                        );
+                                      }
                                       : undefined
                                   }
                                 />
