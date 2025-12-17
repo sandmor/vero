@@ -382,7 +382,6 @@ export function ChatSearchModal({
                           <div className="px-1 min-w-0">
                             <SearchResultItem
                               result={item.data}
-                              query={query}
                               onSelect={() => setModalOpen(false)}
                             />
                           </div>

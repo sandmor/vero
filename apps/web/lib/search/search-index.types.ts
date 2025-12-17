@@ -63,6 +63,11 @@ export type WorkerChatResult = {
   score: number;
 };
 
+export type HighlightRange = {
+  start: number;
+  end: number;
+};
+
 export type WorkerMessageResult = {
   messageId: string;
   chatId: string;
@@ -71,6 +76,7 @@ export type WorkerMessageResult = {
   createdAt: string;
   score: number;
   snippet: string;
+  highlights: HighlightRange[];
 };
 
 export type WorkerRequest =

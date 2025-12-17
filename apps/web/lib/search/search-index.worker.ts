@@ -17,6 +17,13 @@ import {
   persistSnapshot,
   loadSnapshot,
 } from '@/lib/search/worker-storage';
+import {
+  parseAdvancedQuery,
+  matchesAllPhrases,
+  extractTerms,
+  type QueryNode,
+  type ParsedAdvancedQuery,
+} from '@/lib/search/query-parser';
 
 const CHAT_DOC_PREFIX = 'chat:';
 const MESSAGE_DOC_PREFIX = 'msg:';
@@ -88,31 +95,198 @@ function extractMessageContent(parts: unknown): string {
     .join(' ');
 }
 
-function buildSnippet(content: string, query: string): string {
-  if (!content) return '';
-  const normalizedContent = content.trim();
-  if (!normalizedContent) return '';
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return normalizedContent.slice(0, 180);
+type HighlightRange = { start: number; end: number };
 
-  const lowerContent = normalizedContent.toLowerCase();
-  const matchIndex = lowerContent.indexOf(normalizedQuery);
+type SnippetResult = {
+  snippet: string;
+  highlights: HighlightRange[];
+};
 
-  if (matchIndex === -1) {
-    return normalizedContent.length > 50
-      ? `${normalizedContent.slice(0, 180)}...`
-      : normalizedContent;
+const DEFAULT_SNIPPET_LENGTH = 140;
+
+/**
+ * Find all occurrences of a search term in text (case-insensitive)
+ * Returns positions relative to the original text
+ */
+function findAllMatches(
+  text: string,
+  term: string
+): { start: number; end: number; score: number }[] {
+  const matches: { start: number; end: number; score: number }[] = [];
+  const lowerText = text.toLowerCase();
+  const lowerTerm = term.toLowerCase();
+
+  let index = 0;
+  while ((index = lowerText.indexOf(lowerTerm, index)) !== -1) {
+    // Score based on match quality:
+    // - Word boundary matches score higher
+    // - Longer matches score higher
+    let score = lowerTerm.length;
+
+    // Check if match starts at word boundary
+    if (index === 0 || /\W/.test(text[index - 1])) {
+      score += 5;
+    }
+
+    // Check if match ends at word boundary
+    const endIndex = index + lowerTerm.length;
+    if (endIndex === text.length || /\W/.test(text[endIndex])) {
+      score += 5;
+    }
+
+    matches.push({ start: index, end: endIndex, score });
+    index += 1;
   }
 
-  const start = Math.max(0, matchIndex - 80);
-  const end = Math.min(
-    normalizedContent.length,
-    matchIndex + normalizedQuery.length + 80
-  );
-  let snippet = normalizedContent.slice(start, end);
-  if (start > 0) snippet = `...${snippet}`;
-  if (end < normalizedContent.length) snippet = `${snippet}...`;
-  return snippet;
+  return matches;
+}
+
+/**
+ * Merge overlapping highlight ranges and sort by position
+ */
+function mergeHighlightRanges(ranges: HighlightRange[]): HighlightRange[] {
+  if (ranges.length === 0) return [];
+
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const merged: HighlightRange[] = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const current = sorted[i];
+    const last = merged[merged.length - 1];
+
+    if (current.start <= last.end) {
+      // Overlapping or adjacent - merge
+      last.end = Math.max(last.end, current.end);
+    } else {
+      merged.push(current);
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Build a snippet with highlight ranges from content.
+ * Chooses the best match position based on scoring and returns
+ * all highlight ranges within the snippet window.
+ */
+function buildSnippet(
+  content: string,
+  parsedQuery: ParsedAdvancedQuery,
+  snippetLength: number = DEFAULT_SNIPPET_LENGTH
+): SnippetResult {
+  if (!content) {
+    return { snippet: '', highlights: [] };
+  }
+
+  const normalizedContent = content.trim().replace(/\s+/g, ' ');
+  if (!normalizedContent) {
+    return { snippet: '', highlights: [] };
+  }
+
+  // Extract all searchable terms from the query (phrases + individual terms)
+  const phrases = parsedQuery.phrases;
+  const terms = extractTerms(parsedQuery.ast);
+
+  // Combine phrases and terms, with phrases having priority
+  const searchTerms = [...phrases, ...terms.filter(t => !phrases.some(p => p.toLowerCase().includes(t.toLowerCase())))];
+
+  if (searchTerms.length === 0) {
+    // No search terms - return beginning of content
+    const snippet = normalizedContent.length > snippetLength
+      ? `${normalizedContent.slice(0, snippetLength)}...`
+      : normalizedContent;
+    return { snippet, highlights: [] };
+  }
+
+  // Find all matches for all terms
+  type MatchWithTerm = { start: number; end: number; score: number; term: string };
+  const allMatches: MatchWithTerm[] = [];
+
+  for (const term of searchTerms) {
+    const matches = findAllMatches(normalizedContent, term);
+    for (const match of matches) {
+      // Boost phrase matches
+      const isPhraseMatch = phrases.includes(term);
+      allMatches.push({
+        ...match,
+        score: match.score + (isPhraseMatch ? 10 : 0),
+        term,
+      });
+    }
+  }
+
+  if (allMatches.length === 0) {
+    // No matches found - return beginning of content
+    const snippet = normalizedContent.length > snippetLength
+      ? `${normalizedContent.slice(0, snippetLength)}...`
+      : normalizedContent;
+    return { snippet, highlights: [] };
+  }
+
+  // Sort by score to find the best match
+  allMatches.sort((a, b) => b.score - a.score);
+  const bestMatch = allMatches[0];
+
+  // Calculate snippet window centered around the best match
+  const matchCenter = Math.floor((bestMatch.start + bestMatch.end) / 2);
+  const halfWindow = Math.floor(snippetLength / 2);
+
+  let windowStart = Math.max(0, matchCenter - halfWindow);
+  let windowEnd = Math.min(normalizedContent.length, matchCenter + halfWindow);
+
+  // Adjust window to ensure we capture the full match
+  if (bestMatch.start < windowStart) {
+    windowStart = bestMatch.start;
+    windowEnd = Math.min(normalizedContent.length, windowStart + snippetLength);
+  }
+  if (bestMatch.end > windowEnd) {
+    windowEnd = bestMatch.end;
+    windowStart = Math.max(0, windowEnd - snippetLength);
+  }
+
+  // Try to extend to word boundaries for cleaner snippets
+  if (windowStart > 0) {
+    // Find the next space after windowStart to start at a word boundary
+    const spaceAfter = normalizedContent.indexOf(' ', windowStart);
+    if (spaceAfter !== -1 && spaceAfter < windowStart + 15) {
+      windowStart = spaceAfter + 1;
+    }
+  }
+  if (windowEnd < normalizedContent.length) {
+    // Find the last space before windowEnd to end at a word boundary
+    const spaceBefore = normalizedContent.lastIndexOf(' ', windowEnd);
+    if (spaceBefore !== -1 && spaceBefore > windowEnd - 15) {
+      windowEnd = spaceBefore;
+    }
+  }
+
+  // Extract snippet
+  let snippet = normalizedContent.slice(windowStart, windowEnd);
+  const prefixAdded = windowStart > 0;
+  const suffixAdded = windowEnd < normalizedContent.length;
+
+  if (prefixAdded) snippet = `...${snippet}`;
+  if (suffixAdded) snippet = `${snippet}...`;
+
+  // Calculate highlight ranges relative to the snippet
+  const prefixOffset = prefixAdded ? 3 : 0; // "..." is 3 characters
+  const highlights: HighlightRange[] = [];
+
+  for (const match of allMatches) {
+    // Check if match is within our window
+    if (match.end > windowStart && match.start < windowEnd) {
+      const highlightStart = Math.max(0, match.start - windowStart) + prefixOffset;
+      const highlightEnd = Math.min(windowEnd - windowStart, match.end - windowStart) + prefixOffset;
+
+      highlights.push({ start: highlightStart, end: highlightEnd });
+    }
+  }
+
+  return {
+    snippet,
+    highlights: mergeHighlightRanges(highlights),
+  };
 }
 
 function resetIndexes(): void {
@@ -365,15 +539,166 @@ function sortMessageResults(
 function getIdsFromResults(results: any[]): Set<string> {
   const ids = new Set<string>();
   for (const fieldResult of results) {
-    for (const id of fieldResult.result) {
-      ids.add(String(id));
+    if (fieldResult && Array.isArray(fieldResult.result)) {
+      for (const id of fieldResult.result) {
+        ids.add(String(id));
+      }
     }
   }
   return ids;
 }
 
 /**
+ * Set intersection - returns elements present in all sets
+ */
+function setIntersection<T>(...sets: Set<T>[]): Set<T> {
+  if (sets.length === 0) return new Set();
+  if (sets.length === 1) return new Set(sets[0]);
+
+  const [first, ...rest] = sets;
+  const result = new Set<T>();
+
+  for (const item of first) {
+    if (rest.every((set) => set.has(item))) {
+      result.add(item);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Set union - returns elements present in any set
+ */
+function setUnion<T>(...sets: Set<T>[]): Set<T> {
+  const result = new Set<T>();
+  for (const set of sets) {
+    for (const item of set) {
+      result.add(item);
+    }
+  }
+  return result;
+}
+
+/**
+ * Set difference - returns elements in first set but not in second
+ */
+function setDifference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
+  const result = new Set<T>();
+  for (const item of setA) {
+    if (!setB.has(item)) {
+      result.add(item);
+    }
+  }
+  return result;
+}
+
+/**
+ * Execute a simple search query against an index
+ */
+async function searchQuery(
+  index: Document<any>,
+  query: string,
+  field?: string
+): Promise<Set<string>> {
+  if (!query.trim()) return new Set();
+
+  const results = await index.searchAsync(query, {
+    suggest: true,
+    limit: 1000,
+    ...(field ? { pluck: field } : {}),
+  });
+
+  return getIdsFromResults(results);
+}
+
+/**
+ * Recursively execute search based on AST node
+ * Composes boolean operations using set operations on search results
+ */
+async function executeAstSearch(
+  index: Document<any>,
+  node: QueryNode | null,
+  field?: string,
+  allDocIds?: Set<string>
+): Promise<Set<string>> {
+  if (!node) return new Set();
+
+  switch (node.type) {
+    case 'term':
+      return searchQuery(index, node.value, field);
+
+    case 'phrase':
+      // For phrases, search for the words (phrase matching is done in post-filter)
+      return searchQuery(index, node.value, field);
+
+    case 'and': {
+      if (node.children.length === 0) return new Set();
+
+      // Execute all child searches in parallel
+      const childResults = await Promise.all(
+        node.children.map((child) => executeAstSearch(index, child, field, allDocIds))
+      );
+
+      // Return intersection of all results
+      return setIntersection(...childResults);
+    }
+
+    case 'or': {
+      if (node.children.length === 0) return new Set();
+
+      // Execute all child searches in parallel
+      const childResults = await Promise.all(
+        node.children.map((child) => executeAstSearch(index, child, field, allDocIds))
+      );
+
+      // Return union of all results
+      return setUnion(...childResults);
+    }
+
+    case 'not': {
+      // Get all documents that match the negated term
+      const negatedResults = await executeAstSearch(index, node.child, field, allDocIds);
+
+      // If we have all doc IDs, subtract the negated results
+      // Otherwise, NOT alone can't produce results (no base set)
+      if (allDocIds && allDocIds.size > 0) {
+        return setDifference(allDocIds, negatedResults);
+      }
+
+      // Pure NOT query without context - return empty set
+      return new Set();
+    }
+
+    case 'field': {
+      // Execute search against specific field
+      return executeAstSearch(index, node.child, node.field, allDocIds);
+    }
+  }
+}
+
+/**
+ * Execute search using the parsed query AST
+ * Uses native FlexSearch searchAsync with manual set operations for boolean logic
+ */
+async function executeSearch(
+  index: Document<any>,
+  parsedQuery: ParsedAdvancedQuery,
+  field?: string,
+  allDocIds?: Set<string>
+): Promise<Set<string>> {
+  if (!parsedQuery.ast) {
+    return new Set();
+  }
+
+  return executeAstSearch(index, parsedQuery.ast, field, allDocIds);
+}
+
+
+
+/**
  * Performs a search across chat and message indexes.
+ * Uses advanced Lucene-like query parsing with boolean operations and phrase matching.
  * Returns results sorted by the requested sort order (or relevance).
  */
 async function handleSearch(
@@ -390,6 +715,7 @@ async function handleSearch(
     createdAt: string;
     score: number;
     snippet: string;
+    highlights: HighlightRange[];
   }[];
 }> {
   const normalizedQuery = query.trim();
@@ -400,25 +726,42 @@ async function handleSearch(
   const knownIds = new Set(knownChatIds);
   let changed = false;
 
+  // Create tokenizer function to detect single-token phrases
+  // A phrase like "AND" is just escaping a keyword and should be treated as a term
+  // We use bidirectional tokenization similar to what FlexSearch uses
+  const tokenizer = (text: string): string[] => {
+    // Simple tokenization that mimics FlexSearch's bidirectional tokenizer
+    // Split on whitespace and filter empty strings
+    const tokens = text.toLowerCase().split(/\s+/).filter(Boolean);
+    return tokens;
+  };
+
+  // Parse the query with the tokenizer to handle single-token phrases
+  const parsedQuery = parseAdvancedQuery(normalizedQuery, tokenizer);
+  const phrases = parsedQuery.phrases;
+  const hasPhrases = phrases.length > 0;
+
+  // Get all doc IDs for NOT operations (if query contains NOT)
+  const allChatDocIds = parsedQuery.hasComplexBooleans ? new Set(chatDocs.keys()) : undefined;
+  const allMessageDocIds = parsedQuery.hasComplexBooleans ? new Set(messageDocs.keys()) : undefined;
+
   // Search Chat Index
-  const chatSearchResults = await chatIndex.searchAsync(normalizedQuery, {
-    suggest: true,
-    limit: 1000,
-  });
-  const chatDocIds = getIdsFromResults(chatSearchResults);
+  const chatDocIds = await executeSearch(chatIndex, parsedQuery, 'title', allChatDocIds);
 
   const filteredChatResults: any[] = [];
   let chatScore = 1000;
 
-  // FlexSearch doesn't guarantee order across fields easily when simplified,
-  // but within a field it is sorted by score.
-  // We assume the iteration order roughly correlates to relevance.
   for (const id of chatDocIds) {
     const doc = chatDocs.get(id);
     if (!doc) continue;
 
     if (!knownIds.has(doc.chatId)) {
       changed = removeChat(doc.chatId) || changed;
+      continue;
+    }
+
+    // Apply phrase filter if we have multi-token phrase searches
+    if (hasPhrases && !matchesAllPhrases(doc.title, phrases)) {
       continue;
     }
 
@@ -437,14 +780,7 @@ async function handleSearch(
   const filteredMessageResults: any[] = [];
 
   if (options.searchMessages !== false) {
-    const messageSearchResults = await messageIndex.searchAsync(
-      normalizedQuery,
-      {
-        suggest: true,
-        limit: 1000,
-      }
-    );
-    const messageDocIds = getIdsFromResults(messageSearchResults);
+    const messageDocIds = await executeSearch(messageIndex, parsedQuery, undefined, allMessageDocIds);
     let messageScore = 1000;
 
     for (const id of messageDocIds) {
@@ -456,7 +792,13 @@ async function handleSearch(
         continue;
       }
 
+      // Apply phrase filter if we have multi-token phrase searches
+      if (hasPhrases && !matchesAllPhrases(doc.content, phrases)) {
+        continue;
+      }
+
       if (passesDateFilter(doc.createdAt, options)) {
+        const { snippet, highlights } = buildSnippet(doc.content, parsedQuery);
         filteredMessageResults.push({
           messageId: doc.id,
           chatId: doc.chatId,
@@ -464,7 +806,8 @@ async function handleSearch(
           content: doc.content,
           createdAt: doc.createdAt,
           score: messageScore--,
-          snippet: buildSnippet(doc.content, normalizedQuery),
+          snippet,
+          highlights,
         });
       }
     }

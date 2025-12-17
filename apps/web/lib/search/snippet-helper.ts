@@ -1,11 +1,17 @@
-import type { SearchMatch } from './search-utils';
+/**
+ * Simple match position for snippet generation
+ */
+export interface MatchPosition {
+  start: number;
+  end: number;
+}
 
 /**
  * Helper to generate a text snippet from a full text string and match positions
  */
 export function generateSnippet(
   text: string,
-  matches: SearchMatch[],
+  matches: MatchPosition[],
   padding: number = 60
 ): string {
   if (!matches || matches.length === 0) {
@@ -15,8 +21,7 @@ export function generateSnippet(
   }
 
   // Use the first match for the snippet center
-  // Prefer exact matches
-  const bestMatch = matches.find((m) => m.matchType === 'exact') || matches[0];
+  const bestMatch = matches[0];
 
   const start = Math.max(0, bestMatch.start - padding);
   const end = Math.min(text.length, bestMatch.end + padding);

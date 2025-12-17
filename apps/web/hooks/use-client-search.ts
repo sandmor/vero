@@ -7,17 +7,28 @@ import { searchIndexService } from '@/lib/search/search-index-service';
 import type {
   SortOption,
   WorkerSearchOptions,
+  HighlightRange,
 } from '@/lib/search/search-index.types';
-import type { MessageSearchResult } from '@/lib/search/client-message-search';
 import {
-  type ParsedQuery,
+  type ParsedAdvancedQuery,
   type SearchResult,
   applyDateFilter,
-  parseSearchQuery,
+  parseAdvancedQuery,
   type DateFilter,
 } from '@/lib/search/search-utils';
 
-export type { SortOption } from '@/lib/search/search-index.types';
+export type { SortOption, HighlightRange } from '@/lib/search/search-index.types';
+
+export interface MessageSearchResult {
+  id: string;
+  chatId: string;
+  chatTitle: string;
+  createdAt: Date;
+  content: string;
+  snippet: string;
+  highlights: HighlightRange[];
+  score: number;
+}
 
 export interface UseClientSearchOptions {
   /** Debounce delay in ms (default: 150) */
@@ -43,7 +54,7 @@ export interface ClientSearchState {
   /** Debounced query (after debounce delay) */
   debouncedQuery: string;
   /** Parsed search query with operators */
-  parsedQuery: ParsedQuery;
+  parsedQuery: ParsedAdvancedQuery;
   /** Search results */
   results: SearchResult<Chat>[];
   /** Message-level results */
@@ -240,7 +251,7 @@ export function useClientSearch(
 
   // Parse the query
   const parsedQuery = useMemo(
-    () => parseSearchQuery(debouncedQuery),
+    () => parseAdvancedQuery(debouncedQuery),
     [debouncedQuery]
   );
 
@@ -341,6 +352,7 @@ export function useClientSearch(
               createdAt: new Date(message.createdAt),
               content: message.content,
               snippet: message.snippet,
+              highlights: message.highlights,
               score: message.score,
             })
           );

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CachedChatPayload } from '@/lib/cache/cache-manager';
 import type { CachedChatRecord } from '@/lib/cache/types';
 import { searchIndexService } from '@/lib/search/search-index-service';
-import type { MessageSearchResult } from '@/lib/search/client-message-search';
+import type { MessageSearchResult } from '@/hooks/use-client-search';
 import type { SortOption } from '@/lib/search/search-index.types';
 import type { DateFilter } from '@/lib/search/search-utils';
 
@@ -75,9 +75,11 @@ export function useClientMessageSearch(
               createdAt: new Date(message.createdAt),
               content: message.content,
               snippet: message.snippet,
+              highlights: message.highlights,
               score: message.score,
             })
           );
+          console.log("Search results snippets", mapped.map(r => r.snippet.length));
 
           // Sort results
           if (sortBy === 'newest') {

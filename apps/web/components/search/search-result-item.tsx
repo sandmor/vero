@@ -2,19 +2,16 @@
 
 import Link from 'next/link';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import type { MessageSearchResult } from '@/lib/search/client-message-search';
-import { cn } from '@/lib/utils';
+import type { MessageSearchResult, HighlightRange } from '@/hooks/use-client-search';
 import { formatDistanceToNow } from 'date-fns';
 
 interface SearchResultItemProps {
   result: MessageSearchResult;
-  query: string;
   onSelect?: () => void;
 }
 
 export function SearchResultItem({
   result,
-  query,
   onSelect,
 }: SearchResultItemProps) {
   return (
@@ -35,7 +32,7 @@ export function SearchResultItem({
             </span>
           </div>
           <p className="text-xs text-muted-foreground line-clamp-2 break-words w-full leading-relaxed">
-            <HighlightText text={result.snippet} highlight={query} />
+            <HighlightedSnippet text={result.snippet} highlights={result.highlights} />
           </p>
         </Link>
       </SidebarMenuButton>
@@ -43,33 +40,49 @@ export function SearchResultItem({
   );
 }
 
-function HighlightText({
+function HighlightedSnippet({
   text,
-  highlight,
+  highlights,
 }: {
   text: string;
-  highlight: string;
+  highlights: HighlightRange[];
 }) {
-  if (!highlight.trim()) {
+  if (!highlights || highlights.length === 0) {
     return <>{text}</>;
   }
 
-  const parts = text.split(new RegExp(`(${highlight})`, 'gi'));
+  const segments: React.ReactNode[] = [];
+  let lastEnd = 0;
 
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === highlight.toLowerCase() ? (
-          <span
-            key={i}
-            className="bg-yellow-100 dark:bg-yellow-900/30 text-foreground font-medium rounded-[1px] px-0.5"
-          >
-            {part}
-          </span>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </>
-  );
+  for (let i = 0; i < highlights.length; i++) {
+    const { start, end } = highlights[i];
+
+    // Add non-highlighted text before this highlight
+    if (start > lastEnd) {
+      segments.push(
+        <span key={`text-${i}`}>{text.slice(lastEnd, start)}</span>
+      );
+    }
+
+    // Add highlighted text
+    segments.push(
+      <span
+        key={`highlight-${i}`}
+        className="bg-yellow-100 dark:bg-yellow-900/30 text-foreground font-medium rounded-[1px] px-0.5"
+      >
+        {text.slice(start, end)}
+      </span>
+    );
+
+    lastEnd = end;
+  }
+
+  // Add remaining text after the last highlight
+  if (lastEnd < text.length) {
+    segments.push(
+      <span key="text-end">{text.slice(lastEnd)}</span>
+    );
+  }
+
+  return <>{segments}</>;
 }
