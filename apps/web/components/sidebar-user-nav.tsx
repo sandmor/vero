@@ -29,11 +29,13 @@ type NavUser = Partial<SessionUser>;
 type SidebarUserNavProps = {
   user?: NavUser | null;
   isLoading?: boolean;
+  isAdmin?: boolean;
 };
 
 export function SidebarUserNav({
   user,
   isLoading = false,
+  isAdmin = false,
 }: SidebarUserNavProps) {
   const router = useRouter();
   const { signOut } = useClerk();
@@ -141,6 +143,17 @@ export function SidebarUserNav({
             data-testid="user-nav-menu"
             side="top"
           >
+            {isAdmin && (
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/admin"
+                  className="w-full cursor-pointer"
+                  data-testid="user-nav-item-admin"
+                >
+                  Admin Dashboard
+                </Link>
+              </DropdownMenuItem>
+            )}
             {canOpenSettings && (
               <DropdownMenuItem asChild>
                 <Link

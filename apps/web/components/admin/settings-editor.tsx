@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, CircleAlert, Loader2, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-import { Button } from '@/components/ui/button';
+import { ButtonWithFeedback } from '@/components/ui/button-with-feedback';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/toast';
@@ -163,7 +163,7 @@ export function SettingsEditor({
               onChange={(e) => handleChange(config.key, e.target.value)}
               className="flex-1"
             />
-            <Button
+            <ButtonWithFeedback
               size="sm"
               onClick={() => handleSave(config.key)}
               disabled={saveMutation.isPending}
@@ -217,7 +217,7 @@ export function SettingsEditor({
                   </motion.div>
                 )}
               </AnimatePresence>
-            </Button>
+            </ButtonWithFeedback>
           </div>
         </div>
       ))}

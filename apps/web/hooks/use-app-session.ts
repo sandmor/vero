@@ -5,7 +5,7 @@ import type { AppSession } from '@/lib/auth/types';
 
 export const SESSION_QUERY_KEY = ['auth', 'session'] as const;
 
-type SessionResponse = { session: AppSession | null };
+type SessionResponse = { session: AppSession | null; isAdmin?: boolean };
 
 class SessionFetchError extends Error {
   status?: number;

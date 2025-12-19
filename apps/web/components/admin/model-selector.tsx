@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonWithFeedback } from '@/components/ui/button-with-feedback';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { displayProviderName } from '@/lib/ai/registry';
@@ -148,7 +149,7 @@ export function ModelSelector({
               }
             }}
           />
-          <Button
+          <ButtonWithFeedback
             type="button"
             size="sm"
             variant="secondary"
@@ -156,7 +157,7 @@ export function ModelSelector({
             disabled={!customModel.trim()}
           >
             Add custom
-          </Button>
+          </ButtonWithFeedback>
         </div>
       </div>
 
@@ -165,7 +166,7 @@ export function ModelSelector({
           <span>
             {selectedModelIds.length} selected • {options.length} in catalog
           </span>
-          <Button
+          <ButtonWithFeedback
             type="button"
             variant="ghost"
             size="sm"
@@ -174,7 +175,7 @@ export function ModelSelector({
             disabled={selectedModelIds.length === 0}
           >
             Clear all
-          </Button>
+          </ButtonWithFeedback>
         </div>
 
         {selectedModels.length === 0 ? (
@@ -218,7 +219,7 @@ export function ModelSelector({
                     )}
                   </div>
                 </div>
-                <Button
+                <ButtonWithFeedback
                   type="button"
                   size="sm"
                   variant="ghost"
@@ -226,7 +227,7 @@ export function ModelSelector({
                   onClick={() => removeModel(model.id)}
                 >
                   Remove
-                </Button>
+                </ButtonWithFeedback>
               </div>
             ))}
           </div>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonWithFeedback } from '@/components/ui/button-with-feedback';
 import { Separator } from '@/components/ui/separator';
 import {
   Collapsible,
@@ -169,7 +170,7 @@ export function ModelPicker({
           )}
         </div>
         <div className="flex gap-2">
-          <Button
+          <ButtonWithFeedback
             type="button"
             variant="secondary"
             size="sm"
@@ -177,8 +178,8 @@ export function ModelPicker({
             disabled={loading}
           >
             Add all
-          </Button>
-          <Button
+          </ButtonWithFeedback>
+          <ButtonWithFeedback
             type="button"
             variant="outline"
             size="sm"
@@ -186,7 +187,7 @@ export function ModelPicker({
             disabled={loading}
           >
             Remove all
-          </Button>
+          </ButtonWithFeedback>
         </div>
       </div>
       <Separator />
@@ -252,7 +253,7 @@ export function ModelPicker({
                       }
                     }}
                   />
-                  <Button
+                  <ButtonWithFeedback
                     type="button"
                     size="sm"
                     variant="secondary"
@@ -260,7 +261,7 @@ export function ModelPicker({
                     disabled={loading || !(customInputs[p] || '').trim()}
                   >
                     Add
-                  </Button>
+                  </ButtonWithFeedback>
                 </div>
                 {customInputs[p] &&
                   customInputs[p].includes(':') &&
@@ -272,7 +273,7 @@ export function ModelPicker({
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>{opts.length} models</span>
                   <div className="flex gap-2">
-                    <Button
+                    <ButtonWithFeedback
                       type="button"
                       size="sm"
                       variant="secondary"
@@ -280,8 +281,8 @@ export function ModelPicker({
                       disabled={loading || opts.length === 0}
                     >
                       Add all {p}
-                    </Button>
-                    <Button
+                    </ButtonWithFeedback>
+                    <ButtonWithFeedback
                       type="button"
                       size="sm"
                       variant="outline"
@@ -289,7 +290,7 @@ export function ModelPicker({
                       disabled={loading || opts.length === 0}
                     >
                       Remove all {p}
-                    </Button>
+                    </ButtonWithFeedback>
                   </div>
                 </div>
               </CollapsibleContent>

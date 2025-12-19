@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
+import { isAdmin } from '@/lib/auth/admin';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const session = await getAppSession();
+  const admin = await isAdmin();
 
   return NextResponse.json(
-    { session },
+    { session, isAdmin: admin },
     {
       status: 200,
       headers: {

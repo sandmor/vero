@@ -478,16 +478,16 @@ export async function POST(request: Request) {
     const effectiveUserMessagePromise: Promise<ChatMessage> =
       regenerationContextPromise
         ? regenerationContextPromise.then((context) => {
-            const [userMessage] = convertToUIMessages([context.parent]);
-            if (!userMessage) {
-              throw new ChatSDKError(
-                'bad_request:chat',
-                'Failed to resolve user message for regeneration'
-              );
-            }
-            regenerationParentMessageId = userMessage.id;
-            return userMessage;
-          })
+          const [userMessage] = convertToUIMessages([context.parent]);
+          if (!userMessage) {
+            throw new ChatSDKError(
+              'bad_request:chat',
+              'Failed to resolve user message for regeneration'
+            );
+          }
+          regenerationParentMessageId = userMessage.id;
+          return userMessage;
+        })
         : Promise.resolve(requestUserMessage);
 
     // Regeneration replays an existing user turn; avoid duplicating it in persistence.
@@ -507,8 +507,8 @@ export async function POST(request: Request) {
         const streamIdPromise =
           streamId && streamContext
             ? createStreamId({ streamId, chatId: id }).catch((e) =>
-                console.warn('Failed to persist stream id (non-fatal)', e)
-              )
+              console.warn('Failed to persist stream id (non-fatal)', e)
+            )
             : Promise.resolve<void>(undefined);
 
         const [
@@ -568,20 +568,20 @@ export async function POST(request: Request) {
         const persistUserMessagePromise = skipUserPersistence
           ? Promise.resolve()
           : saveMessages({
-              messages: [
-                {
-                  chatId: id,
-                  id: effectiveUserMessage.id,
-                  role: 'user',
-                  parts: effectiveUserMessage.parts,
-                  attachments: [],
-                  createdAt: new Date(),
-                  parentId: lastPersistedDbMessage?.id,
-                },
-              ],
-            }).catch((e) => {
-              console.warn('Failed to persist user message (non-fatal)', e);
-            });
+            messages: [
+              {
+                chatId: id,
+                id: effectiveUserMessage.id,
+                role: 'user',
+                parts: effectiveUserMessage.parts,
+                attachments: [],
+                createdAt: new Date(),
+                parentId: lastPersistedDbMessage?.id,
+              },
+            ],
+          }).catch((e) => {
+            console.warn('Failed to persist user message (non-fatal)', e);
+          });
 
         const uiMessages = skipUserPersistence
           ? dbUiMessages
@@ -650,8 +650,8 @@ export async function POST(request: Request) {
           : normalizedAllowedTools === undefined
             ? [...allToolIds]
             : normalizedAllowedTools.filter((toolId) =>
-                allToolIdsSet.has(toolId)
-              );
+              allToolIdsSet.has(toolId)
+            );
 
         const basePromptParts = getDefaultSystemPromptParts();
         const promptResolution = buildPromptPartsFromConfig(
@@ -699,7 +699,7 @@ export async function POST(request: Request) {
           for (const message of promptComposition.messages) {
             const normalizedDepth =
               typeof message.depth === 'number' &&
-              Number.isFinite(message.depth)
+                Number.isFinite(message.depth)
                 ? Math.max(0, Math.floor(message.depth))
                 : 0;
 
@@ -840,7 +840,7 @@ export async function POST(request: Request) {
         dataStream.merge(
           result.toUIMessageStream({
             sendReasoning: true,
-            messageMetadata: ({}) => {
+            messageMetadata: ({ }) => {
               return {
                 model: selectedChatModel,
               };
@@ -879,12 +879,62 @@ export async function POST(request: Request) {
 
         if (finalMergedUsage) {
           try {
-            await updateChatLastContextById({
-              chatId: id,
-              context: finalMergedUsage,
-            });
+            const capabilities = await modelCapabilitiesPromise;
+            const pricing = capabilities?.pricing;
+
+            const inputTokens = finalMergedUsage.inputTokens ?? 0;
+            const outputTokens = finalMergedUsage.outputTokens ?? 0;
+            const reasoningTokens = finalMergedUsage.reasoningTokens ?? 0;
+            const cachedInputTokens = finalMergedUsage.cachedInputTokens ?? 0;
+
+            const inputP = pricing?.prompt ? Math.round(pricing.prompt * 1_000_000) : 0;
+            const outputP = pricing?.completion
+              ? Math.round(pricing.completion * 1_000_000)
+              : 0;
+            const reasoningP = pricing?.reasoning
+              ? Math.round(pricing.reasoning * 1_000_000)
+              : 0;
+            const cachedP = pricing?.cacheRead
+              ? Math.round(pricing.cacheRead * 1_000_000)
+              : 0;
+
+            const computedMicros =
+              inputTokens * inputP +
+              outputTokens * outputP +
+              reasoningTokens * reasoningP +
+              cachedInputTokens * cachedP;
+
+            const totalMicros = finalMergedUsage.costUSD?.totalUSD
+              ? Math.round(finalMergedUsage.costUSD.totalUSD * 1_000_000)
+              : 0;
+
+            const extrasMicros = Math.max(0, totalMicros - computedMicros);
+
+            await Promise.all([
+              updateChatLastContextById({
+                chatId: id,
+                context: finalMergedUsage,
+              }),
+              prisma.tokenUsage.create({
+                data: {
+                  userId: session.user.id,
+                  model: selectedChatModel,
+                  byok: shouldUseByokKey,
+                  inputTokens,
+                  cachedInputTokens,
+                  reasoningTokens,
+                  outputTokens,
+                  inputMTokenPriceMicros: inputP || null,
+                  outputMTokenPriceMicros: outputP || null,
+                  reasoningMTokenPriceMicros: reasoningP || null,
+                  cachedInputMTokenPriceMicros: cachedP || null,
+                  extrasCostMicros: extrasMicros || null,
+                  totalCostMicros: totalMicros || null,
+                },
+              }),
+            ]);
           } catch (err) {
-            console.warn('Unable to persist last usage for chat', id, err);
+            console.warn('Unable to persist usage data', id, err);
           }
         }
       },

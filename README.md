@@ -159,18 +159,29 @@ Flexible authentication system with enterprise and guest support:
 
 Administrative interface for system management:
 
-### Provider Management
+### Access & Configuration
 
-- **API Key Overrides**: Database-stored keys override environment variables
-- **Provider Status**: Monitor provider health and usage
-- **Key Rotation**: Secure key management and rotation
+The admin dashboard is accessible at `/admin`. Access is restricted to users who match the configured admin credentials:
+- `ADMIN_USER_ID`: The specific User ID (e.g. from Clerk or database) granted admin privileges. Recommended for production.
+- `ADMIN_EMAIL`: Fallback email address for admin access (useful for bootstrapping).
 
-### Tier Management
+### Admin Dashboard Features
 
-- **User Tiers**: Configure model access and rate limits
-- **Rate Limiting**: Token bucket configuration per tier
-- **Model Lists**: Curate available models per user type
-- **Usage Tracking**: Monitor and analyze system usage
+A comprehensive operational dashboard providing real-time insights:
+
+- **Usage Statistics**: View key performance indicators (KPIs) such as Total Messages, Active Users, and Active Models.
+- **Data Visualization**: Interactive charts (Line, Pie, Bar) powered by `recharts` to visualize:
+  - Message and User growth trends over time (24h, 7d, 30d, 90d).
+  - Model usage distribution (e.g., GPT-4 vs. Claude 3.5).
+  - Provider usage breakdown.
+- **Recent Activity**: detailed log of the latest user interactions.
+- **Report Export**: Download usage reports as CSV files for offline analysis.
+
+### System Management
+
+- **Provider Management**: Manage API keys via database overrides (`Provider` table) and monitor provider status.
+- **Tier Management**: Configure token buckets (rate limiting) and model allow-lists per user tier (`Tier` table).
+- **Model Capabilities**: Introspect and manage the persisted capabilities of available models.
 
 ## Tech Stack
 

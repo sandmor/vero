@@ -156,7 +156,11 @@ export function AppSidebar() {
         />
       </SidebarContent>
       <SidebarFooter>
-        <SidebarUserNav isLoading={isLoading} user={sessionUser} />
+        <SidebarUserNav
+          isLoading={isLoading}
+          user={sessionUser}
+          isAdmin={data?.isAdmin}
+        />
       </SidebarFooter>
     </Sidebar>
   );

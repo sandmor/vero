@@ -37,13 +37,14 @@ model User {
   email       String @db.VarChar(128)
   preferences Json? // User preferences: { name?: string, occupation?: string, customInstructions?: string }
 
-  chats                Chat[]
+  chats Chat[]
 
   archiveEntries       ArchiveEntry[]
   pinnedArchiveEntries ChatPinnedArchiveEntry[]
   rateLimit            UserRateLimit?
   agents               Agent[]
   UserApiKey           UserApiKey[]
+  tokenUsages          TokenUsage[]
 
   @@map("User")
 }
@@ -247,4 +248,34 @@ model Setting {
   value String @db.Text // Setting value as string (JSON serialized for complex types)
 
   @@map("Setting")
+}
+
+// Token usage tracking
+model TokenUsage {
+  id                           String  @id @default(uuid()) @db.Uuid
+  userId                       String? @db.VarChar(191)
+  model                        String  @db.VarChar(256)
+  byok                         Boolean @default(false) // Whether this usage was with a user-provided key
+  // Token counts
+  inputTokens                  Int     @default(0)
+  outputTokens                 Int     @default(0)
+  reasoningTokens              Int     @default(0)
+  cachedInputTokens            Int     @default(0)
+  // Prices stored in micros (millionths of USD) to avoid floating point issues, null if unknown
+  // Prices are per million tokens
+  inputMTokenPriceMicros       Int?
+  outputMTokenPriceMicros      Int?
+  reasoningMTokenPriceMicros   Int?
+  cachedInputMTokenPriceMicros Int?
+  extrasCostMicros             Int? // Any additional costs of this record not covered by token prices, including image generation, etc.
+  totalCostMicros              Int? // Computed total cost of this usage record
+
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([model])
+  @@map("TokenUsage")
 }
