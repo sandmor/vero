@@ -38,17 +38,16 @@ import {
 import {
   ArrowUp,
   ChevronDown,
-  Cpu,
   Paperclip,
   StopCircle,
   User,
 } from 'lucide-react';
-import { LogoOpenAI, LogoGoogle, LogoOpenRouter } from './icons';
 import { PreviewAttachment } from './preview-attachment';
 import { Button } from './ui/button';
 import type { ChatModelOption } from '@/lib/ai/models';
-import { useUserApiKeys } from '@/hooks/use-user-api-keys';
+import { useByokModels } from '@/hooks/use-byok-models';
 import { Badge } from '@/components/ui/badge';
+import { CreatorLogo } from './creator-logo';
 
 function modelSupportsAttachments(model: ChatModelOption | null | undefined) {
   if (!model?.capabilities) {
@@ -100,7 +99,7 @@ function PureMultimodalInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
-  const { getApiKeyUsageForModel } = useUserApiKeys();
+  const { getApiKeyUsageForModel } = useByokModels();
 
   const modelChangeRef = useRef(onModelChange);
   useEffect(() => {
@@ -210,12 +209,12 @@ function PureMultimodalInput({
     return messages.some((message) =>
       Array.isArray(message.parts)
         ? message.parts.some(
-            (part) =>
-              !!part &&
-              typeof part === 'object' &&
-              'type' in part &&
-              part.type === 'file'
-          )
+          (part) =>
+            !!part &&
+            typeof part === 'object' &&
+            'type' in part &&
+            part.type === 'file'
+        )
         : false
     );
   }, [attachments, uploadQueue, messages]);
@@ -560,30 +559,17 @@ function PureModelSelectorCompact({
     (model) => model.id === optimisticModelId
   );
 
-  // Group models by provider
-  const modelsByProvider = availableModels.reduce(
+  // Group models by creator
+  const modelsByCreator = availableModels.reduce(
     (acc, model) => {
-      if (!acc[model.provider]) {
-        acc[model.provider] = [];
+      if (!acc[model.creator]) {
+        acc[model.creator] = [];
       }
-      acc[model.provider].push(model);
+      acc[model.creator].push(model);
       return acc;
     },
     {} as Record<string, typeof availableModels>
   );
-
-  const getProviderIcon = (provider: string) => {
-    switch (provider) {
-      case 'openai':
-        return <LogoOpenAI size={14} />;
-      case 'google':
-        return <LogoGoogle size={14} />;
-      case 'openrouter':
-        return <LogoOpenRouter size={14} />;
-      default:
-        return <Cpu size={14} />;
-    }
-  };
 
   return (
     <PromptInputModelSelect
@@ -610,7 +596,7 @@ function PureModelSelectorCompact({
         type="button"
         data-testid="model-selector"
       >
-        {selectedModel && getProviderIcon(selectedModel.provider)}
+        <CreatorLogo creatorSlug={selectedModel?.creator ?? ''} className="h-4 w-4" />
         <span className="hidden text-xs font-medium sm:block">
           {selectedModel?.name}
         </span>
@@ -630,19 +616,19 @@ function PureModelSelectorCompact({
       </Trigger>
       <PromptInputModelSelectContent className="min-w-[280px] p-0">
         <div className="flex flex-col">
-          {Object.entries(modelsByProvider)
+          {Object.entries(modelsByCreator)
             .sort(([a], [b]) =>
               displayProviderName(a).localeCompare(displayProviderName(b))
             )
-            .map(([provider, models]) => (
+            .map(([creator, models]) => (
               <div
-                key={provider}
+                key={creator}
                 className="border-b border-border last:border-b-0"
               >
                 <div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
-                  {getProviderIcon(provider)}
+                  <CreatorLogo creatorSlug={creator} className="h-4 w-4" />
                   <span className="text-xs font-medium text-muted-foreground">
-                    {displayProviderName(provider)}
+                    {displayProviderName(creator)}
                   </span>
                 </div>
                 <div className="flex flex-col gap-px">

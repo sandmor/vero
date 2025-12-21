@@ -7,9 +7,11 @@ import type { MessageDeletionMode } from '@/lib/message-deletion';
 import { cn, sanitizeText } from '@/lib/utils';
 import { MessageContent } from './elements/message';
 import { Response } from './elements/response';
-import { Sparkle, Cpu, UserRound } from 'lucide-react';
-import { LogoOpenAI, LogoGoogle, LogoOpenRouter } from './icons';
-import { type ChatModelOption, deriveChatModel } from '@/lib/ai/models';
+import { Sparkle, UserRound } from 'lucide-react';
+import { type ChatModelOption } from '@/lib/ai/models';
+import { getCreator, getModelName } from '@/lib/ai/model-id';
+import { isByokModelId, parseByokModelId } from '@/lib/ai/byok';
+import { CreatorLogo } from './creator-logo';
 import { MessageActions } from './message-actions';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
@@ -27,6 +29,21 @@ const isToolPart = (part: MessagePart): part is ToolPart =>
   typeof part.type === 'string' && part.type.startsWith('tool-');
 
 const MessageAvatar = ({ role, model }: { role: string; model?: string }) => {
+  // For BYOK models, extract the actual provider from the parsed ID
+  let creator: string | null = null;
+  if (model) {
+    if (isByokModelId(model)) {
+      const parsed = parseByokModelId(model);
+      if (parsed) {
+        creator = parsed.sourceType === 'platform'
+          ? parsed.providerId
+          : 'custom';
+      }
+    } else {
+      creator = getCreator(model);
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -37,25 +54,11 @@ const MessageAvatar = ({ role, model }: { role: string; model?: string }) => {
       )}
     >
       {role === 'assistant' ? (
-        (() => {
-          const raw = model;
-          const derived = raw ? deriveChatModel(raw) : undefined;
-          const provider = derived
-            ? derived.provider
-            : raw
-              ? raw.split(':')[0]
-              : undefined;
-          switch (provider) {
-            case 'openai':
-              return <LogoOpenAI size={16} />;
-            case 'google':
-              return <LogoGoogle size={16} />;
-            case 'openrouter':
-              return <LogoOpenRouter size={16} />;
-            default:
-              return raw ? <Cpu size={16} /> : <Sparkle size={16} />;
-          }
-        })()
+        creator ? (
+          <CreatorLogo creatorSlug={creator} size={16} />
+        ) : (
+          <Sparkle size={16} />
+        )
       ) : (
         <UserRound size={16} />
       )}
@@ -151,7 +154,9 @@ const PurePreviewMessage = ({
           <span className="font-medium text-muted-foreground text-xs capitalize">
             {message.role === 'user'
               ? 'You'
-              : deriveChatModel(effectiveModelId)?.name || 'AI'}
+              : (allowedModels?.find((m) => m.id === effectiveModelId)?.name ||
+                getModelName(effectiveModelId) ||
+                'AI')}
           </span>
         </div>
 
@@ -345,17 +350,9 @@ const PurePreviewMessage = ({
                       isBYOK = Boolean(found.isBYOK);
                     }
                   }
+                  // Fallback: extract model name from ID
                   if (!name) {
-                    try {
-                      const derived = deriveChatModel(raw);
-                      name =
-                        derived?.name ??
-                        raw.split(':').slice(1).join(':') ??
-                        raw;
-                    } catch {
-                      const parts = raw.split(':');
-                      name = parts.length > 1 ? parts.slice(1).join(':') : raw;
-                    }
+                    name = getModelName(raw) || raw;
                   }
                   return (
                     <span className="hidden items-center gap-2 rounded-full bg-muted/30 px-2 py-0.5 text-xs font-medium text-muted-foreground md:flex">

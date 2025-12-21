@@ -1,9 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import {
   Blocks,
@@ -41,8 +39,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { AgentEditorInline } from '@/components/agent-editor-inline';
+import { useSettingsStore } from '@/lib/stores/settings-store';
 
 function buildSettingsSummary(settings: AgentSettingsValue) {
   const allowedTools = settings.allowedTools;
@@ -77,10 +76,10 @@ function buildSettingsSummary(settings: AgentSettingsValue) {
   };
 }
 
-export function AgentsManagement() {
-  const router = useRouter();
+function AgentsListView() {
   const { data, error, isLoading, isFetching, refetch } = useAgents();
   const deleteAgent = useDeleteAgent();
+  const { setAgentView, setEditingAgent } = useSettingsStore();
 
   const agents = data?.agents ?? [];
   const [deleteDialogState, setDeleteDialogState] = useState<{
@@ -90,7 +89,11 @@ export function AgentsManagement() {
   }>({ isOpen: false, agentId: null, agentName: null });
 
   const handleCreate = () => {
-    router.push('/settings/agents/new');
+    setAgentView('create');
+  };
+
+  const handleEdit = (id: string) => {
+    setEditingAgent(id);
   };
 
   const handleDelete = async () => {
@@ -232,8 +235,11 @@ export function AgentsManagement() {
                 </CardContent>
                 <CardFooter className="flex items-center justify-between">
                   <motion.div whileTap={{ scale: 0.95 }}>
-                    <Button variant="outline" asChild>
-                      <Link href={`/settings/agents/${agent.id}`}>Open</Link>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleEdit(agent.id)}
+                    >
+                      Open
                     </Button>
                   </motion.div>
                   <motion.div whileTap={{ scale: 0.95 }}>
@@ -261,8 +267,8 @@ export function AgentsManagement() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between px-6 pt-4 pb-3">
+    <>
+      <div className="flex items-center justify-between pb-3">
         <div>
           <h2 className="text-lg font-semibold">Agents overview</h2>
           <p className="text-sm text-muted-foreground">
@@ -293,7 +299,7 @@ export function AgentsManagement() {
           </motion.div>
         </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-6">{content}</div>
+      <div className="flex-1 min-h-0">{content}</div>
 
       <AlertDialog
         open={deleteDialogState.isOpen}
@@ -321,6 +327,51 @@ export function AgentsManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  );
+}
+
+export function AgentsManagement() {
+  const { agentView, editingAgentId } = useSettingsStore();
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <AnimatePresence mode="wait">
+        {agentView === 'list' && (
+          <motion.div
+            key="list"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            transition={{ duration: 0.2 }}
+            className="flex flex-col h-full"
+          >
+            <AgentsListView />
+          </motion.div>
+        )}
+        {agentView === 'create' && (
+          <motion.div
+            key="create"
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <AgentEditorInline mode="create" />
+          </motion.div>
+        )}
+        {agentView === 'edit' && editingAgentId && (
+          <motion.div
+            key={`edit-${editingAgentId}`}
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <AgentEditorInline mode="edit" agentId={editingAgentId} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

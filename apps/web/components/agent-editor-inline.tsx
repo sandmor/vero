@@ -1,10 +1,9 @@
 'use client';
 
 import { useMemo, useState, type KeyboardEvent } from 'react';
-import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
-import { CheckCircle2, ChevronLeft, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +17,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AnimatedButtonLabel } from '@/components/ui/animated-button';
 import {
   agentSettingsFromChatSettings,
@@ -30,8 +30,8 @@ import type { ChatSettings } from '@/lib/db/schema';
 import type { ChatModelOption } from '@/lib/ai/models';
 import { CHAT_TOOL_IDS, type ChatToolId } from '@/lib/ai/tool-ids';
 import { cn } from '@/lib/utils';
-import { displayProviderName } from '@/lib/ai/registry';
-import { LogoOpenAI, LogoGoogle, LogoOpenRouter } from '@/components/icons';
+import { displayCreatorName } from '@/lib/ai/creators';
+import { CreatorLogo } from '@/components/creator-logo';
 import { useFeedbackState } from '@/hooks/use-feedback-state';
 import {
   Tooltip,
@@ -52,10 +52,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import AgentPromptEditor from '@/components/agent-prompt-editor';
 import {
+  useAgent,
+  useAllowedModels,
   useCreateAgent,
   useDeleteAgent,
   useUpdateAgent,
 } from '@/hooks/use-agents';
+import { useSettingsStore } from '@/lib/stores/settings-store';
 
 const REASONING_OPTIONS: Array<{
   value: 'low' | 'medium' | 'high';
@@ -79,21 +82,6 @@ const REASONING_OPTIONS: Array<{
   },
 ];
 
-export interface AgentEditorAgent {
-  id: string;
-  name: string;
-  description: string | null;
-  settings: ChatSettings | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface AgentEditorProps {
-  mode: 'create' | 'edit';
-  agent?: AgentEditorAgent;
-  allowedModels: ChatModelOption[];
-}
-
 interface AgentFormState {
   name: string;
   description: string;
@@ -103,7 +91,6 @@ interface AgentFormState {
 const TOOL_LABELS: Record<ChatToolId, string> = {
   getWeather: 'Weather',
   runCode: 'Run Code',
-
   readArchive: 'Read Archive',
   writeArchive: 'Write Archive',
   manageChatPins: 'Manage Chat Pins',
@@ -117,15 +104,26 @@ function serializeSettingsSnapshot(state: AgentFormState) {
   });
 }
 
-export default function AgentEditor({
-  mode,
-  agent,
-  allowedModels,
-}: AgentEditorProps) {
-  const router = useRouter();
+interface AgentEditorInlineProps {
+  mode: 'create' | 'edit';
+  agentId?: string;
+}
+
+export function AgentEditorInline({ mode, agentId }: AgentEditorInlineProps) {
+  const { setAgentView, setEditingAgent } = useSettingsStore();
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent();
   const deleteAgent = useDeleteAgent();
+
+  // Fetch agent data for edit mode
+  const { data: agentData, isLoading: isAgentLoading } = useAgent(
+    mode === 'edit' ? agentId : undefined
+  );
+  const agent = agentData?.agent;
+
+  // Fetch allowed models
+  const { data: modelsData, isLoading: isModelsLoading } = useAllowedModels();
+  const allowedModels = modelsData?.models ?? [];
 
   const modelOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -136,7 +134,7 @@ export default function AgentEditor({
     });
   }, [allowedModels]);
 
-  // detect whether there are any duplicate display names among allowedModels
+  // Detect duplicate display names
   const hasDuplicateModelNames = useMemo(() => {
     const counts = new Map<string, number>();
     for (const m of allowedModels) {
@@ -148,18 +146,33 @@ export default function AgentEditor({
   const initialSettings = useMemo(() => {
     if (agent) {
       return cloneAgentSettingsValue(
-        agentSettingsFromChatSettings(agent.settings)
+        agentSettingsFromChatSettings(agent.settings as ChatSettings | null)
       );
     }
     return cloneAgentSettingsValue(DEFAULT_AGENT_SETTINGS);
   }, [agent]);
 
   const [form, setForm] = useState<AgentFormState>(() => ({
-    name: agent?.name ?? '',
-    description: agent?.description ?? '',
-    settings: initialSettings,
+    name: '',
+    description: '',
+    settings: cloneAgentSettingsValue(DEFAULT_AGENT_SETTINGS),
   }));
   const [pinnedInput, setPinnedInput] = useState('');
+  const [formInitialized, setFormInitialized] = useState(false);
+
+  // Initialize form when agent data loads
+  useMemo(() => {
+    if (mode === 'edit' && agent && !formInitialized) {
+      setForm({
+        name: agent.name ?? '',
+        description: agent.description ?? '',
+        settings: initialSettings,
+      });
+      setFormInitialized(true);
+    } else if (mode === 'create' && !formInitialized) {
+      setFormInitialized(true);
+    }
+  }, [agent, mode, initialSettings, formInitialized]);
 
   const initialSnapshot = useMemo(
     () =>
@@ -174,7 +187,7 @@ export default function AgentEditor({
   const currentSnapshot = serializeSettingsSnapshot(form);
   const isDirty = currentSnapshot !== initialSnapshot;
 
-  const formattedUpdatedAt = agent
+  const formattedUpdatedAt = agent?.updatedAt
     ? formatDistanceToNow(new Date(agent.updatedAt), { addSuffix: true })
     : null;
 
@@ -182,6 +195,10 @@ export default function AgentEditor({
   const isDeleting = deleteAgent.isPending;
   const [saveFeedback, setSaveFeedback] = useFeedbackState();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const handleBack = () => {
+    setAgentView('list');
+  };
 
   const toggleTool = (tool: ChatToolId) => {
     setForm((prev) => {
@@ -284,12 +301,13 @@ export default function AgentEditor({
           settings: agentSettingsIsDefault(form.settings) ? undefined : payload,
         });
         toast.success('Agent created');
-        router.replace(`/settings/agents/${response.agent.id}`);
+        // Switch to edit mode with the new agent
+        setEditingAgent(response.agent.id);
         setSaveFeedback('success', 1600);
-      } else if (agent) {
+      } else if (agentId) {
         const payload = agentSettingsToChatSettings(form.settings);
         await updateAgent.mutateAsync({
-          id: agent.id,
+          id: agentId,
           data: {
             name: trimmedName,
             description: form.description.trim() || undefined,
@@ -308,11 +326,11 @@ export default function AgentEditor({
   };
 
   const handleDelete = async () => {
-    if (!agent || isDeleting) return;
+    if (!agentId || isDeleting) return;
     try {
-      await deleteAgent.mutateAsync(agent.id);
+      await deleteAgent.mutateAsync(agentId);
       toast.success('Agent deleted');
-      router.replace('/settings?tab=agents');
+      setAgentView('list');
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to delete agent';
@@ -324,9 +342,48 @@ export default function AgentEditor({
   const allowedTools = form.settings.allowedTools;
   const allToolsSelected = allowedTools === undefined;
 
+  // Loading state
+  if ((mode === 'edit' && isAgentLoading) || isModelsLoading) {
+    return (
+      <div className="space-y-6 animate-in fade-in-0">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-9 w-32" />
+          <Skeleton className="h-6 w-24" />
+        </div>
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-4 w-80" />
+        <div className="space-y-4">
+          <Skeleton className="h-40 w-full rounded-lg" />
+          <Skeleton className="h-48 w-full rounded-lg" />
+          <Skeleton className="h-32 w-full rounded-lg" />
+        </div>
+      </div>
+    );
+  }
+
+  // Agent not found
+  if (mode === 'edit' && !agent && !isAgentLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
+        <p className="text-muted-foreground">Agent not found.</p>
+        <Button variant="outline" onClick={handleBack}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to agents
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <TooltipProvider>
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        transition={{ duration: 0.2 }}
+        className="flex flex-col gap-6"
+      >
+        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-3">
@@ -334,10 +391,10 @@ export default function AgentEditor({
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => router.push('/settings?tab=agents')}
+                  onClick={handleBack}
                   className="px-2"
                 >
-                  <ChevronLeft className="mr-1 h-4 w-4" /> Agents overview
+                  <ArrowLeft className="mr-1 h-4 w-4" /> Back to agents
                 </Button>
               </motion.div>
               {mode === 'edit' && !isDirty && (
@@ -346,11 +403,11 @@ export default function AgentEditor({
                 </Badge>
               )}
             </div>
-            <h1 className="text-2xl font-semibold">
+            <h2 className="text-xl font-semibold">
               {mode === 'create'
                 ? 'Create agent'
                 : (agent?.name ?? 'Untitled agent')}
-            </h1>
+            </h2>
             <p className="text-sm text-muted-foreground">
               Configure defaults, allowed tools, and prompt blocks for this
               agent.
@@ -425,7 +482,8 @@ export default function AgentEditor({
           </p>
         )}
 
-        <Card>
+        {/* Basics Card */}
+        <Card className="border-border/40 bg-card/50 backdrop-blur">
           <CardHeader>
             <CardTitle>Basics</CardTitle>
             <CardDescription>
@@ -464,13 +522,14 @@ export default function AgentEditor({
                   }))
                 }
                 rows={3}
-                placeholder="Summarize this agent’s purpose"
+                placeholder="Summarize this agent's purpose"
               />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Model & Reasoning Card */}
+        <Card className="border-border/40 bg-card/50 backdrop-blur">
           <CardHeader>
             <CardTitle>Model & reasoning defaults</CardTitle>
             <CardDescription>
@@ -529,17 +588,14 @@ export default function AgentEditor({
                                 className="flex w-4 justify-center"
                                 aria-hidden={false}
                               >
-                                {model.provider === 'openai' ? (
-                                  <LogoOpenAI size={16} />
-                                ) : model.provider === 'google' ? (
-                                  <LogoGoogle size={16} />
-                                ) : (
-                                  <LogoOpenRouter size={16} />
-                                )}
+                                <CreatorLogo
+                                  creatorSlug={model.creator}
+                                  size={16}
+                                />
                               </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                              {displayProviderName(model.provider)}
+                              {displayCreatorName(model.creator)}
                             </TooltipContent>
                           </Tooltip>
                         ) : (
@@ -565,7 +621,7 @@ export default function AgentEditor({
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Reasoning effort</label>
-              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
                 <Button
                   type="button"
                   variant={
@@ -612,7 +668,8 @@ export default function AgentEditor({
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Allowed Tools Card */}
+        <Card className="border-border/40 bg-card/50 backdrop-blur">
           <CardHeader>
             <CardTitle>Allowed tools</CardTitle>
             <CardDescription>
@@ -648,7 +705,7 @@ export default function AgentEditor({
                         handleToolChoiceKeyDown(event, tool)
                       }
                       className={cn(
-                        'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
+                        'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background cursor-pointer',
                         selected
                           ? 'border-primary bg-primary/10'
                           : 'border-border hover:border-primary/40'
@@ -667,7 +724,8 @@ export default function AgentEditor({
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Pinned Memory Card */}
+        <Card className="border-border/40 bg-card/50 backdrop-blur">
           <CardHeader>
             <CardTitle>Pinned memory</CardTitle>
             <CardDescription>
@@ -715,7 +773,8 @@ export default function AgentEditor({
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Advanced Prompt Card */}
+        <Card className="border-border/40 bg-card/50 backdrop-blur">
           <CardHeader>
             <CardTitle>Advanced prompt</CardTitle>
             <CardDescription>
@@ -736,7 +795,9 @@ export default function AgentEditor({
             />
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
     </TooltipProvider>
   );
 }
+
+export default AgentEditorInline;

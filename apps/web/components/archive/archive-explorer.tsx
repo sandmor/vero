@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { z } from 'zod';
+import * as z from 'zod';
 import { ArchiveDetail } from '@/components/archive/archive-detail';
 import { ArchiveList } from '@/components/archive/archive-list';
 import { Badge } from '@/components/ui/badge';
@@ -110,13 +110,13 @@ export function ArchiveExplorer() {
   type FormValues = z.infer<typeof baseSchema>;
 
   const createForm = useForm<FormValues>({
-    resolver: zodResolver(baseSchema),
+    resolver: zodResolver(baseSchema as any),
     defaultValues: { entity: '', body: '', tags: [], tagInput: '' },
     mode: 'onChange',
   });
 
   const editForm = useForm<FormValues>({
-    resolver: zodResolver(baseSchema),
+    resolver: zodResolver(baseSchema as any),
     defaultValues: { entity: '', body: '', tags: [], tagInput: '' },
   });
 
@@ -614,11 +614,10 @@ export function ArchiveExplorer() {
           {status !== 'idle' && (
             <motion.div
               key={status}
-              className={`absolute right-4 top-4 flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium shadow-sm ${
-                status === 'error'
-                  ? 'bg-destructive/15 text-destructive'
-                  : 'bg-emerald-500/10 text-emerald-500'
-              }`}
+              className={`absolute right-4 top-4 flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium shadow-sm ${status === 'error'
+                ? 'bg-destructive/15 text-destructive'
+                : 'bg-emerald-500/10 text-emerald-500'
+                }`}
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
