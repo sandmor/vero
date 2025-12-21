@@ -101,3 +101,15 @@ export function useDeleteAgent() {
     },
   });
 }
+
+export function useAllowedModels() {
+  return useQuery<{ models: import('@/lib/ai/models').ChatModelOption[] }>({
+    queryKey: ['agents', 'allowed-models'],
+    queryFn: async () => {
+      const res = await fetch('/api/agents/allowed-models');
+      if (!res.ok) throw new Error('Failed to load allowed models');
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+}

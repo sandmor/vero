@@ -169,7 +169,7 @@ function repairMetadataPayload(
       return (
         !!model &&
         typeof model.id === 'string' &&
-        typeof model.provider === 'string' &&
+        typeof model.creator === 'string' &&
         typeof model.model === 'string'
       );
     });
