@@ -7,7 +7,8 @@ on:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  IMAGE_NAME: public.ecr.aws/${{ secrets.AWS_ECR_PUBLIC_ALIAS }}/virid-realtime-gateway
+  ECR_REPOSITORY: realtime-gateway
+  IMAGE_NAME: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/virid-realtime-gateway
 
 jobs:
   build-and-push:
@@ -54,11 +55,12 @@ jobs:
 
             cd /home/${{ secrets.EC2_USER }}/virid/realtime-gateway
 
+            # Ensure ECR login (uses instance role)
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
               | docker login \
                   --username AWS \
                   --password-stdin \
-                  public.ecr.aws/${{ secrets.AWS_ECR_PUBLIC_ALIAS }}
+                  ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
 
             # Pull latest image and restart container
             docker compose pull realtime-gateway

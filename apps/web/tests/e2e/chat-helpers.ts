@@ -2,7 +2,7 @@ import { expect, type Page } from '@playwright/test';
 
 export type ChatModelOption = {
   id: string;
-  provider: string;
+  creator: string;
   model: string;
   name: string;
   description: string;
@@ -54,9 +54,9 @@ declare global {
 }
 
 export const VISION_MODEL: ChatModelOption = {
-  id: 'openrouter:vision',
-  provider: 'openrouter',
-  model: 'vision',
+  id: 'test:vision',
+  creator: 'test',
+  model: 'test/vision',
   name: 'Vision Model',
   description: 'Supports attachments',
   capabilities: {
@@ -66,9 +66,9 @@ export const VISION_MODEL: ChatModelOption = {
 };
 
 export const TEXT_MODEL: ChatModelOption = {
-  id: 'openrouter:text',
-  provider: 'openrouter',
-  model: 'text',
+  id: 'test:text',
+  creator: 'test',
+  model: 'test/text',
   name: 'Text Model',
   description: 'Text only responses',
   capabilities: {
@@ -222,8 +222,8 @@ export async function configureChatMocks(
             : input instanceof URL
               ? input.href
               : ((input && typeof input === 'object' && 'url' in input
-                  ? (input as { url?: string }).url
-                  : undefined) ?? window.location.origin);
+                ? (input as { url?: string }).url
+                : undefined) ?? window.location.origin);
         const { pathname } = new URL(targetUrl, window.location.origin);
 
         if (pathname === '/api/cache/sync') {
