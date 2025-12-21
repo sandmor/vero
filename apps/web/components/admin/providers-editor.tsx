@@ -16,8 +16,14 @@ import {
 } from '@/components/ui/collapsible';
 import { toast } from '@/components/toast';
 import { AnimatedButtonLabel } from '@/components/ui/animated-button';
-import { SUPPORTED_PROVIDERS, displayProviderName } from '@/lib/ai/registry';
-import { ProviderLogo } from '@/components/provider-logo';
+import {
+  getAllProviders,
+  displayProviderName,
+} from '@/lib/ai/registry';
+import { CreatorLogo } from '@/components/creator-logo';
+
+// Get all providers for iteration
+const providers = getAllProviders();
 
 type FeedbackState = 'idle' | 'saved' | 'deleted' | 'error';
 
@@ -30,7 +36,7 @@ export function ProvidersEditor({
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [keys, setKeys] = useState<Record<string, string>>(
     Object.fromEntries(
-      SUPPORTED_PROVIDERS.map((p) => [p, initialKeys[p] || '']) as Array<
+      providers.map((p) => [p.id, initialKeys[p.id] || '']) as Array<
         [string, string]
       >
     )
@@ -38,7 +44,7 @@ export function ProvidersEditor({
   const [feedback, setFeedback] = useState<Record<string, FeedbackState>>(
     () =>
       Object.fromEntries(
-        SUPPORTED_PROVIDERS.map((provider) => [provider, 'idle'] as const)
+        providers.map((provider) => [provider.id, 'idle'] as const)
       ) as Record<string, FeedbackState>
   );
   const feedbackTimers = useRef<Record<string, number>>({});
@@ -160,7 +166,8 @@ export function ProvidersEditor({
 
   return (
     <div className="space-y-3">
-      {SUPPORTED_PROVIDERS.map((p, index) => {
+      {providers.map((provider, index) => {
+        const p = provider.id;
         const trimmedValue = keys[p]?.trim() ?? '';
         const isSaving =
           saveMutation.isPending && saveMutation.variables?.id === p;
@@ -193,7 +200,7 @@ export function ProvidersEditor({
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background border border-border/40 shadow-sm group-hover:scale-105 transition-transform">
-                        <ProviderLogo providerId={p} className="h-6 w-6" />
+                        <CreatorLogo creatorSlug={p} className="h-6 w-6" size={24} />
                       </div>
                       <div className="flex flex-col text-left">
                         <span className="text-base font-semibold tracking-tight">

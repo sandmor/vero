@@ -58,6 +58,10 @@ export default async function SettingsPage({
   if (!session?.user) redirect('/login');
   const params = await searchParams;
   const tabParam = typeof params?.tab === 'string' ? params.tab : undefined;
+  const agentViewParam =
+    typeof params?.agentView === 'string' ? params.agentView : undefined;
+  const agentIdParam =
+    typeof params?.agentId === 'string' ? params.agentId : undefined;
   const adminAllowed = await isAdmin();
   const defaultTab =
     tabParam === 'admin' && adminAllowed
@@ -67,6 +71,14 @@ export default async function SettingsPage({
         : tabParam === 'archive'
           ? 'archive'
           : 'preferences';
+
+  // Parse agent view state
+  const agentView =
+    agentViewParam === 'create' || agentViewParam === 'edit'
+      ? agentViewParam
+      : 'list';
+  const editingAgentId =
+    agentView === 'edit' && agentIdParam ? agentIdParam : null;
 
   const dehydrated =
     defaultTab === 'archive'
@@ -78,7 +90,11 @@ export default async function SettingsPage({
 
   return (
     <div className="min-h-screen bg-muted/5">
-      <SettingsStoreInitializer defaultTab={defaultTab as any} />
+      <SettingsStoreInitializer
+        defaultTab={defaultTab as any}
+        agentView={agentView}
+        editingAgentId={editingAgentId}
+      />
 
       {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/40">

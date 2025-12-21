@@ -15,15 +15,12 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  Legend,
 } from 'recharts';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -31,20 +28,15 @@ import { ButtonWithFeedback } from '@/components/ui/button-with-feedback';
 import {
   Download,
   Calendar,
-  ArrowUpRight,
-  ArrowDownRight,
   RefreshCcw,
   TrendingUp,
   TrendingDown,
-  Zap,
   Users,
   Cpu,
   DollarSign,
   Activity,
   BarChart3,
-  PieChartIcon,
   Key,
-  Database,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -73,6 +65,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { CreatorLogo } from '@/components/creator-logo';
 
 const COLORS = [
   '#8884d8',
@@ -696,7 +689,7 @@ ${modelStatsCsv}`;
 
                           return (
                             <div
-                              key={model.name}
+                              key={model.id || model.name}
                               className="flex items-center justify-between"
                             >
                               <div className="flex items-center gap-2 truncate flex-1 min-w-0">
@@ -704,11 +697,14 @@ ${modelStatsCsv}`;
                                   className="h-2.5 w-2.5 rounded-full shrink-0"
                                   style={{ backgroundColor: color }}
                                 />
+                                {model.creator && (
+                                  <CreatorLogo creatorSlug={model.creator} size={12} className="shrink-0" />
+                                )}
                                 <span
                                   className="truncate text-xs"
-                                  title={model.name}
+                                  title={model.id || model.name}
                                 >
-                                  {model.name.split(':').pop()}
+                                  {model.name}
                                 </span>
                               </div>
                               <div className="font-medium text-muted-foreground shrink-0 pl-2 text-xs">
@@ -827,16 +823,23 @@ ${modelStatsCsv}`;
                     </TableHeader>
                     <TableBody>
                       {modelStats.map((model: any) => (
-                        <TableRow key={model.name}>
+                        <TableRow key={model.id || model.name}>
                           <TableCell className="font-medium">
                             <UITooltip>
                               <TooltipTrigger asChild>
-                                <span className="cursor-help truncate max-w-[200px] block">
-                                  {model.name.split(':').pop()}
-                                </span>
+                                <div className="flex items-center gap-2 cursor-help truncate max-w-[200px]">
+                                  {model.creator && (
+                                    <CreatorLogo creatorSlug={model.creator} size={14} className="shrink-0" />
+                                  )}
+                                  <span className="truncate">{model.name}</span>
+                                </div>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>{model.name}</p>
+                                <p className="font-medium">{model.name}</p>
+                                <p className="text-xs text-muted-foreground">{model.id}</p>
+                                {model.creatorName && (
+                                  <p className="text-xs text-muted-foreground">by {model.creatorName}</p>
+                                )}
                               </TooltipContent>
                             </UITooltip>
                           </TableCell>
@@ -1021,12 +1024,23 @@ ${modelStatsCsv}`;
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span
-                              className="truncate max-w-[140px] block text-muted-foreground"
-                              title={activity.model}
-                            >
-                              {activity.model.split(':').pop()}
-                            </span>
+                            <UITooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center gap-1.5 truncate max-w-[140px] text-muted-foreground cursor-help">
+                                  {activity.creator && (
+                                    <CreatorLogo creatorSlug={activity.creator} size={12} className="shrink-0" />
+                                  )}
+                                  <span className="truncate">{activity.modelName || activity.model}</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="font-medium">{activity.modelName || activity.model}</p>
+                                <p className="text-xs text-muted-foreground">{activity.modelId || activity.model}</p>
+                                {activity.creatorName && (
+                                  <p className="text-xs text-muted-foreground">by {activity.creatorName}</p>
+                                )}
+                              </TooltipContent>
+                            </UITooltip>
                           </TableCell>
                           <TableCell className="text-right text-muted-foreground">
                             {formatTokens(activity.inputTokens)}

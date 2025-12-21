@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import ProvidersSection from './_providers-section';
 import TiersSection from './_tiers-section';
 import ModelCapabilitiesSection from './_model-capabilities-section';
+import PlatformSection from './_platform-section';
 import SettingsSection from './_settings-section';
 
 export default function AdminSections() {
@@ -26,6 +27,17 @@ export default function AdminSections() {
         }
       >
         <ModelCapabilitiesSection />
+      </Suspense>
+      <Suspense
+        fallback={
+          <div className="rounded-3xl border border-border/60 bg-muted/10 p-6 shadow-sm animate-pulse">
+            <p className="text-sm text-muted-foreground">
+              Loading custom platform providers…
+            </p>
+          </div>
+        }
+      >
+        <PlatformSection />
       </Suspense>
       <Suspense
         fallback={
