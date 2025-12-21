@@ -1,0 +1,71 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth/admin';
+import { prisma } from '@virid/db';
+import {
+  upsertModelProvider,
+  removeModelProvider,
+  type ModelPricing,
+} from '@/lib/ai/model-capabilities';
+
+// PUT /api/admin/model-capabilities/[id]/providers/[providerId] - Update Provider
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; providerId: string }> }
+) {
+  const { id, providerId } = await params;
+  try {
+    await requireAdmin();
+    const body = await req.json();
+    const { providerModelId, pricing, isDefault, enabled } = body;
+
+    // Get existing to merge
+    const existing = await prisma.modelProvider.findUnique({
+      where: { modelId_providerId: { modelId: id, providerId } },
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Provider association not found' },
+        { status: 404 }
+      );
+    }
+
+    await upsertModelProvider(id, {
+      providerId,
+      providerModelId: providerModelId ?? existing.providerModelId,
+      pricing:
+        pricing !== undefined
+          ? pricing
+          : (existing.pricing as ModelPricing | null),
+      isDefault: isDefault ?? existing.isDefault,
+      enabled: enabled ?? existing.enabled,
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('Error updating provider:', error);
+    return NextResponse.json(
+      { error: 'Failed to update provider' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/admin/model-capabilities/[id]/providers/[providerId] - Remove Provider
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; providerId: string }> }
+) {
+  const { id, providerId } = await params;
+  try {
+    await requireAdmin();
+    await removeModelProvider(id, providerId);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('Error removing provider:', error);
+    return NextResponse.json(
+      { error: 'Failed to remove provider' },
+      { status: 500 }
+    );
+  }
+}

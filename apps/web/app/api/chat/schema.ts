@@ -24,15 +24,15 @@ export async function createPostRequestBodySchema() {
       parts: z.array(partSchema),
     }),
     regenerateMessageId: z.string().uuid().optional(),
-    // Accept any composite provider:model id; entitlement check is enforced server-side.
-    // Examples: 'google:gemini-2.5-pro', 'openrouter:google/gemini-2.5-flash'
+    // Accept any composite creator:model_name id; entitlement check is enforced server-side.
+    // Examples: 'google:gemini-2.5-pro', 'anthropic:claude-sonnet-4.5'
     selectedChatModel: z
       .string()
       .min(3)
       .max(200)
       .refine((v) => v.includes(':'), {
         message:
-          "selectedChatModel must be a composite id of the form 'provider:model'",
+          "selectedChatModel must be a composite id of the form 'creator:model_name'",
       }),
     selectedVisibilityType: z.enum(['public', 'private']),
     // Optional list of archive entry slugs to include immediately (will also be persisted if chat is new).

@@ -3,8 +3,9 @@ import { getAppSession } from '@/lib/auth/session';
 import { getTierForUserType } from '@/lib/ai/tiers';
 import { resolveChatModelOptions } from '@/lib/ai/models.server';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
-import { getUserByokConfig } from '@/lib/queries/user-keys';
+import { getUserByokModels } from '@/lib/queries/byok';
 import { ChatSDKError } from '@/lib/errors';
+import { displayProviderName } from '@/lib/ai/registry';
 
 export type SettingsResponse = {
     allowedModels: Awaited<ReturnType<typeof resolveChatModelOptions>>;
@@ -32,13 +33,35 @@ export async function GET(request: NextRequest) {
     try {
         // Get user tier and models info
         const tier = await getTierForUserType(session.user.type);
-        const byokConfig = await getUserByokConfig(session.user.id);
+
+        // Get BYOK models with full info for proper display names
+        const byokModels = await getUserByokModels(session.user.id);
+        const byokModelIds = byokModels.map((m) => m.fullModelId);
+
+        // Build BYOK model info for resolveChatModelOptions
+        const byokModelInfo = byokModels.map((m) => ({
+            id: m.fullModelId,
+            displayName: m.displayName,
+            providerSlug: m.sourceType === 'platform' && m.providerId
+                ? m.providerId
+                : m.sourceType === 'custom' && m.customProviderSlug
+                    ? m.customProviderSlug
+                    : 'custom',
+            providerDisplayName: m.sourceType === 'platform' && m.providerId
+                ? displayProviderName(m.providerId)
+                : m.sourceType === 'custom' && m.customProviderName
+                    ? m.customProviderName
+                    : 'Custom',
+            supportsTools: m.supportsTools,
+        }));
+
         const combinedModelIds = Array.from(
-            new Set([...tier.modelIds, ...byokConfig.modelIds])
+            new Set([...tier.modelIds, ...byokModelIds])
         );
         const allowedModels = await resolveChatModelOptions(tier.modelIds, {
-            extraModelIds: byokConfig.modelIds,
-            highlightIds: byokConfig.modelIds,
+            extraModelIds: byokModelIds,
+            highlightIds: byokModelIds,
+            byokModels: byokModelInfo,
         });
 
         const serverTimestamp = new Date().toISOString();

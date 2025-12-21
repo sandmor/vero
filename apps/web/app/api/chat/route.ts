@@ -16,7 +16,7 @@ import type { UserType } from '@/lib/auth/types';
 import type { VisibilityType } from '@/components/visibility-selector';
 import { getTierForUserType } from '@/lib/ai/tiers';
 import type { ChatModel } from '@/lib/ai/models';
-import { isModelIdAllowed, parseCompositeModelId } from '@/lib/ai/models';
+import { isModelIdAllowed } from '@/lib/ai/models';
 import {
   getDefaultSystemPromptParts,
   type RequestHints,
@@ -36,7 +36,12 @@ import type { ModelCatalog } from 'tokenlens/core';
 import { fetchModels } from 'tokenlens/fetch';
 import { getUsage } from 'tokenlens/helpers';
 import { getModelCost } from '@/lib/ai/pricing';
-import { getLanguageModel, getLanguageModelWithKey } from '@/lib/ai/providers';
+import {
+  getLanguageModel,
+  getByokLanguageModel,
+  isByokModelId,
+  parseByokModelId,
+} from '@/lib/ai/providers';
 import { getChatSettings } from '@/lib/db/chat-settings';
 import { readArchive } from '@/lib/ai/tools/readArchive';
 import { writeArchive } from '@/lib/ai/tools/writeArchive';
@@ -66,11 +71,11 @@ import { updateChatTitleById } from '@/lib/db/queries';
 import { ZodError } from 'zod';
 import { type PostRequestBody, createPostRequestBodySchema } from './schema';
 import { prisma } from '@virid/db';
-import { getModelCapabilities } from '@/lib/ai/model-capabilities';
+import { getModelCapabilities, type ResolvedModelCapabilities } from '@/lib/ai/model-capabilities';
 import { getSettings } from '@/lib/settings';
 import { CHAT_TOOL_IDS, normalizeChatToolIds } from '@/lib/ai/tool-ids';
 import type { ChatSettings, MessageTreeNode } from '@/lib/db/schema';
-import { getUserByokConfig } from '@/lib/queries/user-keys';
+import { getUserByokConfig, resolveByokModel } from '@/lib/queries/byok';
 
 export const maxDuration = 300;
 
@@ -277,7 +282,6 @@ export async function POST(request: Request) {
 
     const userType: UserType = session.user.type;
     const tierPromise = getTierForUserType(userType);
-    const byokConfigPromise = getUserByokConfig(session.user.id);
 
     if (chat) {
       if (chat.userId !== session.user.id) {
@@ -393,14 +397,24 @@ export async function POST(request: Request) {
       bucketRefillAmount,
       bucketRefillIntervalSeconds,
     } = await tierPromise;
-    const byokConfig = await byokConfigPromise;
-    const combinedAllowedModels = Array.from(
-      new Set([...tierModelIds, ...byokConfig.modelIds])
-    );
-    if (!isModelIdAllowed(selectedChatModel, combinedAllowedModels)) {
-      return new ChatSDKError(
-        userType === 'guest' ? 'forbidden:model' : 'forbidden:model'
-      ).toResponse();
+
+    // Check if this is a BYOK model request
+    const isUserByokModel = isByokModelId(selectedChatModel);
+    const parsedByokModel = isUserByokModel ? parseByokModelId(selectedChatModel) : null;
+
+    // For BYOK models, resolve credentials; for platform models, use regular flow
+    let byokResolution: Awaited<ReturnType<typeof resolveByokModel>> = null;
+    let shouldUseByokKey = false;
+
+    if (isUserByokModel && parsedByokModel) {
+      byokResolution = await resolveByokModel(session.user.id, parsedByokModel);
+      if (!byokResolution) {
+        return new ChatSDKError(
+          'forbidden:model',
+          'BYOK model not configured or missing credentials'
+        ).toResponse();
+      }
+      shouldUseByokKey = true;
     }
 
     // Token bucket consumption: cost = 1 user message per invocation
@@ -461,17 +475,41 @@ export async function POST(request: Request) {
         return {};
       }
     );
-    const { provider: selectedProvider } =
-      parseCompositeModelId(selectedChatModel);
-    const providerByok = byokConfig.providers[selectedProvider];
-    const shouldUseByokKey = Boolean(
-      providerByok?.apiKey && providerByok.modelIds.includes(selectedChatModel)
-    );
-    const modelPromise = shouldUseByokKey
-      ? getLanguageModelWithKey(selectedChatModel, providerByok!.apiKey)
+
+    // Resolve capabilities - for BYOK models, use the resolution info; for platform models, query DB
+    let modelCapabilities: ResolvedModelCapabilities | { supportsTools: boolean; provider: string; pricing: null } | null;
+
+    if (isUserByokModel && byokResolution) {
+      // BYOK model - use resolution info for capabilities
+      modelCapabilities = {
+        supportsTools: byokResolution.supportsTools,
+        provider: parsedByokModel!.sourceType === 'platform'
+          ? parsedByokModel!.providerId
+          : 'custom',
+        pricing: null,
+      } as any;
+    } else {
+      modelCapabilities = await getCachedModelCapabilities(selectedChatModel)();
+
+      if (!modelCapabilities) {
+        throw new ChatSDKError(
+          'bad_request:model',
+          `Model capabilities not found for ${selectedChatModel}`
+        );
+      }
+
+      // For non-BYOK models, check tier access
+      if (!isModelIdAllowed(selectedChatModel, tierModelIds)) {
+        return new ChatSDKError(
+          userType === 'guest' ? 'forbidden:model' : 'forbidden:model'
+        ).toResponse();
+      }
+    }
+
+    // Create model promise based on whether it's BYOK or platform
+    const modelPromise = shouldUseByokKey && parsedByokModel && byokResolution
+      ? Promise.resolve(getByokLanguageModel(parsedByokModel, byokResolution))
       : getLanguageModel(selectedChatModel);
-    const modelCapabilitiesPromise =
-      getCachedModelCapabilities(selectedChatModel)();
 
     let regenerationParentMessageId: string | null = null;
 
@@ -516,7 +554,7 @@ export async function POST(request: Request) {
           model,
           pinnedForPrompt,
           settings,
-          modelCapabilities,
+          _unused_capabilities, // already resolved
           appSettings,
           effectiveUserMessage,
           userPreferences,
@@ -525,7 +563,7 @@ export async function POST(request: Request) {
           modelPromise,
           pinnedEntriesPromise,
           settingsPromise,
-          modelCapabilitiesPromise,
+          Promise.resolve(modelCapabilities),
           appSettingsPromise,
           effectiveUserMessagePromise,
           // Load user preferences
@@ -770,7 +808,19 @@ export async function POST(request: Request) {
           });
         }
 
-        const { maxOutputTokens } = appSettings;
+        // Determine effective maxOutputTokens:
+        // 1. For BYOK models: use byokResolution.maxOutputTokens if set
+        // 2. For platform models: use modelCapabilities.maxOutputTokens if set
+        // 3. Fall back to global appSettings.maxOutputTokens
+        let effectiveMaxOutputTokens: number | undefined;
+        if (shouldUseByokKey && byokResolution?.maxOutputTokens) {
+          effectiveMaxOutputTokens = byokResolution.maxOutputTokens;
+        } else if (!shouldUseByokKey && modelCapabilities && 'maxOutputTokens' in modelCapabilities && modelCapabilities.maxOutputTokens) {
+          effectiveMaxOutputTokens = modelCapabilities.maxOutputTokens as number;
+        } else {
+          effectiveMaxOutputTokens = appSettings.maxOutputTokens;
+        }
+
         const result = streamText({
           model,
           system: composedSystemPrompt,
@@ -779,7 +829,7 @@ export async function POST(request: Request) {
           experimental_activeTools: allowedToolIds,
           experimental_transform: smoothStream({ chunking: 'word' }),
           tools: activeTools,
-          maxOutputTokens,
+          maxOutputTokens: effectiveMaxOutputTokens,
           ...(Object.keys(providerOptions).length > 0 && { providerOptions }),
           experimental_telemetry: {
             isEnabled: isProductionEnvironment,
@@ -879,7 +929,7 @@ export async function POST(request: Request) {
 
         if (finalMergedUsage) {
           try {
-            const capabilities = await modelCapabilitiesPromise;
+            const capabilities = modelCapabilities;
             const pricing = capabilities?.pricing;
 
             const inputTokens = finalMergedUsage.inputTokens ?? 0;
