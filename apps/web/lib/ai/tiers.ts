@@ -10,6 +10,19 @@ export type TierRecord = {
   bucketRefillIntervalSeconds: number;
 };
 
+/**
+ * Extended tier record that includes full model capabilities
+ */
+export type TierRecordWithModels = TierRecord & {
+  models: {
+    id: string;
+    name: string;
+    creator: string;
+    supportsTools: boolean;
+    supportedFormats: string[];
+  }[];
+};
+
 function parseModelList(
   envVar: string | undefined,
   defaultList: string[]
@@ -43,16 +56,28 @@ const FALLBACK_TIERS: Record<UserType, TierRecord> = {
 // 60s TTL simple cache; reuse provider TTL constant if desired later
 const TTL_MS = 60_000;
 let cacheStore: Record<string, { value: TierRecord; fetchedAt: number }> = {};
+let cacheStoreWithModels: Record<string, { value: TierRecordWithModels; fetchedAt: number }> = {};
 
 async function fetchTier(id: string): Promise<TierRecord> {
-  const row = await prisma.tier.findUnique({ where: { id } }).catch((err) => {
-    // In rare cases (e.g., during migration) Prisma might throw before table exists.
-    console.warn(
-      'Tier lookup failed, attempting fallback:',
-      err?.message || err
-    );
-    return null;
-  });
+  const row = await prisma.tier
+    .findUnique({
+      where: { id },
+      include: {
+        models: {
+          select: {
+            modelId: true,
+          },
+        },
+      },
+    })
+    .catch((err) => {
+      // In rare cases (e.g., during migration) Prisma might throw before table exists.
+      console.warn(
+        'Tier lookup failed, attempting fallback:',
+        err?.message || err
+      );
+      return null;
+    });
 
   if (!row) {
     const fallback = FALLBACK_TIERS[id as UserType];
@@ -65,17 +90,86 @@ async function fetchTier(id: string): Promise<TierRecord> {
     throw new Error(`Tier '${id}' not found and no fallback available`);
   }
 
-  const r: any = row as any;
+  // Extract model IDs from the relation
+  const modelIds = row.models.map((m) => m.modelId);
+
   return {
-    id: r.id,
-    modelIds: r.modelIds,
+    id: row.id,
+    modelIds,
     bucketCapacity:
-      r.bucketCapacity ?? FALLBACK_TIERS[id as UserType].bucketCapacity,
+      row.bucketCapacity ?? FALLBACK_TIERS[id as UserType].bucketCapacity,
     bucketRefillAmount:
-      r.bucketRefillAmount ?? FALLBACK_TIERS[id as UserType].bucketRefillAmount,
+      row.bucketRefillAmount ?? FALLBACK_TIERS[id as UserType].bucketRefillAmount,
     bucketRefillIntervalSeconds:
-      r.bucketRefillIntervalSeconds ??
+      row.bucketRefillIntervalSeconds ??
       FALLBACK_TIERS[id as UserType].bucketRefillIntervalSeconds,
+  };
+}
+
+/**
+ * Fetch a tier with full model capabilities included
+ */
+async function fetchTierWithModels(id: string): Promise<TierRecordWithModels> {
+  const row = await prisma.tier
+    .findUnique({
+      where: { id },
+      include: {
+        models: {
+          include: {
+            model: {
+              select: {
+                id: true,
+                name: true,
+                creator: true,
+                supportsTools: true,
+                supportedFormats: true,
+              },
+            },
+          },
+        },
+      },
+    })
+    .catch((err) => {
+      console.warn(
+        'Tier lookup failed, attempting fallback:',
+        err?.message || err
+      );
+      return null;
+    });
+
+  if (!row) {
+    const fallback = FALLBACK_TIERS[id as UserType];
+    if (fallback) {
+      console.warn(
+        `[tiers] Using fallback tier definition for '${id}' (DB row missing).`
+      );
+      return {
+        ...fallback,
+        models: [],
+      };
+    }
+    throw new Error(`Tier '${id}' not found and no fallback available`);
+  }
+
+  const models = row.models.map((m) => ({
+    id: m.model.id,
+    name: m.model.name,
+    creator: m.model.creator,
+    supportsTools: m.model.supportsTools,
+    supportedFormats: m.model.supportedFormats,
+  }));
+
+  return {
+    id: row.id,
+    modelIds: models.map((m) => m.id),
+    bucketCapacity:
+      row.bucketCapacity ?? FALLBACK_TIERS[id as UserType].bucketCapacity,
+    bucketRefillAmount:
+      row.bucketRefillAmount ?? FALLBACK_TIERS[id as UserType].bucketRefillAmount,
+    bucketRefillIntervalSeconds:
+      row.bucketRefillIntervalSeconds ??
+      FALLBACK_TIERS[id as UserType].bucketRefillIntervalSeconds,
+    models,
   };
 }
 
@@ -88,6 +182,18 @@ export async function getTier(id: string): Promise<TierRecord> {
   return value;
 }
 
+/**
+ * Get a tier with full model capabilities included (cached)
+ */
+export async function getTierWithModels(id: string): Promise<TierRecordWithModels> {
+  const now = Date.now();
+  const existing = cacheStoreWithModels[id];
+  if (existing && now - existing.fetchedAt < TTL_MS) return existing.value;
+  const value = await fetchTierWithModels(id);
+  cacheStoreWithModels[id] = { value, fetchedAt: now };
+  return value;
+}
+
 export async function getTierForUserType(
   userType: UserType
 ): Promise<TierRecord> {
@@ -95,7 +201,21 @@ export async function getTierForUserType(
   return getTier(userType);
 }
 
+/**
+ * Get tier with full model capabilities for a user type
+ */
+export async function getTierWithModelsForUserType(
+  userType: UserType
+): Promise<TierRecordWithModels> {
+  return getTierWithModels(userType);
+}
+
 export function invalidateTierCache(id?: string) {
-  if (id) delete cacheStore[id];
-  else cacheStore = {};
+  if (id) {
+    delete cacheStore[id];
+    delete cacheStoreWithModels[id];
+  } else {
+    cacheStore = {};
+    cacheStoreWithModels = {};
+  }
 }

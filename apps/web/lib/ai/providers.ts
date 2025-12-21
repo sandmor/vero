@@ -1,13 +1,20 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { prisma } from '@virid/db';
 import { isTestEnvironment } from '../constants';
-import { parseCompositeModelId } from './models';
+import { parseModelId } from './model-id';
 import { getProviderApiKey } from './provider-keys';
 import { SUPPORTED_PROVIDERS } from './registry';
+import { type ParsedByokModelId } from './byok';
 
-const TTL_MS = 60_000;
-let providerVersion = 0; // increments each rebuild
+// =============================================================================
+// Provider Factory Caching
+// =============================================================================
+
+const PROVIDER_CACHE_TTL_MS = 60_000; // 1 minute
+let providerVersion = 0;
 
 type ProviderClientEntry = {
   factory: (model: string) => any;
@@ -17,7 +24,14 @@ type ProviderClientEntry = {
 
 const providerClientCache = new Map<string, ProviderClientEntry>();
 
-function buildProviderFactory(provider: string, apiKey?: string) {
+/**
+ * Build a provider factory for a known platform provider
+ */
+function buildProviderFactory(
+  provider: string,
+  apiKey?: string,
+  baseUrl?: string
+) {
   switch (provider) {
     case 'openrouter':
       return createOpenRouter({
@@ -25,124 +39,310 @@ function buildProviderFactory(provider: string, apiKey?: string) {
         extraBody: { include_reasoning: true },
       });
     case 'openai':
-      return createOpenAI({ apiKey });
+      return createOpenAI({ apiKey, baseURL: baseUrl });
     case 'google':
-      return createGoogleGenerativeAI({ apiKey });
+      return createGoogleGenerativeAI({ apiKey, baseURL: baseUrl });
     default:
       throw new Error(`Unsupported provider '${provider}'`);
   }
 }
 
+/**
+ * Build an OpenAI-compatible provider factory for custom endpoints
+ */
+function buildCustomProviderFactory(
+  name: string,
+  apiKey: string,
+  baseUrl: string
+) {
+  return createOpenAICompatible({
+    name,
+    apiKey: apiKey,
+    baseURL: baseUrl,
+    includeUsage: true,
+  });
+}
+
+/**
+ * Get or create a cached provider client factory
+ */
 async function getProviderClient(
   provider: string
 ): Promise<(model: string) => any> {
   const existing = providerClientCache.get(provider);
   const now = Date.now();
-  if (existing && now - existing.fetchedAt < TTL_MS) {
+  if (existing && now - existing.fetchedAt < PROVIDER_CACHE_TTL_MS) {
     return existing.factory;
   }
-  const apiKey = await getProviderApiKey(provider); // undefined -> fallback to env inside SDK
+  const apiKey = await getProviderApiKey(provider);
   const factory = buildProviderFactory(provider, apiKey);
   providerClientCache.set(provider, { factory, apiKey, fetchedAt: now });
-  providerVersion++; // bump version whenever any provider refreshes
+  providerVersion++;
   return factory;
 }
 
-async function resolveLanguageModel(compositeId: string) {
-  const { provider, model } = parseCompositeModelId(compositeId);
-  const client = await getProviderClient(provider);
-  return client(model);
-}
+// =============================================================================
+// Provider Info Resolution
+// =============================================================================
 
-// Curated model IDs surfaced in UI / entitlements.
-const KNOWN_MODEL_IDS = [
-  'openai:gpt-5.1',
-  'google:gemini-2.5-flash-image-preview',
-  'google:gemini-2.5-flash',
-  'google:gemini-2.5-pro',
-];
+/**
+ * Resolution result for a built-in platform provider (openai, google, openrouter)
+ */
+type BuiltinProviderInfo = {
+  type: 'builtin';
+  provider: string;
+  providerModelId: string;
+};
 
-let modelsCache: Record<string, any> | null = null;
-let modelsFetchedAt = 0;
-let modelsBuildPromise: Promise<Record<string, any>> | null = null;
-const DYNAMIC_MODEL_CACHE_TTL_MS = 10 * 60_000; // 10 minutes for dynamically resolved models
-let dynamicModelsCache: Record<string, { model: any; fetchedAt: number }> = {};
+/**
+ * Resolution result for a platform custom provider (admin-defined OpenAI-compatible endpoint)
+ */
+type PlatformCustomProviderInfo = {
+  type: 'platform-custom';
+  providerModelId: string;
+  customProvider: {
+    slug: string;
+    baseUrl: string;
+    apiKey: string | null;
+  };
+};
 
-async function buildModels(): Promise<Record<string, any>> {
-  if (isTestEnvironment) {
-    const { chatModel, reasoningModel } = require('./models.mock');
+type ProviderInfo = BuiltinProviderInfo | PlatformCustomProviderInfo;
+
+/**
+ * Resolve provider and providerModelId for a model ID.
+ *
+ * Resolution order:
+ * 1. PlatformCustomModel - admin-defined custom models (e.g., "mycorp:custom-gpt")
+ * 2. Model + ModelProvider - models with registered providers
+ *    - If ModelProvider has customPlatformProviderId, route through that custom provider
+ *    - Otherwise use the standard builtin provider
+ * 3. Fallback parsing - for openai: and google: prefixed models not in DB
+ */
+async function resolveProviderInfo(modelId: string): Promise<ProviderInfo> {
+  // 1. Check PlatformCustomModel first (admin-defined custom models)
+  const platformCustomModel = await prisma.platformCustomModel.findUnique({
+    where: { modelSlug: modelId },
+    include: { provider: true },
+  });
+
+  if (platformCustomModel?.enabled && platformCustomModel.provider.enabled) {
     return {
-      'openai:gpt-5.1': reasoningModel,
-      'google:gemini-2.5-flash-image-preview': reasoningModel,
-      'google:gemini-2.5-flash': reasoningModel,
-      'google:gemini-2.5-pro': reasoningModel,
-    } as Record<string, any>;
+      type: 'platform-custom',
+      providerModelId: platformCustomModel.providerModelId,
+      customProvider: {
+        slug: platformCustomModel.provider.slug,
+        baseUrl: platformCustomModel.provider.baseUrl,
+        apiKey: platformCustomModel.provider.apiKey,
+      },
+    };
   }
-  const entries = await Promise.all(
-    KNOWN_MODEL_IDS.map(
-      async (id) => [id, await resolveLanguageModel(id)] as const
-    )
+
+  // 2. Look up from Model + ModelProvider tables
+  const model = await prisma.model.findUnique({
+    where: { id: modelId },
+    include: {
+      providers: {
+        where: { enabled: true },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        take: 1,
+        include: {
+          customPlatformProvider: true,
+        },
+      },
+    },
+  });
+
+  if (model && model.providers[0]) {
+    const provider = model.providers[0];
+
+    // Check if this provider routes through a custom platform provider
+    if (provider.customPlatformProviderId && provider.customPlatformProvider) {
+      const customProvider = provider.customPlatformProvider;
+      if (customProvider.enabled) {
+        return {
+          type: 'platform-custom',
+          providerModelId: provider.providerModelId,
+          customProvider: {
+            slug: customProvider.slug,
+            baseUrl: customProvider.baseUrl,
+            apiKey: customProvider.apiKey,
+          },
+        };
+      }
+    }
+
+    // Standard builtin provider
+    return {
+      type: 'builtin',
+      provider: provider.providerId,
+      providerModelId: provider.providerModelId,
+    };
+  }
+
+  // 3. Fallback: parse from the model ID and infer provider
+  const parsed = parseModelId(modelId);
+  if (!parsed) {
+    throw new Error(`Invalid model ID format: ${modelId}`);
+  }
+
+  const { creator, modelName } = parsed;
+
+  // Direct providers (openai, google) use themselves
+  if (creator === 'openai' || creator === 'google') {
+    return { type: 'builtin', provider: creator, providerModelId: modelName };
+  }
+
+  throw new Error(
+    `Provider for model "${modelId}" could not be determined. Ensure the model is configured in the database.`
   );
-  return Object.fromEntries(entries);
 }
 
-async function ensureModelsFresh(): Promise<Record<string, any>> {
-  const now = Date.now();
-  if (modelsCache && now - modelsFetchedAt < TTL_MS) return modelsCache;
-  if (!modelsBuildPromise) {
-    modelsBuildPromise = buildModels()
-      .then((m) => {
-        modelsCache = m;
-        modelsFetchedAt = Date.now();
-        return m;
-      })
-      .finally(() => {
-        modelsBuildPromise = null;
-      });
+// =============================================================================
+// Model Resolution & Caching
+// =============================================================================
+
+const MODEL_CACHE_TTL_MS = 10 * 60_000; // 10 minutes
+
+type ModelCacheEntry = {
+  model: any;
+  fetchedAt: number;
+};
+
+const modelCache = new Map<string, ModelCacheEntry>();
+
+/**
+ * Build a language model client based on resolved provider info
+ */
+function buildLanguageModel(
+  info: ProviderInfo,
+  providerFactory?: (model: string) => any
+) {
+  if (info.type === 'platform-custom') {
+    const factory = buildCustomProviderFactory(
+      info.customProvider.slug,
+      info.customProvider.apiKey || '',
+      info.customProvider.baseUrl
+    );
+    return factory(info.providerModelId);
   }
-  return modelsBuildPromise;
+
+  if (!providerFactory) {
+    throw new Error('Provider factory required for builtin providers');
+  }
+  return providerFactory(info.providerModelId);
 }
-// Async accessors.
+
+/**
+ * Resolve and build a language model client for a model ID.
+ * Results are cached for MODEL_CACHE_TTL_MS.
+ */
+async function resolveLanguageModel(modelId: string) {
+  const info = await resolveProviderInfo(modelId);
+
+  if (info.type === 'platform-custom') {
+    return buildLanguageModel(info);
+  }
+
+  const client = await getProviderClient(info.provider);
+  return client(info.providerModelId);
+}
+
+// =============================================================================
+// Public API
+// =============================================================================
+
+/**
+ * Get a language model client for a model ID.
+ * Uses caching to avoid repeated database lookups and SDK initialization.
+ */
 export async function getLanguageModel(id: string) {
-  const map = await ensureModelsFresh();
-  let model = map[id];
-  if (model) return model;
-  // On-demand resolution for arbitrary composite IDs (e.g., 'openrouter:openai/gpt-5').
-  const cached = dynamicModelsCache[id];
+  // Check cache first
+  const cached = modelCache.get(id);
   const now = Date.now();
-  if (cached && now - cached.fetchedAt < DYNAMIC_MODEL_CACHE_TTL_MS) {
+  if (cached && now - cached.fetchedAt < MODEL_CACHE_TTL_MS) {
     return cached.model;
   }
-  model = await resolveLanguageModel(id);
-  dynamicModelsCache[id] = { model, fetchedAt: now };
+
+  // Test environment mock
+  if (isTestEnvironment) {
+    const { reasoningModel } = require('./models.mock');
+    return reasoningModel;
+  }
+
+  // Resolve and cache
+  const model = await resolveLanguageModel(id);
+  modelCache.set(id, { model, fetchedAt: now });
   return model;
 }
 
+/**
+ * Get a language model with a user-provided API key.
+ * Used for platform models when user wants to use their own key.
+ */
 export async function getLanguageModelWithKey(id: string, apiKey: string) {
-  const { provider, model } = parseCompositeModelId(id);
-  const factory = buildProviderFactory(provider, apiKey);
-  return factory(model);
+  const info = await resolveProviderInfo(id);
+
+  if (info.type === 'platform-custom') {
+    // Platform custom models use the platform's configured key
+    return buildLanguageModel(info);
+  }
+
+  const factory = buildProviderFactory(info.provider, apiKey);
+  return factory(info.providerModelId);
 }
 
-export async function listLanguageModels() {
-  const map = await ensureModelsFresh();
-  return Object.keys(map);
+/**
+ * Get a language model for a BYOK model ID with user credentials.
+ *
+ * @param parsed - Parsed BYOK model ID from parseByokModelId()
+ * @param resolution - Resolution info containing API key and optional base URL
+ */
+export function getByokLanguageModel(
+  parsed: ParsedByokModelId,
+  resolution: {
+    apiKey: string;
+    baseUrl?: string;
+    providerModelId: string;
+  }
+) {
+  if (parsed.sourceType === 'platform') {
+    // Use platform provider with user's API key
+    const factory = buildProviderFactory(parsed.providerId, resolution.apiKey);
+    return factory(resolution.providerModelId);
+  }
+
+  // Custom provider - use OpenAI-compatible client
+  const factory = buildCustomProviderFactory(
+    'byok-custom',
+    resolution.apiKey,
+    resolution.baseUrl!
+  );
+  return factory(resolution.providerModelId);
 }
 
-export type RegisteredModelId = string;
-
+/**
+ * Get the current provider version.
+ * Increments whenever provider caches are refreshed.
+ */
 export function getProviderVersion() {
   return providerVersion;
 }
 
+/**
+ * Force refresh all provider and model caches.
+ * Call this after admin changes to providers or models.
+ */
 export async function forceRefreshProviders() {
-  // Clear caches so next access rebuilds
   providerClientCache.clear();
-  modelsCache = null;
-  modelsFetchedAt = 0;
-  dynamicModelsCache = {};
+  modelCache.clear();
   providerVersion++;
 }
 
-// Centralized provider registry used across the app (UI, admin, etc.)
+// =============================================================================
+// Re-exports
+// =============================================================================
+
 export { SUPPORTED_PROVIDERS };
+export { isByokModelId, parseByokModelId } from './byok';
+export type { ParsedByokModelId } from './byok';

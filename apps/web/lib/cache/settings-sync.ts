@@ -113,7 +113,7 @@ export function compareModels(
         if (prevModel) {
             // Compare relevant properties
             if (
-                prevModel.provider !== currModel.provider ||
+                prevModel.creator !== currModel.creator ||
                 prevModel.model !== currModel.model ||
                 prevModel.name !== currModel.name ||
                 prevModel.isBYOK !== currModel.isBYOK

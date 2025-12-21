@@ -8,8 +8,17 @@ import {
   eachHourOfInterval,
   eachDayOfInterval,
 } from 'date-fns';
+import { getModelName, getCreator } from '@/lib/ai/model-id';
+import { displayCreatorName } from '@/lib/ai/creators';
 
 export type TimeRange = '24h' | '7d' | '30d' | '90d';
+
+// Model metadata from the database
+interface ModelMetadata {
+  id: string;
+  name: string;
+  creator: string;
+}
 
 // Token breakdown types for detailed analysis
 interface TokenBreakdown {
@@ -30,7 +39,10 @@ interface CostBreakdown {
 }
 
 interface ModelStats {
-  name: string;
+  id: string; // Model ID (e.g., "anthropic:claude-sonnet-4.5")
+  name: string; // Display name from database or fallback
+  creator: string; // Creator slug
+  creatorName: string; // Creator display name
   requests: number;
   tokens: TokenBreakdown;
   cost: CostBreakdown;
@@ -182,6 +194,35 @@ export async function getUsageStats(range: TimeRange) {
 
   // === Process Data ===
 
+  // Collect all unique model IDs and fetch their metadata from the database
+  const uniqueModelIds = Array.from(new Set(allUsageRecords.map((r) => r.model)));
+  const modelMetadataRecords = await prisma.model.findMany({
+    where: { id: { in: uniqueModelIds } },
+    select: { id: true, name: true, creator: true },
+  });
+  const modelMetadataMap = new Map<string, ModelMetadata>(
+    modelMetadataRecords.map((m) => [m.id, m])
+  );
+
+  // Helper to get model display info with fallbacks
+  const getModelDisplayInfo = (modelId: string): { name: string; creator: string; creatorName: string } => {
+    const dbModel = modelMetadataMap.get(modelId);
+    if (dbModel) {
+      return {
+        name: dbModel.name,
+        creator: dbModel.creator,
+        creatorName: displayCreatorName(dbModel.creator),
+      };
+    }
+    // Fallback: parse from model ID
+    const creator = getCreator(modelId) ?? 'unknown';
+    return {
+      name: getModelName(modelId) || modelId,
+      creator,
+      creatorName: displayCreatorName(creator),
+    };
+  };
+
   // Initialize time buckets with all intervals
   const buckets = new Map<string, TimeSeriesBucket>();
   const intervals =
@@ -253,8 +294,12 @@ export async function getUsageStats(range: TimeRange) {
 
     // Model statistics
     if (!modelStatsMap.has(record.model)) {
+      const displayInfo = getModelDisplayInfo(record.model);
       modelStatsMap.set(record.model, {
-        name: record.model,
+        id: record.model,
+        name: displayInfo.name,
+        creator: displayInfo.creator,
+        creatorName: displayInfo.creatorName,
         requests: 0,
         tokens: {
           inputTokens: 0,
@@ -467,7 +512,10 @@ export async function getUsageStats(range: TimeRange) {
 
   // Model distribution for pie chart (by requests)
   const modelDistribution = modelStats.map((stat) => ({
+    id: stat.id,
     name: stat.name,
+    creator: stat.creator,
+    creatorName: stat.creatorName,
     value: stat.requests,
     cost: stat.cost.totalCost,
     tokens: stat.tokens.totalTokens,
@@ -492,10 +540,11 @@ export async function getUsageStats(range: TimeRange) {
       lastActive: stat.lastActive.toISOString(),
     }));
 
-  // Provider usage
+  // Provider usage (using creator display names)
   const providerUsage = Array.from(providerStatsMap.entries())
-    .map(([name, stat]) => ({
-      name,
+    .map(([creatorSlug, stat]) => ({
+      id: creatorSlug,
+      name: displayCreatorName(creatorSlug),
       requests: stat.requests,
       tokens: stat.tokens,
       cost: Number(stat.cost.toFixed(4)),
@@ -532,26 +581,32 @@ export async function getUsageStats(range: TimeRange) {
   };
 
   // Recent Activity Formatted with more detail
-  const recentActivityFormatted = recentActivity.map((record) => ({
-    id: record.id,
-    user: record.user?.email || record.userId || 'Anonymous',
-    userId: record.userId,
-    model: record.model,
-    byok: record.byok,
-    inputTokens: record.inputTokens,
-    outputTokens: record.outputTokens,
-    reasoningTokens: record.reasoningTokens,
-    cachedInputTokens: record.cachedInputTokens,
-    totalTokens:
-      record.inputTokens +
-      record.outputTokens +
-      record.reasoningTokens +
-      record.cachedInputTokens,
-    cost: record.totalCostMicros
-      ? Number((record.totalCostMicros / 1_000_000).toFixed(6))
-      : 0,
-    timestamp: record.createdAt.toISOString(),
-  }));
+  const recentActivityFormatted = recentActivity.map((record) => {
+    const modelInfo = getModelDisplayInfo(record.model);
+    return {
+      id: record.id,
+      user: record.user?.email || record.userId || 'Anonymous',
+      userId: record.userId,
+      modelId: record.model,
+      modelName: modelInfo.name,
+      creator: modelInfo.creator,
+      creatorName: modelInfo.creatorName,
+      byok: record.byok,
+      inputTokens: record.inputTokens,
+      outputTokens: record.outputTokens,
+      reasoningTokens: record.reasoningTokens,
+      cachedInputTokens: record.cachedInputTokens,
+      totalTokens:
+        record.inputTokens +
+        record.outputTokens +
+        record.reasoningTokens +
+        record.cachedInputTokens,
+      cost: record.totalCostMicros
+        ? Number((record.totalCostMicros / 1_000_000).toFixed(6))
+        : 0,
+      timestamp: record.createdAt.toISOString(),
+    };
+  });
 
   // Cost efficiency metrics
   const avgCostPerRequest =
