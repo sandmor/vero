@@ -14,22 +14,39 @@ datasource db {
 // Only include providers we integrate with directly (e.g., openai, google, openrouter, etc.)
 // Id is the canonical slug for the provider ("openai", "google", "openrouter").
 model Provider {
-  id         String       @id @db.VarChar(64)
-  apiKey     String       @db.Text
-  UserApiKey UserApiKey[]
+  id     String @id @db.VarChar(64)
+  apiKey String @db.Text
 
   @@map("Provider")
 }
 
 model Tier {
-  id                          String   @id @db.VarChar(32)
-  modelIds                    String[]
+  id                          String @id @db.VarChar(32)
   // Token bucket configuration (per user for this tier)
   bucketCapacity              Int // Maximum tokens that can accumulate
   bucketRefillAmount          Int // Tokens added each interval
   bucketRefillIntervalSeconds Int // Interval length in seconds
 
+  // Many-to-many relation with Model via TierModel join table
+  models TierModel[]
+
   @@map("Tier")
+}
+
+// Join table for many-to-many Tier <-> Model relationship
+model TierModel {
+  id        String   @id @default(uuid()) @db.Uuid
+  tierId    String   @db.VarChar(32)
+  modelId   String   @db.VarChar(256)
+  createdAt DateTime @default(now())
+
+  tier  Tier  @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  model Model @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@unique([tierId, modelId])
+  @@index([tierId])
+  @@index([modelId])
+  @@map("TierModel")
 }
 
 model User {
@@ -43,28 +60,88 @@ model User {
   pinnedArchiveEntries ChatPinnedArchiveEntry[]
   rateLimit            UserRateLimit?
   agents               Agent[]
-  UserApiKey           UserApiKey[]
   tokenUsages          TokenUsage[]
+  providerKeys         UserProviderKey[]
+  customProviders      UserCustomProvider[]
+  byokModels           UserByokModel[]
 
   @@map("User")
 }
 
-// User Bring Your Own Keys (BYOK) - stores API keys per user per provider
-model UserApiKey {
+// User BYOK API Key for platform providers (OpenAI, Google, OpenRouter)
+// Allows users to provide their own API key for platform providers
+model UserProviderKey {
+  id         String   @id @default(uuid()) @db.Uuid
   userId     String   @db.VarChar(191)
-  providerId String   @db.VarChar(64)
+  providerId String   @db.VarChar(64) // Platform provider ID (openai, google, openrouter)
   apiKey     String   @db.Text
-  modelIds   String[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  models UserByokModel[]
 
   @@unique([userId, providerId])
   @@index([userId])
   @@index([providerId])
-  @@map("UserApiKey")
+  @@map("UserProviderKey")
+}
+
+// User-defined custom OpenAI-compatible provider
+// These are user-specific and allow connecting to self-hosted or third-party endpoints
+model UserCustomProvider {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.VarChar(191)
+  slug      String   @db.VarChar(64) // User-defined slug (e.g., "my-ollama", "local-vllm")
+  name      String   @db.VarChar(128) // Human-readable name
+  baseUrl   String   @db.Text // OpenAI-compatible API base URL
+  apiKey    String?  @db.Text // Optional API key for the custom provider
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  models UserByokModel[]
+
+  @@unique([userId, slug])
+  @@index([userId])
+  @@map("UserCustomProvider")
+}
+
+// User-defined BYOK model
+// Full model ID format: byok:{platform|custom}:{provider_slug}:{model_id}
+// Examples:
+//   - byok:openai:gpt-4o (platform provider with user key)
+//   - byok:openrouter:anthropic/claude-3.5-sonnet (platform provider)
+//   - byok:custom:my-ollama:llama-3.1-70b (custom provider)
+model UserByokModel {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.VarChar(191)
+  // Source type: "platform" for platform providers, "custom" for user custom providers
+  sourceType       String   @db.VarChar(16)
+  // For platform: providerId. For custom: null (use customProviderId)
+  providerId       String?  @db.VarChar(64)
+  // For custom providers, reference to UserCustomProvider
+  customProviderId String?  @db.Uuid
+  // The model ID as used by the provider (e.g., "gpt-4o", "anthropic/claude-3.5-sonnet")
+  providerModelId  String   @db.VarChar(256)
+  // User-defined display name for the model
+  displayName      String   @db.VarChar(256)
+  // Optional capability overrides
+  supportsTools    Boolean  @default(true)
+  // Optional max output tokens override (null = use global setting)
+  maxOutputTokens  Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerKey    UserProviderKey?    @relation(fields: [userId, providerId], references: [userId, providerId], onDelete: Cascade)
+  customProvider UserCustomProvider? @relation(fields: [customProviderId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceType, providerId, customProviderId, providerModelId])
+  @@index([userId])
+  @@index([providerId])
+  @@index([customProviderId])
+  @@map("UserByokModel")
 }
 
 // Per-user token bucket runtime state for rate limiting
@@ -227,19 +304,72 @@ model ArchiveLink {
   @@map("ArchiveLink")
 }
 
-// Model capabilities metadata
+// Model capabilities metadata - represents a conceptual model (who made it, what it can do)
+// Models can exist without providers (BYOK-only models that users bring their own keys for)
+// Only models WITH providers can be added to tiers (enforced in application logic)
 model Model {
-  id               String   @id @db.VarChar(256) // composite id (provider:model)
+  id               String   @id @db.VarChar(256) // composite id (creator:model_name) e.g. "anthropic:claude-sonnet-4.5"
   name             String   @db.VarChar(256) // Human-readable name
-  provider         String   @db.VarChar(64) // Provider slug (openai, google, openrouter)
+  creator          String   @db.VarChar(64) // Creator slug (openai, google, anthropic, meta, etc.) - who made the model
   supportsTools    Boolean  @default(true) // Whether the model supports tool calling
   supportedFormats String[] // Supported input formats: text, image, file, audio, video, etc.
-  pricing          Json? // Pricing information: { prompt: number (per million), completion: number (per million), image: number (per image) }
+  maxOutputTokens  Int? // Optional max output tokens override (null = use global setting)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  @@index([provider])
+  // Relations to providers that can serve this model (empty for BYOK-only models)
+  providers ModelProvider[]
+
+  // Tiers that include this model (only models with providers can be in tiers)
+  tiers TierModel[]
+
+  @@index([creator])
   @@map("Model")
+}
+
+// Links a model to a provider - allows same model to be served by multiple providers
+model ModelProvider {
+  id                       String   @id @default(uuid()) @db.Uuid
+  modelId                  String   @db.VarChar(256) // FK to Model
+  providerId               String   @db.VarChar(64) // Provider slug (openai, google, openrouter)
+  providerModelId          String   @db.VarChar(256) // Provider-specific model identifier used in API calls
+  customPlatformProviderId String?  @db.Uuid // Optional: link to a custom platform provider
+  pricing                  Json? // Provider-specific pricing: { prompt, completion, image, reasoning, cacheRead, cacheWrite }
+  isDefault                Boolean  @default(false) // Whether this is the default/preferred provider for this model
+  enabled                  Boolean  @default(true) // Whether this association is active
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  model                  Model                   @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  customPlatformProvider PlatformCustomProvider? @relation(fields: [customPlatformProviderId], references: [id], onDelete: SetNull)
+
+  @@unique([modelId, providerId])
+  @@index([providerId])
+  @@index([modelId])
+  @@index([customPlatformProviderId])
+  @@map("ModelProvider")
+}
+
+// Cached catalog of what models each provider offers - populated by syncs, informational only
+model ProviderCatalog {
+  id               String   @id @default(uuid()) @db.Uuid
+  providerId       String   @db.VarChar(64) // The provider (openrouter, openai, google)
+  providerModelId  String   @db.VarChar(256) // Model ID as known by the provider
+  suggestedModelId String?  @db.VarChar(256) // Suggested canonical model ID (creator:model_name)
+  suggestedName    String?  @db.VarChar(256) // Suggested display name
+  suggestedCreator String?  @db.VarChar(64) // Inferred creator
+  supportsTools    Boolean  @default(false) // Whether provider reports tool support
+  supportedFormats String[] // Formats reported by provider
+  pricing          Json? // Pricing from provider
+  rawData          Json? // Raw provider-specific data for reference
+  lastSynced       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([providerId, providerModelId])
+  @@index([providerId])
+  @@index([suggestedModelId])
+  @@map("ProviderCatalog")
 }
 
 // Global application settings
@@ -278,4 +408,53 @@ model TokenUsage {
   @@index([createdAt])
   @@index([model])
   @@map("TokenUsage")
+}
+
+// Admin-defined custom OpenAI-compatible provider for the platform
+// Unlike UserCustomProvider, these are platform-wide and managed by admins
+model PlatformCustomProvider {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique @db.VarChar(64) // Unique provider slug
+  name      String   @db.VarChar(128) // Human-readable name
+  baseUrl   String   @db.Text // OpenAI-compatible API base URL
+  apiKey    String?  @db.Text // Optional API key
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Platform custom models using this provider directly
+  models PlatformCustomModel[]
+  // Regular models that can be routed through this custom provider
+  modelProviders ModelProvider[]
+
+  @@map("PlatformCustomProvider")
+}
+
+// Admin-defined custom model for the platform
+// These appear as regular platform models to users (indistinguishable from built-in)
+model PlatformCustomModel {
+  id               String   @id @default(uuid()) @db.Uuid
+  // The user-facing slug in {creator}:{model} format (e.g., "mycorp:custom-gpt")
+  // Admin can choose any unique non-empty slug
+  modelSlug        String   @unique @db.VarChar(256)
+  // Display name shown to users
+  displayName      String   @db.VarChar(256)
+  // The provider serving this model
+  providerId       String   @db.Uuid
+  // Model ID as used by the provider's API
+  providerModelId  String   @db.VarChar(256)
+  // Model capabilities
+  supportsTools    Boolean  @default(true)
+  supportedFormats String[] // text, image, etc.
+  maxOutputTokens  Int?
+  // Pricing (optional, for cost tracking)
+  pricing          Json?
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  provider PlatformCustomProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@map("PlatformCustomModel")
 }
