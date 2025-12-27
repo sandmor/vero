@@ -1,10 +1,11 @@
 import type { LanguageModelUsage } from 'ai';
-import type { UsageData } from 'tokenlens/helpers';
 import type { CostBreakdown } from './ai/pricing';
 
-// Server-merged usage: base usage + TokenLens summary + optional modelId + database cost
-export type AppUsage = LanguageModelUsage &
-  UsageData & {
-    modelId?: string;
-    costUSD?: CostBreakdown;
-  };
+/**
+ * Extended usage data returned from chat API
+ * Combines base AI SDK usage with our model ID and cost information
+ */
+export type AppUsage = LanguageModelUsage & {
+  modelId?: string;
+  costUSD?: CostBreakdown;
+};

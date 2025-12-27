@@ -6,7 +6,6 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import type { AppUsage } from '@/lib/usage';
 import { cn } from '@/lib/utils';
@@ -98,12 +97,9 @@ function InfoRow({
 
 export const Context = ({ className, usage, ...props }: ContextProps) => {
   const used = usage?.totalTokens ?? 0;
-  const max =
-    usage?.context?.totalMax ??
-    usage?.context?.combinedMax ??
-    usage?.context?.inputMax;
-  const hasMax = typeof max === 'number' && Number.isFinite(max) && max > 0;
-  const usedPercent = hasMax ? Math.min(100, (used / max) * 100) : 0;
+  // Context percentage is no longer available since we removed tokenlens
+  // The component now shows token counts without percentage
+  const usedPercent = 0;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -117,7 +113,7 @@ export const Context = ({ className, usage, ...props }: ContextProps) => {
           {...props}
         >
           <span className="hidden font-medium text-muted-foreground">
-            {usedPercent.toFixed(1)}%
+            {used.toLocaleString()} tokens
           </span>
           <ContextIcon percent={usedPercent} />
         </button>
@@ -125,13 +121,10 @@ export const Context = ({ className, usage, ...props }: ContextProps) => {
       <DropdownMenuContent align="end" className="w-fit p-3" side="top">
         <div className="min-w-[240px] space-y-2">
           <div className="flex items-start justify-between text-sm">
-            <span>{usedPercent.toFixed(1)}%</span>
+            <span>Usage</span>
             <span className="text-muted-foreground">
-              {hasMax ? `${used} / ${max} tokens` : `${used} tokens`}
+              {used.toLocaleString()} tokens
             </span>
-          </div>
-          <div className="space-y-2">
-            <Progress className="h-2 bg-muted" value={usedPercent} />
           </div>
           <div className="mt-1 space-y-1">
             {usage?.cachedInputTokens && usage.cachedInputTokens > 0 && (

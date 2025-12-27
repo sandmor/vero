@@ -6,7 +6,11 @@ import { prisma } from '@virid/db';
 import { isTestEnvironment } from '../constants';
 import { parseModelId } from './model-id';
 import { getProviderApiKey } from './provider-keys';
-import { SUPPORTED_PROVIDERS } from './registry';
+import {
+  SDK_PROVIDERS,
+  providerHasSdkSupport,
+  inferProviderFromCreator,
+} from './registry';
 import { type ParsedByokModelId } from './byok';
 
 // =============================================================================
@@ -188,14 +192,21 @@ async function resolveProviderInfo(modelId: string): Promise<ProviderInfo> {
 
   const { creator, modelName } = parsed;
 
-  // Direct providers (openai, google) use themselves
-  if (creator === 'openai' || creator === 'google') {
-    return { type: 'builtin', provider: creator, providerModelId: modelName };
+  // Use centralized registry to infer provider
+  const { providerId, needsCreatorPrefix } = inferProviderFromCreator(creator);
+  const providerModelId = needsCreatorPrefix
+    ? `${creator}/${modelName}`
+    : modelName;
+
+  // Only allow fallback for SDK providers (openai, google)
+  // OpenRouter models must be in the database
+  if (!providerHasSdkSupport(providerId) || providerId === 'openrouter') {
+    throw new Error(
+      `Provider for model "${modelId}" could not be determined. Ensure the model is configured in the database.`
+    );
   }
 
-  throw new Error(
-    `Provider for model "${modelId}" could not be determined. Ensure the model is configured in the database.`
-  );
+  return { type: 'builtin', provider: providerId, providerModelId };
 }
 
 // =============================================================================
@@ -343,6 +354,6 @@ export async function forceRefreshProviders() {
 // Re-exports
 // =============================================================================
 
-export { SUPPORTED_PROVIDERS };
+export { SDK_PROVIDERS };
 export { isByokModelId, parseByokModelId } from './byok';
 export type { ParsedByokModelId } from './byok';

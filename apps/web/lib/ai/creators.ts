@@ -253,24 +253,26 @@ export function extractModelFromOpenRouterSlug(openRouterSlug: string): string {
  *
  * For direct providers (OpenAI, Google), the creator is the same as the provider.
  * For aggregators like OpenRouter, the creator is extracted from the model slug.
+ *
+ * NOTE: The core provider logic is centralized in lib/ai/registry.ts
+ * This function uses isAggregatorProvider from the registry.
  */
 export function deriveCreator(provider: string, modelSlug: string): string {
-    // For direct providers, creator equals provider
-    if (provider === 'openai' || provider === 'google') {
-        return provider;
-    }
+    // Import dynamically to avoid circular dependency
+    // The registry imports this file's types, so we can't import at module level
+    const { isAggregatorProvider } = require('./registry');
 
-    // For OpenRouter and similar aggregators, extract from slug
-    if (provider === 'openrouter') {
+    // For aggregators like OpenRouter, extract creator from slug
+    if (isAggregatorProvider(provider)) {
         return extractCreatorFromOpenRouterSlug(modelSlug);
     }
 
-    // For other providers, try to extract from slug if it has a slash
+    // For other providers (e.g., openai, google), try to extract from slug if it has a slash
     if (modelSlug.includes('/')) {
         return extractCreatorFromOpenRouterSlug(modelSlug);
     }
 
-    // Fallback: provider is the creator
+    // For direct providers, creator equals provider
     return provider;
 }
 

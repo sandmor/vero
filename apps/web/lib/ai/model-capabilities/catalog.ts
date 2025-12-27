@@ -8,6 +8,52 @@ import type { CatalogEntry, ModelFormat, ModelPricing } from './types';
 import { upsertModel, upsertModelProvider } from './db';
 import { parseModelId } from '../model-id';
 
+// ============================================================================
+// Catalog Cleanup Operations
+// ============================================================================
+
+/**
+ * Delete catalog entries for a provider that are NOT in the given set of model IDs.
+ * This is used to clean up stale entries after a sync.
+ *
+ * @param providerId - The provider ID to clean up
+ * @param keepModelIds - Set of providerModelIds to keep (all others will be deleted)
+ * @returns The number of entries deleted
+ */
+export async function deleteCatalogEntriesForProvider(
+    providerId: string,
+    keepModelIds: Set<string>
+): Promise<number> {
+    if (keepModelIds.size === 0) {
+        return 0;
+    }
+
+    const result = await prisma.providerCatalog.deleteMany({
+        where: {
+            providerId,
+            providerModelId: {
+                notIn: Array.from(keepModelIds),
+            },
+        },
+    });
+
+    return result.count;
+}
+
+/**
+ * Delete all catalog entries for a provider
+ *
+ * @param providerId - The provider ID to clear
+ * @returns The number of entries deleted
+ */
+export async function clearCatalogForProvider(providerId: string): Promise<number> {
+    const result = await prisma.providerCatalog.deleteMany({
+        where: { providerId },
+    });
+
+    return result.count;
+}
+
 /**
  * Get all catalog entries for a provider
  */

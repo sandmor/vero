@@ -33,16 +33,51 @@ export function CatalogRefreshButton() {
     lastClickRef.current = now;
     setState('loading');
     try {
+      // Sync all catalog sources (OpenRouter + models.dev providers)
+      const response = await fetch('/api/admin/model-capabilities/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'all' }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Sync failed');
+      }
+
+      const result = await response.json();
+
+      // Dispatch event to notify other components to refresh their data
       window.dispatchEvent(
         new CustomEvent('catalog:refresh', { detail: { force } })
       );
-      toast({ type: 'success', description: 'Refreshing model catalog…' });
+
+      const syncedCount = result.synced ?? 0;
+      const removedCount = result.removed ?? 0;
+      const errorCount = result.errors?.length ?? 0;
+
+      if (errorCount > 0) {
+        toast({
+          type: 'success',
+          description: `Synced ${syncedCount} models, removed ${removedCount} stale entries (${errorCount} errors)`,
+        });
+      } else {
+        toast({
+          type: 'success',
+          description: `Synced ${syncedCount} models, removed ${removedCount} stale entries`,
+        });
+      }
+
       setState('success');
       if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
       resetTimer.current = window.setTimeout(() => setState('idle'), 1500);
     } catch (error) {
-      console.error('Catalog refresh dispatch failed', error);
-      toast({ type: 'error', description: 'Unable to refresh catalog.' });
+      console.error('Catalog refresh failed', error);
+      toast({
+        type: 'error',
+        description:
+          error instanceof Error ? error.message : 'Unable to refresh catalog.',
+      });
       setState('idle');
     }
   }

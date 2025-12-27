@@ -11,7 +11,8 @@
  * - db.ts: Database operations for Model/ModelProvider
  * - catalog.ts: Provider catalog operations
  * - sync-openrouter.ts: OpenRouter sync
- * - sync-tokenlens.ts: TokenLens sync
+ * - sync-models-dev.ts: Models.dev sync (replaces TokenLens)
+ * - models-dev-types.ts: Models.dev API type definitions
  */
 
 // Types
@@ -26,7 +27,7 @@ export type {
 } from './types';
 
 // Constants
-export { DEFAULT_TIER_IDS, FORMAT_PRIORITY, PROVIDER_DEFAULTS } from './constants';
+export { DEFAULT_TIER_IDS, FORMAT_PRIORITY } from './constants';
 
 // Utilities
 export {
@@ -57,6 +58,8 @@ export {
     upsertCatalogEntry,
     createModelFromCatalog,
     linkModelToCatalog,
+    deleteCatalogEntriesForProvider,
+    clearCatalogForProvider,
 } from './catalog';
 
 // OpenRouter sync
@@ -67,8 +70,28 @@ export {
 } from './sync-openrouter';
 export type { OpenRouterModel, OpenRouterModelsResponse } from './sync-openrouter';
 
-// TokenLens sync
-export { syncTokenLensCatalog } from './sync-tokenlens';
+// Models.dev sync (replacement for TokenLens)
+export {
+    fetchModelsDevCatalog,
+    fetchModelsDevProvider,
+    clearModelsDevCache,
+    parseModelsDevModel,
+    syncModelsDevProvider,
+    syncAllModelsDevProviders,
+} from './sync-models-dev';
+export type {
+    ModelsDevCatalog,
+    ModelsDevProvider,
+    ModelsDevModel,
+} from './sync-models-dev';
+
+// Re-export provider functions from registry for convenience
+export {
+    isModelsDevProvider,
+    MODELS_DEV_PROVIDERS,
+    getModelsDevProviderId,
+    getInternalProviderId,
+} from '../registry';
 
 // Re-export buildModelId and parseModelId from model-id.ts for backwards compatibility
 export { buildModelId, parseModelId } from '../model-id';
@@ -78,7 +101,7 @@ export { buildModelId, parseModelId } from '../model-id';
 // ============================================================================
 
 import { syncOpenRouterCatalog } from './sync-openrouter';
-import { syncTokenLensCatalog } from './sync-tokenlens';
+import { syncModelsDevProvider } from './sync-models-dev';
 import { upsertModel, upsertModelProvider } from './db';
 import type { ModelFormat, ModelPricing } from './types';
 
@@ -92,14 +115,23 @@ export async function syncOpenRouterModels(
 }
 
 /**
- * @deprecated Use syncTokenLensCatalog instead - syncs only update catalog, not models
+ * @deprecated Use syncModelsDevProvider instead - syncs only update catalog, not models
  */
 export async function syncTokenLensModels(
     options: { provider?: string; modelIds?: string[]; allowCreate?: boolean } = {}
 ): Promise<{ synced: number; errors: string[] }> {
     const providerId = options.provider ?? 'openai';
-    return syncTokenLensCatalog(providerId);
+    const result = await syncModelsDevProvider(providerId);
+    return { synced: result.synced, errors: result.errors };
 }
+
+/**
+ * @deprecated Use syncModelsDevProvider instead
+ */
+export const syncTokenLensCatalog = async (providerId: string) => {
+    const result = await syncModelsDevProvider(providerId);
+    return { synced: result.synced, errors: result.errors };
+};
 
 /**
  * @deprecated Use upsertModel + upsertModelProvider instead

@@ -49,8 +49,8 @@ export function CatalogBrowser({
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      await syncCatalog.mutateAsync({ source: 'openrouter' });
-      // Optionally sync tokenlens too if needed, or make it a dropdown option
+      // Sync all sources: OpenRouter + all models.dev providers
+      await syncCatalog.mutateAsync({ source: 'all' });
       await refetch();
     } catch (error) {
       console.error('Sync failed', error);

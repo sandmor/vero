@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   ManagedModelCapabilities,
-  CatalogEntry,
   ModelFormat,
   ModelPricing,
 } from '@/lib/ai/model-capabilities';
@@ -9,7 +8,9 @@ import type {
 type ManagedModelCapabilitiesResponse = ManagedModelCapabilities[];
 type SyncResponse = {
   synced: number;
+  removed?: number;
   errors?: string[];
+  details?: Record<string, { synced: number; removed?: number; errors: string[] }>;
 };
 
 export function useManagedModels() {
@@ -193,12 +194,20 @@ export function useProviderMutation() {
   return { addProvider, updateProvider, removeProvider };
 }
 
+/**
+ * Sync source options:
+ * - 'openrouter': Sync only OpenRouter models
+ * - 'models.dev': Sync models.dev providers (optionally specify a specific provider)
+ * - 'all': Sync both OpenRouter and all models.dev providers
+ */
+export type SyncSource = 'openrouter' | 'models.dev' | 'all';
+
 export function useCatalogSync() {
   const queryClient = useQueryClient();
 
   const syncCatalog = useMutation({
     mutationFn: async (data: {
-      source: 'openrouter' | 'tokenlens';
+      source: SyncSource;
       provider?: string;
     }) => {
       const res = await fetch('/api/admin/model-capabilities/sync', {
@@ -212,9 +221,15 @@ export function useCatalogSync() {
       }
       return res.json() as Promise<SyncResponse>;
     },
-    // We don't necessarily update the model capabilities list on sync,
-    // but we might want to invalidate a catalog query if we had one.
-    // For now, no specific invalidation unless the catalog is fetched via a hook.
+    onSuccess: () => {
+      // Invalidate catalog queries after sync
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'catalog'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'model-capabilities', 'catalog'],
+      });
+    },
   });
 
   const pruneModels = useMutation({

@@ -32,9 +32,6 @@ import {
   createResumableStreamContext,
   type ResumableStreamContext,
 } from 'resumable-stream';
-import type { ModelCatalog } from 'tokenlens/core';
-import { fetchModels } from 'tokenlens/fetch';
-import { getUsage } from 'tokenlens/helpers';
 import { getModelCost } from '@/lib/ai/pricing';
 import {
   getLanguageModel,
@@ -176,22 +173,6 @@ function comparableUserContentEqual(
 }
 
 let globalStreamContext: ResumableStreamContext | null = null;
-
-const getTokenlensCatalog = nextCache(
-  async (): Promise<ModelCatalog | undefined> => {
-    try {
-      return await fetchModels();
-    } catch (err) {
-      console.warn(
-        'TokenLens: catalog fetch failed, using default catalog',
-        err
-      );
-      return; // tokenlens helpers will fall back to defaultCatalog
-    }
-  },
-  ['tokenlens-catalog'],
-  { revalidate: 60 * 60 }
-);
 
 export function getStreamContext() {
   if (!globalStreamContext) {
@@ -838,7 +819,6 @@ export async function POST(request: Request) {
           abortSignal: request.signal,
           onFinish: async ({ usage }) => {
             try {
-              const providers = await getTokenlensCatalog();
               if (!selectedChatModel) {
                 finalMergedUsage = usage;
                 dataStream.write({
@@ -851,23 +831,8 @@ export async function POST(request: Request) {
               // Get cost from database pricing
               const dbCost = await getModelCost(selectedChatModel, usage);
 
-              // Try to get usage summary from tokenlens for context window info
-              let summary = {};
-              if (providers) {
-                try {
-                  summary = getUsage({
-                    modelId: selectedChatModel,
-                    usage,
-                    providers,
-                  });
-                } catch (err) {
-                  console.warn('TokenLens summary failed', err);
-                }
-              }
-
               finalMergedUsage = {
                 ...usage,
-                ...summary,
                 modelId: selectedChatModel,
                 costUSD: dbCost || undefined,
               } as AppUsage;

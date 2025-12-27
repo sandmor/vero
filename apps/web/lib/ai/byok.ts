@@ -18,7 +18,7 @@
  * For custom providers: byok:custom:{customProviderSlug}:{providerModelId}
  */
 
-import { SUPPORTED_PROVIDERS, type SupportedProvider } from './registry';
+import { SDK_PROVIDERS, type SdkProvider } from './registry';
 
 export const BYOK_PREFIX = 'byok:';
 export const BYOK_CUSTOM_SOURCE = 'custom';
@@ -30,7 +30,7 @@ export type ByokSourceType = 'platform' | 'custom';
  */
 export type ByokPlatformModel = {
     sourceType: 'platform';
-    providerId: SupportedProvider;
+    providerId: SdkProvider;
     providerModelId: string;
 };
 
@@ -93,13 +93,13 @@ export function parseByokModelId(modelId: string): ParsedByokModelId | null {
     const providerModelId = withoutPrefix.slice(colonIndex + 1);
 
     // Validate provider ID is a known platform provider
-    if (!SUPPORTED_PROVIDERS.includes(providerId as SupportedProvider)) {
+    if (!SDK_PROVIDERS.includes(providerId as SdkProvider)) {
         return null;
     }
 
     return {
         sourceType: 'platform',
-        providerId: providerId as SupportedProvider,
+        providerId: providerId as SdkProvider,
         providerModelId,
     };
 }
@@ -108,7 +108,7 @@ export function parseByokModelId(modelId: string): ParsedByokModelId | null {
  * Format a BYOK model ID from components for a platform provider
  */
 export function formatByokPlatformModelId(
-    providerId: SupportedProvider,
+    providerId: SdkProvider,
     providerModelId: string
 ): string {
     return `${BYOK_PREFIX}${providerId}:${providerModelId}`;

@@ -10,8 +10,12 @@ import type {
   ResolvedModelCapabilities,
   ManagedModelCapabilities,
 } from './types';
-import { PROVIDER_DEFAULTS, DEFAULT_TIER_IDS } from './constants';
-import type { SupportedProvider } from '../registry';
+import { DEFAULT_TIER_IDS } from './constants';
+import {
+  inferProviderFromCreator,
+  type SdkProvider,
+  getProviderDefaults,
+} from '../registry';
 import { getTier } from '../tiers';
 import { parseModelId } from '../model-id';
 
@@ -119,21 +123,13 @@ async function getModelCapabilitiesFallback(
 
   const { creator, modelName } = parsed;
 
-  // Determine provider based on creator
-  let provider: string;
-  let providerModelId: string;
+  // Use centralized registry to determine provider
+  const { providerId, needsCreatorPrefix } = inferProviderFromCreator(creator);
+  const providerModelId = needsCreatorPrefix
+    ? `${creator}/${modelName}`
+    : modelName;
 
-  if (creator === 'openai' || creator === 'google') {
-    provider = creator;
-    providerModelId = modelName;
-  } else {
-    provider = 'openrouter';
-    providerModelId = `${creator}/${modelName}`;
-  }
-
-  const defaults =
-    PROVIDER_DEFAULTS[provider as SupportedProvider] ??
-    PROVIDER_DEFAULTS.openrouter;
+  const defaults = getProviderDefaults(providerId);
 
   return {
     id: modelId,
@@ -144,7 +140,7 @@ async function getModelCapabilitiesFallback(
       (partialModel?.supportedFormats as ModelFormat[]) ??
       defaults.supportedFormats,
     maxOutputTokens: partialModel?.maxOutputTokens ?? null,
-    provider,
+    provider: providerId,
     providerModelId,
     pricing: null,
   };
@@ -424,17 +420,13 @@ export async function ensureModelCapabilities(): Promise<void> {
       supportedFormats: ['text'],
     });
 
-    // Infer default provider association
-    let providerId: string;
-    let providerModelId: string;
-
-    if (parsed.creator === 'openai' || parsed.creator === 'google') {
-      providerId = parsed.creator;
-      providerModelId = parsed.modelName;
-    } else {
-      providerId = 'openrouter';
-      providerModelId = `${parsed.creator}/${parsed.modelName}`;
-    }
+    // Use centralized registry to infer default provider association
+    const { providerId, needsCreatorPrefix } = inferProviderFromCreator(
+      parsed.creator
+    );
+    const providerModelId = needsCreatorPrefix
+      ? `${parsed.creator}/${parsed.modelName}`
+      : parsed.modelName;
 
     await upsertModelProvider(modelId, {
       providerId,

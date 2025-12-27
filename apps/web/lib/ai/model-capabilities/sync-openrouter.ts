@@ -3,7 +3,7 @@
  */
 
 import type { CatalogEntry, ModelFormat, ModelPricing } from './types';
-import { upsertCatalogEntry } from './catalog';
+import { upsertCatalogEntry, deleteCatalogEntriesForProvider } from './catalog';
 import { mapModalityToFormat, sortFormats, generateFriendlyModelName } from './utils';
 import {
     extractCreatorFromOpenRouterSlug,
@@ -115,13 +115,17 @@ export function parseOpenRouterCapabilities(
 
 /**
  * Sync OpenRouter models to catalog (informational only)
+ * Also removes stale entries that are no longer available from OpenRouter.
  */
 export async function syncOpenRouterCatalog(): Promise<{
     synced: number;
+    removed: number;
     errors: string[];
 }> {
     const errors: string[] = [];
     let synced = 0;
+    let removed = 0;
+    const syncedModelIds = new Set<string>();
 
     try {
         const models = await fetchOpenRouterModels();
@@ -130,6 +134,7 @@ export async function syncOpenRouterCatalog(): Promise<{
             try {
                 const entry = parseOpenRouterCapabilities(model);
                 await upsertCatalogEntry(entry);
+                syncedModelIds.add(model.id);
                 synced++;
             } catch (error) {
                 errors.push(
@@ -137,11 +142,16 @@ export async function syncOpenRouterCatalog(): Promise<{
                 );
             }
         }
+
+        // Remove stale entries for OpenRouter that are no longer in the API response
+        if (syncedModelIds.size > 0) {
+            removed = await deleteCatalogEntriesForProvider('openrouter', syncedModelIds);
+        }
     } catch (error) {
         errors.push(
             `OpenRouter API: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
     }
 
-    return { synced, errors };
+    return { synced, removed, errors };
 }
