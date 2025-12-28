@@ -115,17 +115,6 @@ export async function syncOpenRouterModels(
 }
 
 /**
- * @deprecated Use syncModelsDevProvider instead - syncs only update catalog, not models
- */
-export async function syncTokenLensModels(
-    options: { provider?: string; modelIds?: string[]; allowCreate?: boolean } = {}
-): Promise<{ synced: number; errors: string[] }> {
-    const providerId = options.provider ?? 'openai';
-    const result = await syncModelsDevProvider(providerId);
-    return { synced: result.synced, errors: result.errors };
-}
-
-/**
  * @deprecated Use syncModelsDevProvider instead
  */
 export const syncTokenLensCatalog = async (providerId: string) => {

@@ -1343,13 +1343,13 @@ export async function updateBranchSelectionByChatId({
   chatId: string;
   userId: string;
   operation:
-    | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
-    | {
-        kind: 'child';
-        parentId: string;
-        selectedChildIndex: number | null;
-        childId?: string;
-      };
+  | { kind: 'root'; rootMessageIndex: number | null; childId?: string }
+  | {
+    kind: 'child';
+    parentId: string;
+    selectedChildIndex: number | null;
+    childId?: string;
+  };
   expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   try {
@@ -1373,7 +1373,7 @@ export async function updateBranchSelectionByChatId({
       if (operation.kind === 'root') {
         let requestedIndex =
           operation.rootMessageIndex !== null &&
-          operation.rootMessageIndex !== undefined
+            operation.rootMessageIndex !== undefined
             ? Math.max(0, Math.trunc(operation.rootMessageIndex))
             : 0;
 
@@ -1465,7 +1465,7 @@ export async function updateBranchSelectionByChatId({
 
       let normalizedIndex =
         operation.selectedChildIndex === null ||
-        operation.selectedChildIndex === undefined
+          operation.selectedChildIndex === undefined
           ? 0
           : Math.max(0, Math.trunc(operation.selectedChildIndex));
 

@@ -1,6 +1,5 @@
 import type {
-  CoreAssistantMessage,
-  CoreToolMessage,
+  ModelMessage,
   UIMessage,
   UIMessagePart,
 } from 'ai';
@@ -104,8 +103,7 @@ export function isValidUUID(value: unknown): value is string {
   return UUID_REGEX.test(trimmed);
 }
 
-type ResponseMessageWithoutId = CoreToolMessage | CoreAssistantMessage;
-type ResponseMessage = ResponseMessageWithoutId & { id: string };
+type ResponseMessage = ModelMessage & { id: string };
 
 export function getMostRecentUserMessage(messages: UIMessage[]) {
   const userMessages = messages.filter((message) => message.role === 'user');

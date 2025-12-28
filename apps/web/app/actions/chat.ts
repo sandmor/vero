@@ -1,6 +1,6 @@
 'use server';
 
-import { generateObject, type UIMessage } from 'ai';
+import { generateText, Output, type UIMessage } from 'ai';
 import { cookies } from 'next/headers';
 import type { VisibilityType } from '@/components/visibility-selector';
 import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
@@ -58,13 +58,15 @@ export async function generateTitleFromChatHistory({
   messages: UIMessage[];
 }) {
   const model = await getLanguageModel(TITLE_GENERATION_MODEL);
-  const { object } = await generateObject({
+  const { output } = await generateText({
     model,
-    schema: z.object({
-      title: z
-        .string()
-        .max(80)
-        .describe('A short title summarizing the conversation'),
+    output: Output.object({
+      schema: z.object({
+        title: z
+          .string()
+          .max(80)
+          .describe('A short title summarizing the conversation'),
+      }),
     }),
     system: `\n
     - you will generate a short title based on the conversation content
@@ -77,7 +79,7 @@ export async function generateTitleFromChatHistory({
     prompt: JSON.stringify(messages),
   });
 
-  return object.title;
+  return output.title;
 }
 
 export async function updateChatVisibility({

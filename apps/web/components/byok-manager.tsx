@@ -502,7 +502,7 @@ export function ByokManager() {
                         Platform API Keys
                     </CardTitle>
                     <CardDescription>
-                        Add your own API keys for OpenAI, Google, or OpenRouter to use your own accounts.
+                        Add your own API keys for OpenAI, Google, xAI, or OpenRouter to use your own accounts.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">

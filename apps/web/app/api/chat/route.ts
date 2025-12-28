@@ -515,6 +515,8 @@ export async function POST(request: Request) {
     const streamContext = getStreamContext();
     const streamId = streamContext ? generateUUID() : undefined;
 
+    let persistUserMessagePromise: Promise<unknown> | null = null;
+
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
         // Immediately send init event to flush headers early
@@ -584,7 +586,7 @@ export async function POST(request: Request) {
 
         const skipUserPersistence = duplicateUserTailExists || isRegeneration;
 
-        const persistUserMessagePromise = skipUserPersistence
+        persistUserMessagePromise = skipUserPersistence
           ? Promise.resolve()
           : saveMessages({
             messages: [
@@ -605,7 +607,7 @@ export async function POST(request: Request) {
         const uiMessages = skipUserPersistence
           ? dbUiMessages
           : [...dbUiMessages, effectiveUserMessage];
-        const modelMessages = convertToModelMessages(uiMessages);
+        const modelMessages = await convertToModelMessages(uiMessages);
 
         const modelSupportsTools = modelCapabilities?.supportsTools ?? true; // Default to true if not found
 
@@ -652,6 +654,10 @@ export async function POST(request: Request) {
               enabled: true,
               exclude: false,
             },
+          };
+        } else if (provider === 'xai') {
+          providerOptions.xai = {
+            reasoningEffort: effectiveReasoningEffort === 'low' ? 'low' : 'high',
           };
         }
 
@@ -807,7 +813,6 @@ export async function POST(request: Request) {
           system: composedSystemPrompt,
           messages: mergedModelMessages,
           stopWhen: stepCountIs(20),
-          experimental_activeTools: allowedToolIds,
           experimental_transform: smoothStream({ chunking: 'word' }),
           tools: activeTools,
           maxOutputTokens: effectiveMaxOutputTokens,
@@ -865,6 +870,10 @@ export async function POST(request: Request) {
       },
       generateId: generateUUID,
       onFinish: async ({ messages }) => {
+        if (persistUserMessagePromise) {
+          await persistUserMessagePromise;
+        }
+
         // messages includes the newly streamed assistant response as the last element
         const assistantMessage = messages.findLast(
           (m) => m.role === 'assistant'
@@ -899,8 +908,8 @@ export async function POST(request: Request) {
 
             const inputTokens = finalMergedUsage.inputTokens ?? 0;
             const outputTokens = finalMergedUsage.outputTokens ?? 0;
-            const reasoningTokens = finalMergedUsage.reasoningTokens ?? 0;
-            const cachedInputTokens = finalMergedUsage.cachedInputTokens ?? 0;
+            const reasoningTokens = finalMergedUsage.outputTokenDetails?.reasoningTokens ?? 0;
+            const cachedInputTokens = finalMergedUsage.inputTokenDetails?.cacheReadTokens ?? 0;
 
             const inputP = pricing?.prompt ? Math.round(pricing.prompt * 1_000_000) : 0;
             const outputP = pricing?.completion

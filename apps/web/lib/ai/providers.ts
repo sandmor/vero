@@ -1,6 +1,7 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { createXai } from '@ai-sdk/xai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { prisma } from '@virid/db';
 import { isTestEnvironment } from '../constants';
@@ -46,6 +47,8 @@ function buildProviderFactory(
       return createOpenAI({ apiKey, baseURL: baseUrl });
     case 'google':
       return createGoogleGenerativeAI({ apiKey, baseURL: baseUrl });
+    case 'xai':
+      return createXai({ apiKey, baseURL: baseUrl });
     default:
       throw new Error(`Unsupported provider '${provider}'`);
   }

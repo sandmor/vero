@@ -6,6 +6,7 @@ export const PROVIDER_DEFAULTS = {
   google: 'google:gemini-2.5-flash',
   openai: 'openai:gpt-5.1',
   openrouter: 'anthropic:claude-sonnet-4.5',
+  xai: 'xai:grok-4-1-fast-reasoning',
 } as const;
 
 function resolveDefaultChatModel() {
@@ -18,10 +19,12 @@ function resolveDefaultChatModel() {
     !!process.env.GOOGLE_API_KEY || !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   const hasOpenAI = !!process.env.OPENAI_API_KEY;
   const hasOpenRouter = !!process.env.OPENROUTER_API_KEY;
+  const hasXai = !!process.env.XAI_API_KEY;
 
   if (hasGoogle) return PROVIDER_DEFAULTS.google;
   if (hasOpenAI) return PROVIDER_DEFAULTS.openai;
   if (hasOpenRouter) return PROVIDER_DEFAULTS.openrouter;
+  if (hasXai) return PROVIDER_DEFAULTS.xai;
 
   // 3. Ultimate fallback (Google was the original default)
   return PROVIDER_DEFAULTS.google;

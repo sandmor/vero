@@ -129,6 +129,21 @@ const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     website: 'https://ai.google.dev',
     description: 'Google AI / Gemini models',
   },
+  xai: {
+    id: 'xai',
+    name: 'xAI',
+    supportsByok: true,
+    isAggregator: false,
+    hasSdkSupport: true,
+    catalogSource: 'models.dev',
+    modelsDevId: 'xai',
+    defaults: {
+      supportsTools: true,
+      supportedFormats: ['text', 'image'],
+    },
+    website: 'https://x.ai',
+    description: 'xAI models including Grok',
+  },
 };
 
 // =============================================================================
@@ -148,7 +163,7 @@ export const SDK_PROVIDERS = ALL_PROVIDER_IDS.filter(
   (id) => PROVIDER_REGISTRY[id]?.hasSdkSupport
 ) as SdkProvider[];
 
-export type SdkProvider = 'openrouter' | 'openai' | 'google';
+export type SdkProvider = 'openrouter' | 'openai' | 'google' | 'xai';
 
 /** Providers that support BYOK */
 export const BYOK_PROVIDERS = ALL_PROVIDER_IDS.filter(
@@ -336,7 +351,7 @@ export function inferProviderFromCreator(creator: string): {
   needsCreatorPrefix: boolean;
 } {
   // Direct SDK providers where creator === provider
-  if (creator === 'openai' || creator === 'google') {
+  if (creator === 'openai' || creator === 'google' || creator === 'xai') {
     return { providerId: creator, needsCreatorPrefix: false };
   }
 
