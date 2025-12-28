@@ -38,7 +38,7 @@ const chatIndexOptions: DocumentOptions<ChatDoc> = {
     id: 'id',
     index: ['title'],
   },
-  tokenize: 'bidirectional',
+  tokenize: 'forward',
   preset: 'match',
   context: true,
 };
@@ -52,7 +52,7 @@ const messageIndexOptions: DocumentOptions<MessageDoc> = {
     id: 'id',
     index: ['content', 'chatTitle'],
   },
-  tokenize: 'bidirectional',
+  tokenize: 'forward',
   preset: 'match',
   context: true,
 };
