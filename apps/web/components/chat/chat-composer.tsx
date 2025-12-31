@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { Chat } from '@/components/chat';
 import type {
   BranchSelectionSnapshot,
@@ -46,11 +47,21 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   const cachedBootstrap = chatId ? getCachedBootstrap(chatId) : undefined;
   const { data: sessionData, status: sessionStatus } = useAppSession();
 
-  // For new chats, generate bootstrap from cache metadata
-  const newChatBootstrap = useMemo(() => {
-    if (!isNewChat || !isCacheReady) return null;
-    return generateNewChatBootstrap();
-  }, [isNewChat, isCacheReady, generateNewChatBootstrap]);
+  // For new chats, generate bootstrap from cache metadata.
+  // We use useQuery to allow invalidation via the "New Chat" button (which invalidates 'chat', 'bootstrap', 'new').
+  const { data: newChatBootstrap = null } = useQuery({
+    queryKey: ['chat', 'bootstrap', 'new'],
+    queryFn: () => {
+      if (!isNewChat || !isCacheReady) return null;
+      return generateNewChatBootstrap();
+    },
+    enabled: isNewChat && isCacheReady,
+    staleTime: Infinity, // Keep it fresh until explicitly invalidated
+    gcTime: Infinity, // Don't keep it in garbage collection when unused
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
   // Track if user is not logged in (for redirecting guests)
   const [needsAuth, setNeedsAuth] = useState(false);
@@ -275,7 +286,9 @@ function useStableBootstrap({
       if (current.kind === 'new' && newChatBootstrap.kind === 'new') {
         // Keep the same bootstrap if chatId matches (already have one)
         // This prevents regenerating a new UUID on every render
-        return current;
+        if (current.chatId === newChatBootstrap.chatId) {
+          return current;
+        }
       }
 
       return newChatBootstrap;
