@@ -404,7 +404,6 @@ export function Chat({
             setMessages={setMessages}
             status={status}
             stop={stop}
-            usage={usage}
             allowedModels={allowedModels}
             reasoningEffort={preferences.stagedReasoningEffort}
             onReasoningEffortChange={preferences.handleReasoningEffortChange}

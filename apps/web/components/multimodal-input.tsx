@@ -22,10 +22,8 @@ import { saveChatModelAsCookie } from '@/app/actions/chat';
 import { SelectItem } from '@/components/ui/select';
 import { displayProviderName } from '@/lib/ai/registry';
 import type { Attachment, ChatMessage } from '@/lib/types';
-import type { AppUsage } from '@/lib/usage';
 import { cn } from '@/lib/utils';
 import { ReasoningEffortSelector } from './chat-reasoning-selector';
-import { Context } from './elements/context';
 import {
   PromptInput,
   PromptInputModelSelect,
@@ -71,7 +69,6 @@ function PureMultimodalInput({
   className,
   selectedModelId,
   onModelChange,
-  usage,
   allowedModels,
   reasoningEffort,
   onReasoningEffortChange,
@@ -89,7 +86,6 @@ function PureMultimodalInput({
   className?: string;
   selectedModelId: string;
   onModelChange?: (modelId: string) => void;
-  usage?: AppUsage;
   allowedModels: ChatModelOption[];
   reasoningEffort?: 'low' | 'medium' | 'high';
   onReasoningEffortChange?: (
@@ -314,13 +310,6 @@ function PureMultimodalInput({
 
   // Model resolution now server-side; client keeps only selected model id.
 
-  const contextProps = useMemo(
-    () => ({
-      usage,
-    }),
-    [usage]
-  );
-
   const handleFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       if (!supportsAttachments) {
@@ -424,8 +413,7 @@ function PureMultimodalInput({
             ref={textareaRef}
             rows={1}
             value={input}
-          />{' '}
-          <Context {...contextProps} />
+          />
         </div>
         <PromptInputToolbar className="border-top-0! border-t-0! p-0 shadow-none dark:border-0 dark:border-transparent!">
           <PromptInputTools className="gap-0 sm:gap-0.5">
