@@ -6,10 +6,13 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: InstanceType<typeof PrismaClient>;
 };
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString =
+  process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED;
 
 if (!connectionString) {
-  throw new Error("DATABASE_URL is not defined in environment variables");
+  throw new Error(
+    "Neither DATABASE_URL nor DATABASE_URL_UNPOOLED is defined in environment variables"
+  );
 }
 
 const adapter = new PrismaPg({
