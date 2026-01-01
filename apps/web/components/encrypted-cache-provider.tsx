@@ -32,7 +32,7 @@ import {
   type SettingsChangeEvent,
 } from '@/lib/cache/settings-sync';
 import { searchIndexService } from '@/lib/search/search-index-service';
-import { useAppSession } from '@/hooks/use-app-session';
+import { useAppSession, SessionFetchError } from '@/hooks/use-app-session';
 import type {
   ChatBootstrapResponse,
   NewChatBootstrap,
@@ -924,7 +924,11 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   const queryClientRef = useRef(queryClient);
   queryClientRef.current = queryClient;
 
-  const { data: sessionData, status: sessionStatus } = useAppSession();
+  const {
+    data: sessionData,
+    status: sessionStatus,
+    error: sessionError,
+  } = useAppSession();
   const [state, setState] = useState<CacheState>(initialState);
 
   // Use refs to hold state values that callbacks need without causing re-creation
@@ -1440,6 +1444,20 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     if (sessionStatus === 'pending') {
       cacheDebug('CacheProvider effect: session pending, deferring init');
       return;
+    }
+
+    if (sessionStatus === 'error') {
+      const isAuthFailure =
+        sessionError instanceof SessionFetchError &&
+        (sessionError.status === 401 || sessionError.status === 403);
+
+      if (!isAuthFailure) {
+        cacheDebug(
+          'CacheProvider effect: session check failed (network/server error), preserving cache',
+          sessionError
+        );
+        return;
+      }
     }
 
     if (!isLoggedIn) {

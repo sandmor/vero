@@ -7,7 +7,7 @@ export const SESSION_QUERY_KEY = ['auth', 'session'] as const;
 
 type SessionResponse = { session: AppSession | null; isAdmin?: boolean };
 
-class SessionFetchError extends Error {
+export class SessionFetchError extends Error {
   status?: number;
 }
 

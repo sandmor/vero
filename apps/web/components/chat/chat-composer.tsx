@@ -10,8 +10,9 @@ import type {
 } from '@/types/chat-bootstrap';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { ChatLoadingSkeleton } from '@/components/chat/chat-loading-skeleton';
-import { useAppSession } from '@/hooks/use-app-session';
+import { useAppSession, SessionFetchError } from '@/hooks/use-app-session';
 import { buildLoginRedirectUrl } from '@/lib/auth/redirects';
+import { Loader2 } from 'lucide-react';
 
 /**
  * Determines if a bootstrap response matches the requested chatId.
@@ -45,7 +46,11 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
   const isNewChat = !chatId;
   const hasRequestedSyncRef = useRef(false);
   const cachedBootstrap = chatId ? getCachedBootstrap(chatId) : undefined;
-  const { data: sessionData, status: sessionStatus } = useAppSession();
+  const {
+    data: sessionData,
+    status: sessionStatus,
+    error: sessionError,
+  } = useAppSession();
 
   // For new chats, generate bootstrap from cache metadata.
   // We use useQuery to allow invalidation via the "New Chat" button (which invalidates 'chat', 'bootstrap', 'new').
@@ -150,6 +155,27 @@ export function ChatComposer({ chatId }: { chatId?: string }) {
 
   // Show error state for missing existing chat (not found or auth required)
   if (isMissingExistingChat && !needsAuth) {
+    // If we have a network error, show Reconnecting instead of Chat Not Found
+    if (sessionStatus === 'error') {
+      const isAuthFailure =
+        sessionError instanceof SessionFetchError &&
+        (sessionError.status === 401 || sessionError.status === 403);
+
+      if (!isAuthFailure) {
+        return (
+          <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-background">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="flex flex-col items-center gap-1">
+              <span className="font-medium">Reconnecting…</span>
+              <span className="text-sm text-muted-foreground">
+                Checking your connection.
+              </span>
+            </div>
+          </div>
+        );
+      }
+    }
+
     return (
       <div className="flex h-dvh items-center justify-center bg-background">
         <span className="text-sm text-red-500">
