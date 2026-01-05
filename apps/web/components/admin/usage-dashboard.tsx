@@ -336,7 +336,7 @@ ${userStatsCsv}`;
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4 mt-4">
-          <div className={cn('grid gap-4', config.compactMode ? 'lg:grid-cols-3' : 'lg:grid-cols-4')}>
+          <div className="grid gap-4 lg:grid-cols-4">
             {/* Main time series chart */}
             {visibleWidgets.find((w) => w.id === 'overview-chart') && (
               <div className={getWidgetSizeClass('full')}>
