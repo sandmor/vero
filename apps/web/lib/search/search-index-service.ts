@@ -13,9 +13,13 @@ import type {
   WorkerResponse,
   WorkerSearchOptions,
 } from '@/lib/search/search-index.types';
+import {
+  createSearchCoordinator,
+  type SearchTabCoordinator,
+} from '@/lib/search/search-coordinator';
 
 const WORKER_TIMEOUT_MS = 20000;
-const WORKER_URL = new URL('./search-index.worker.ts', import.meta.url);
+const WORKER_URL = new URL('./search-worker.ts', import.meta.url);
 
 function toIndexableChat(
   entry: CachedChatPayload<CachedChatRecord>
@@ -88,12 +92,25 @@ class SearchIndexService {
 
   private initPromise: Promise<void> | null = null;
 
+  private coordinator: SearchTabCoordinator | null = null;
+
+  // Callback for cross-tab notifications
+  private onIndexReloadNeeded: (() => void) | null = null;
+
   isReady(): boolean {
     return this.ready;
   }
 
   isIndexing(): boolean {
     return this.indexing || Boolean(this.syncPromise);
+  }
+
+  /**
+   * Set a callback to be called when another tab updates the index.
+   * This can be used to trigger a re-sync or re-search.
+   */
+  setOnIndexReloadNeeded(callback: (() => void) | null): void {
+    this.onIndexReloadNeeded = callback;
   }
 
   private async getWorker(): Promise<Worker> {
@@ -175,6 +192,23 @@ class SearchIndexService {
         throw new Error('Unexpected worker response while initializing');
       }
 
+      // Setup cross-tab coordinator (main thread side)
+      // Worker handles its own coordinator for the persistence layer
+      this.coordinator = createSearchCoordinator({
+        onIndexUpdated: () => {
+          // Another tab updated the index, notify callback if registered
+          if (this.onIndexReloadNeeded) {
+            this.onIndexReloadNeeded();
+          }
+        },
+        onIndexCleared: () => {
+          // Index cleared by another tab, reset local state
+          this.snapshotLoaded = false;
+          this.ready = false;
+        },
+        debug: false,
+      });
+
       this.workerInitialized = true;
     })().finally(() => {
       this.initPromise = null;
@@ -201,6 +235,15 @@ class SearchIndexService {
 
         if (!isLoadedResponse(response)) {
           throw new Error('Unexpected worker response while loading index');
+        }
+
+        // Log whether we loaded from storage (instant search) or started fresh
+        if (response.fromStorage && response.chatCount && response.chatCount > 0) {
+          console.info(
+            `[SearchService] Loaded ${response.chatCount} chats from persistent storage (instant search ready)`
+          );
+        } else {
+          console.info('[SearchService] Starting with fresh index, will sync from cache');
         }
 
         this.snapshotLoaded = true;

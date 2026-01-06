@@ -1,13 +1,23 @@
-export type SerializedIndexJSON = Record<string, string>;
+/**
+ * Search Index Types
+ *
+ * Types for the FlexSearch-based search system with encrypted IndexedDB storage.
+ */
 
 export type SortOption = 'relevance' | 'newest' | 'oldest' | 'title';
 
+/**
+ * Message structure for indexing
+ */
 export type IndexedChatMessage = {
   id: string;
   createdAt: string;
   parts?: unknown;
 };
 
+/**
+ * Chat structure passed from the main thread for indexing
+ */
 export type IndexableChat = {
   chatId: string;
   title: string;
@@ -17,13 +27,9 @@ export type IndexableChat = {
   messages: IndexedChatMessage[];
 };
 
-export type ChatIndexMeta = {
-  chatDocId: string;
-  messageDocIds: string[];
-  lastIndexedAt: string;
-  lastUpdatedAt: string;
-};
-
+/**
+ * Chat document stored in the FlexSearch index
+ */
 export type ChatDoc = {
   id: string;
   chatId: string;
@@ -33,6 +39,9 @@ export type ChatDoc = {
   type: 'chat';
 };
 
+/**
+ * Message document stored in the FlexSearch index
+ */
 export type MessageDoc = {
   id: string;
   chatId: string;
@@ -40,15 +49,6 @@ export type MessageDoc = {
   content: string;
   createdAt: string;
   type: 'message';
-};
-
-export type SearchIndexSnapshot = {
-  version: 1;
-  chatIndex: SerializedIndexJSON;
-  messageIndex: SerializedIndexJSON;
-  chatDocs: Record<string, ChatDoc>;
-  messageDocs: Record<string, MessageDoc>;
-  chatMeta: Record<string, ChatIndexMeta>;
 };
 
 export type WorkerSearchOptions = {
@@ -110,7 +110,7 @@ type WorkerResponseBase = { requestId: string };
 
 export type WorkerResponse =
   | ({ type: 'initialized' } & WorkerResponseBase)
-  | ({ type: 'loaded' } & WorkerResponseBase)
+  | ({ type: 'loaded'; fromStorage?: boolean; chatCount?: number } & WorkerResponseBase)
   | ({
     type: 'synced';
     changed: boolean;
