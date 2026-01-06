@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
       {
         hostname: 'avatar.vercel.sh',
       },
+      {
+        hostname: '*.public.blob.vercel-storage.com',
+      },
     ],
   },
   reactCompiler: true,
