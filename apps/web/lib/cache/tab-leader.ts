@@ -40,7 +40,8 @@ type BroadcastMessage =
     | { type: 'sync-complete'; tabId: string; timestamp: string }
     | { type: 'settings-updated'; tabId: string; timestamp: string }
     | { type: 'request-sync'; tabId: string; reason: string }
-    | { type: 'election-started'; tabId: string };
+    | { type: 'election-started'; tabId: string }
+    | { type: 'messages-updated'; tabId: string; chatId: string; updatedAt: number };
 
 type TabLeaderOptions = {
     /** Callback when this tab becomes the leader */
@@ -53,6 +54,8 @@ type TabLeaderOptions = {
     onSettingsUpdated?: (timestamp: string) => void;
     /** Callback when another tab requests a sync */
     onSyncRequested?: (reason: string) => void;
+    /** Callback when messages are updated in another tab */
+    onMessagesUpdated?: (chatId: string, updatedAt: number) => void;
     /** Enable debug logging */
     debug?: boolean;
 };
@@ -353,6 +356,12 @@ export class TabLeaderElection {
                     });
                 }
                 break;
+
+            case 'messages-updated':
+                if (message.tabId !== this.tabId) {
+                    this.options.onMessagesUpdated?.(message.chatId, message.updatedAt);
+                }
+                break;
         }
     };
 
@@ -368,6 +377,14 @@ export class TabLeaderElection {
      */
     notifySettingsUpdated(timestamp: string): void {
         this.broadcast({ type: 'settings-updated', tabId: this.tabId, timestamp });
+    }
+
+    /**
+     * Broadcast that messages have been updated for a specific chat.
+     * This notifies other tabs to refresh their message state.
+     */
+    notifyMessagesUpdated(chatId: string): void {
+        this.broadcast({ type: 'messages-updated', tabId: this.tabId, chatId, updatedAt: Date.now() });
     }
 
     /**

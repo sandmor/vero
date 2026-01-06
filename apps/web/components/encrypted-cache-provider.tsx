@@ -678,6 +678,13 @@ type CacheContextValue = {
    * Request a settings-only refresh.
    */
   refreshSettings: () => void;
+  /**
+   * Subscribe to message update events from other tabs.
+   * Returns an unsubscribe function.
+   */
+  subscribeToMessageUpdates: (
+    callback: (chatId: string, updatedAt: number) => void
+  ) => () => void;
 };
 
 const EncryptedCacheContext = createContext<CacheContextValue>({
@@ -698,6 +705,7 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   recordLocalChange: () => { },
   isSyncLeader: () => true,
   refreshSettings: () => { },
+  subscribeToMessageUpdates: () => () => { },
 });
 
 export function useEncryptedCache(): CacheContextValue {
@@ -1218,7 +1226,11 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         cacheDebug('refreshCache: skipped (user not logged in)');
         return Promise.resolve();
       }
-      if (!options?.force && !options?.settingsOnly && currentState.isIntegrityValid) {
+      if (
+        !options?.force &&
+        !options?.settingsOnly &&
+        currentState.isIntegrityValid
+      ) {
         cacheDebug('refreshCache: skipped (cache integrity still valid)');
         return Promise.resolve();
       }
@@ -1494,7 +1506,9 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
       try {
         cacheDebug('CacheProvider effect: fetching encryption key');
-        const { cryptoKey: key, base64Key } = await fetchEncryptionKey(abortController.signal);
+        const { cryptoKey: key, base64Key } = await fetchEncryptionKey(
+          abortController.signal
+        );
 
         if (cancelled) return;
 
@@ -1549,6 +1563,11 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   const refreshCacheRef = useRef(refreshCache);
   refreshCacheRef.current = refreshCache;
 
+  // Message update subscribers - for cross-tab real-time sync
+  const messageUpdateSubscribersRef = useRef<
+    Set<(chatId: string, updatedAt: number) => void>
+  >(new Set());
+
   // Initialize the SyncManager
   useEffect(() => {
     if (!isLoggedIn || state.status !== 'ready') {
@@ -1568,6 +1587,17 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         // Reload cache from storage to pick up changes
         cacheDebug('Reloading cache from storage (triggered by another tab)');
         await loadFromCache({ forceUpdateQueries: true });
+      },
+      onMessagesUpdated: (chatId, updatedAt) => {
+        // Forward message update events to all subscribers
+        cacheDebug('Message update received from another tab:', chatId);
+        messageUpdateSubscribersRef.current.forEach((callback) => {
+          try {
+            callback(chatId, updatedAt);
+          } catch (error) {
+            console.warn('Error in message update subscriber:', error);
+          }
+        });
       },
       debounceMs: 500,
       postGenerationProtectionMs: 2000,
@@ -1648,6 +1678,17 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     const syncManager = getSyncManager();
     syncManager?.requestSettingsSync();
   }, []);
+
+  // Subscribe to message update events from other tabs
+  const subscribeToMessageUpdates = useCallback(
+    (callback: (chatId: string, updatedAt: number) => void): (() => void) => {
+      messageUpdateSubscribersRef.current.add(callback);
+      return () => {
+        messageUpdateSubscribersRef.current.delete(callback);
+      };
+    },
+    []
+  );
 
   const getCachedBootstrap = useCallback(
     (chatId: string) => {
@@ -1739,6 +1780,9 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       }
 
       await loadFromCache({ forceUpdateQueries: true });
+
+      const syncManager = getSyncManager();
+      syncManager?.notifySyncComplete(new Date().toISOString());
     },
     [loadFromCache]
   );
@@ -1822,6 +1866,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       recordLocalChange,
       isSyncLeader,
       refreshSettings,
+      subscribeToMessageUpdates,
     }),
     [
       state.status,
@@ -1841,6 +1886,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       recordLocalChange,
       isSyncLeader,
       refreshSettings,
+      subscribeToMessageUpdates,
     ]
   );
 

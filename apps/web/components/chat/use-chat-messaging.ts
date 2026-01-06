@@ -34,6 +34,8 @@ import {
 } from '@/lib/utils/selection-snapshot';
 import type { BranchSelectionOperation } from '@/lib/utils/branch-planning';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
+import { useExternalChatSync } from './use-external-chat-sync';
+import { getSyncManager } from '@/lib/cache/sync-manager';
 
 const IS_E2E = process.env.NEXT_PUBLIC_E2E === '1';
 
@@ -265,6 +267,14 @@ export function useChatMessaging({
     messagesRef.current = messages;
   }, [messages]);
 
+  // Listen for external updates from other tabs via BroadcastChannel
+  const { markLocalUpdate } = useExternalChatSync({
+    chatId,
+    messages,
+    setMessages,
+    isStreaming: isStreamingStatus(status),
+  });
+
   // Fetch tree function for the machine
   const fetchTree = useCallback(async (): Promise<MessageTreeResult> => {
     if (IS_E2E) {
@@ -367,6 +377,10 @@ export function useChatMessaging({
       markGenerationEnded();
       // Record local change for echo filtering
       recordLocalChange(chatId);
+
+      // Notify other tabs about the message update via the tab-leader BroadcastChannel
+      const syncManager = getSyncManager();
+      syncManager?.notifyMessagesUpdated(chatId);
     }
 
     streamingStateRef.current = isStreaming;
@@ -665,6 +679,9 @@ export function useChatMessaging({
 
   const sendMessageWithGuard = useCallback<typeof sendMessage>(
     (payload) => {
+      // Mark local update to filter out echo events from other tabs
+      markLocalUpdate();
+
       const readiness = ensureOperationsReady();
       if (!readiness) {
         return sendMessage(payload);
@@ -681,7 +698,7 @@ export function useChatMessaging({
           });
         });
     },
-    [ensureOperationsReady, sendMessage]
+    [ensureOperationsReady, markLocalUpdate, sendMessage]
   );
 
   const handleEditMessage = useCallback(

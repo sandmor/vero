@@ -47,6 +47,8 @@ type SyncManagerOptions = {
   onSettingsRefresh?: () => Promise<void>;
   /** Callback when cache should be reloaded from storage (for follower tabs) */
   onCacheReload?: () => Promise<void>;
+  /** Callback when messages are updated in another tab */
+  onMessagesUpdated?: (chatId: string, updatedAt: number) => void;
   /** Debounce window in ms for coalescing sync requests */
   debounceMs?: number;
   /** How long after generation ends to protect the active chat (ms) */
@@ -63,6 +65,7 @@ export class SyncManager {
   private onSync: SyncCallback;
   private onSettingsRefresh?: () => Promise<void>;
   private onCacheReload?: () => Promise<void>;
+  private onMessagesUpdated?: (chatId: string, updatedAt: number) => void;
   private debounceMs: number;
   private postGenerationProtectionMs: number;
   private debug: boolean;
@@ -87,6 +90,7 @@ export class SyncManager {
     this.onSync = options.onSync;
     this.onSettingsRefresh = options.onSettingsRefresh;
     this.onCacheReload = options.onCacheReload;
+    this.onMessagesUpdated = options.onMessagesUpdated;
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.postGenerationProtectionMs =
       options.postGenerationProtectionMs ??
@@ -137,6 +141,11 @@ export class SyncManager {
         // Handle the sync request
         this.requestSync('tab-request');
       },
+      onMessagesUpdated: (chatId, updatedAt) => {
+        this.log('Messages updated by another tab for chat:', chatId);
+        // Forward to the registered callback
+        this.onMessagesUpdated?.(chatId, updatedAt);
+      },
       debug: this.debug,
     });
 
@@ -163,6 +172,14 @@ export class SyncManager {
    */
   notifySettingsUpdated(timestamp: string): void {
     this.tabLeader?.notifySettingsUpdated(timestamp);
+  }
+
+  /**
+   * Notify other tabs that messages have been updated for a specific chat.
+   * This is used for real-time cross-tab message sync.
+   */
+  notifyMessagesUpdated(chatId: string): void {
+    this.tabLeader?.notifyMessagesUpdated(chatId);
   }
 
   /**
