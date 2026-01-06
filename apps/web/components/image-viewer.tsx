@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 // Lightweight internal icon button to avoid high-contrast default button styling
 function IconButton({
@@ -242,92 +243,102 @@ export function ImageViewer({ src, alt, isOpen, onClose }: ImageViewerProps) {
     [scale, resetZoom]
   );
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 text-white"
-      onClick={onClose}
-      onMouseMove={signalActivity}
-      onWheel={signalActivity}
-    >
-      {/* Close Button */}
-      <div
-        className={`absolute right-4 top-4 z-20 transition-opacity ${
-          showUI ? 'opacity-100' : 'opacity-0'
-        } `}
-      >
-        <IconButton label="Close" onClick={() => onClose()}>
-          <X size={18} />
-        </IconButton>
-      </div>
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeInOut' }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 text-white"
+          onClick={onClose}
+          onMouseMove={signalActivity}
+          onWheel={signalActivity}
+        >
+          {/* Close Button */}
+          <div
+            className={`absolute right-4 top-4 z-20 transition-opacity ${
+              showUI ? 'opacity-100' : 'opacity-0'
+            } `}
+          >
+            <IconButton label="Close" onClick={() => onClose()}>
+              <X size={18} />
+            </IconButton>
+          </div>
 
-      {/* Bottom toolbar */}
-      <div
-        className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 
+          {/* Bottom toolbar */}
+          <div
+            className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 
         bg-gradient-to-t from-black/70 via-black/30 to-transparent pb-6 pt-24 transition-opacity ${
           showUI ? 'opacity-100' : 'opacity-0'
         }`}
-      >
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 backdrop-blur-sm">
-          <IconButton
-            label="Zoom out"
-            onClick={() => zoomOut()}
-            disabled={scale <= 0.2}
           >
-            <ZoomOut size={18} />
-          </IconButton>
-          <IconButton label="Reset" onClick={() => resetZoom()}>
-            <RotateCcw size={18} />
-          </IconButton>
-          <div className="select-none text-xs tabular-nums text-white/80 w-14 text-center">
-            {Math.round(scale * 100)}%
+            <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 backdrop-blur-sm">
+              <IconButton
+                label="Zoom out"
+                onClick={() => zoomOut()}
+                disabled={scale <= 0.2}
+              >
+                <ZoomOut size={18} />
+              </IconButton>
+              <IconButton label="Reset" onClick={() => resetZoom()}>
+                <RotateCcw size={18} />
+              </IconButton>
+              <div className="select-none text-xs tabular-nums text-white/80 w-14 text-center">
+                {Math.round(scale * 100)}%
+              </div>
+              <IconButton
+                label="Zoom in"
+                onClick={() => zoomIn()}
+                disabled={scale >= 8}
+              >
+                <ZoomIn size={18} />
+              </IconButton>
+            </div>
+            <div className="pointer-events-none select-none text-[10px] font-medium tracking-wide text-white/40">
+              Scroll / pinch to zoom · drag to pan · dbl‑click to toggle zoom · Esc
+              to close
+            </div>
           </div>
-          <IconButton
-            label="Zoom in"
-            onClick={() => zoomIn()}
-            disabled={scale >= 8}
-          >
-            <ZoomIn size={18} />
-          </IconButton>
-        </div>
-        <div className="pointer-events-none select-none text-[10px] font-medium tracking-wide text-white/40">
-          Scroll / pinch to zoom · drag to pan · dbl‑click to toggle zoom · Esc
-          to close
-        </div>
-      </div>
 
-      {/* Image container */}
-      <div
-        ref={containerRef}
-        className="relative flex h-full w-full items-center justify-center overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-        onDoubleClick={handleDoubleClick}
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{
-          cursor: isDragging ? 'grabbing' : scale > 1 ? 'grab' : 'default',
-        }}
-      >
-        <img
-          ref={imageRef}
-          src={src}
-          alt={alt}
-          className="select-none transition-transform duration-150 ease-out will-change-transform"
-          style={{
-            transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-            maxWidth: scale === 1 ? '100%' : 'none',
-            maxHeight: scale === 1 ? '100%' : 'none',
-          }}
-          draggable={false}
-        />
-      </div>
-    </div>
+          {/* Image container */}
+          <div
+            ref={containerRef}
+            className="relative flex h-full w-full items-center justify-center overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={handleDoubleClick}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            style={{
+              cursor: isDragging ? 'grabbing' : scale > 1 ? 'grab' : 'default',
+            }}
+          >
+            <motion.img
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              ref={imageRef}
+              src={src}
+              alt={alt}
+              className="select-none transition-transform duration-150 ease-out will-change-transform"
+              style={{
+                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                maxWidth: scale === 1 ? '100%' : 'none',
+                maxHeight: scale === 1 ? '100%' : 'none',
+              }}
+              draggable={false}
+            />
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
