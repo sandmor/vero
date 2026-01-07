@@ -27,18 +27,16 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from '@/components/ui/input-group';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
-import { useClientSearch, useSearchHistory } from '@/hooks/use-client-search';
+import { useClientSearch } from '@/hooks/use-client-search';
 import { useSearchStore } from '@/lib/stores/search-store';
 import { getEncryptedCacheManager } from '@/lib/cache/cache-manager';
 import { ChatItem } from '../sidebar-history-item';
 import { SearchActiveFilters } from './search-active-filters';
 import { SearchFilterActions } from './search-filter-actions';
 import { SearchResultItem } from './search-result-item';
-import { SearchSuggestions } from './search-suggestions';
 import { Badge } from '../ui/badge';
 
 interface ChatSearchModalProps {
@@ -64,7 +62,6 @@ export function ChatSearchModal({
     resetFilters,
   } = useSearchStore();
 
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
@@ -114,24 +111,11 @@ export function ChatSearchModal({
     },
   });
 
-  // Search history for suggestions
-  const { history, addToHistory, removeFromHistory } = useSearchHistory();
-
   const handleSearchSubmit = useCallback(() => {
-    if (debouncedQuery) {
-      addToHistory(debouncedQuery);
-    }
-    setShowSuggestions(false);
-  }, [debouncedQuery, addToHistory]);
-
-  const handleSuggestionSelect = useCallback(
-    (suggestion: string) => {
-      setQuery(suggestion);
-      setShowSuggestions(false);
-      addToHistory(suggestion);
-    },
-    [setQuery, addToHistory]
-  );
+    // If we need any specific submit logic (like triggering search immediately), it would go here.
+    // For now, debounced search handles it.
+    inputRef.current?.blur();
+  }, []);
 
   const handleDelete = useCallback(() => {
     if (!deleteId) return;
@@ -283,15 +267,9 @@ export function ChatSearchModal({
                   value={query}
                   onChange={(e) => {
                     setQuery(e.target.value);
-                    setShowSuggestions(true);
                   }}
-                  onFocus={() => setShowSuggestions(true)}
-                  onBlur={() =>
-                    setTimeout(() => setShowSuggestions(false), 200)
-                  }
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSearchSubmit();
-                    if (e.key === 'Escape') setShowSuggestions(false);
                   }}
                 />
                 <InputGroupAddon align="inline-end">
@@ -310,15 +288,6 @@ export function ChatSearchModal({
                   ) : null}
                 </InputGroupAddon>
               </InputGroup>
-
-              {/* Suggestions */}
-              <SearchSuggestions
-                query={query}
-                history={history}
-                onSelect={handleSuggestionSelect}
-                onRemove={removeFromHistory}
-                visible={showSuggestions}
-              />
             </div>
 
             {/* Filters Bar */}

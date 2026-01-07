@@ -19,19 +19,11 @@ import type { Chat } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
 import { ChatItem } from './sidebar-history-item';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
-import { useClientSearch, useSearchHistory } from '@/hooks/use-client-search';
+import { useClientSearch } from '@/hooks/use-client-search';
 import { useSearchStore } from '@/lib/stores/search-store';
 import { SearchActiveFilters } from './search/search-active-filters';
 import { SearchFilterActions } from './search/search-filter-actions';
-import { SearchSuggestions } from './search/search-suggestions';
 import { ChatSearchModal } from './search/chat-search-modal';
-import { Badge } from './ui/badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './ui/tooltip';
 
 const COMPACT_LIMIT = 8;
 
@@ -58,7 +50,6 @@ export function ChatSearch({
     resetFilters,
   } = useSearchStore();
 
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -95,9 +86,6 @@ export function ChatSearch({
     },
   });
 
-  // Search history for suggestions
-  const { history, addToHistory, removeFromHistory } = useSearchHistory();
-
   const compactResults = useMemo(() => {
     if (!debouncedQuery) return [] as Chat[];
     return clientResults.slice(0, COMPACT_LIMIT).map((r) => r.item);
@@ -105,27 +93,15 @@ export function ChatSearch({
 
   const totalResults = clientTotalCount;
 
-  // Handle search submission (save to history)
+  // Handle search submission
   const handleSearchSubmit = useCallback(() => {
-    if (debouncedQuery) {
-      addToHistory(debouncedQuery);
-    }
-    setShowSuggestions(false);
-  }, [debouncedQuery, addToHistory]);
+    inputRef.current?.blur();
+  }, []);
 
   const handleClear = useCallback(() => {
     resetFilters();
     inputRef.current?.focus();
   }, [resetFilters]);
-
-  const handleSuggestionSelect = useCallback(
-    (suggestion: string) => {
-      setQuery(suggestion);
-      setShowSuggestions(false);
-      addToHistory(suggestion);
-    },
-    [setQuery, addToHistory]
-  );
 
   // Track mounted state to prevent hydration flash
   useEffect(() => {
@@ -198,22 +174,15 @@ export function ChatSearch({
                     className="h-9"
                     onChange={(e) => {
                       setQuery(e.target.value);
-                      setShowSuggestions(true);
                     }}
                     onFocus={() => {
                       setIsExpanded(true);
-                      setShowSuggestions(true);
-                    }}
-                    onBlur={() => {
-                      // Delay to allow click on suggestions
-                      setTimeout(() => setShowSuggestions(false), 200);
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         handleSearchSubmit();
                       }
                       if (e.key === 'Escape') {
-                        setShowSuggestions(false);
                         if (!query && !hasActiveFilters) {
                           setIsExpanded(false);
                         }
@@ -272,19 +241,6 @@ export function ChatSearch({
                   </InputGroupAddon>
                 </InputGroup>
               </motion.div>
-
-              {/* Suggestions dropdown */}
-              <AnimatePresence>
-                {showSuggestions && shouldExpand && (
-                  <SearchSuggestions
-                    query={query}
-                    history={history}
-                    onSelect={handleSuggestionSelect}
-                    onRemove={removeFromHistory}
-                    visible={showSuggestions}
-                  />
-                )}
-              </AnimatePresence>
             </div>
 
             {/* Active filters - only show when expanded and has filters */}
