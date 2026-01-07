@@ -321,19 +321,23 @@ export function ImageViewer({ src, alt, isOpen, onClose }: ImageViewerProps) {
             }}
           >
             <motion.img
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.9, opacity: 0, x: 0, y: 0 }}
+              animate={{
+                scale: scale,
+                opacity: 1,
+                x: position.x,
+                y: position.y,
+              }}
+              exit={{ scale: 0.9, opacity: 0, x: 0, y: 0 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               ref={imageRef}
               src={src}
               alt={alt}
-              className="select-none transition-transform duration-150 ease-out will-change-transform"
+              className="select-none will-change-transform"
               style={{
-                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
                 maxWidth: scale === 1 ? '100%' : 'none',
                 maxHeight: scale === 1 ? '100%' : 'none',
-              }}
+              } as any}
               draggable={false}
             />
           </div>
