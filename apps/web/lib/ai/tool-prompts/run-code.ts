@@ -8,18 +8,18 @@ import { getApiMetadata } from '../tools/sandbox/api-bridge';
 
 type TsDocBlock =
   | {
-      kind: 'interface';
-      name: string;
-      description?: string;
-      extends?: string[];
-      members: TsInterfaceMember[];
-    }
+    kind: 'interface';
+    name: string;
+    description?: string;
+    extends?: string[];
+    members: TsInterfaceMember[];
+  }
   | {
-      kind: 'type';
-      name: string;
-      description?: string;
-      type: string;
-    };
+    kind: 'type';
+    name: string;
+    description?: string;
+    type: string;
+  };
 
 type TsInterfaceMember = {
   kind: 'property' | 'method';
@@ -216,12 +216,15 @@ const RUN_CODE_TS_DOCS: TsDocBlock[] = [
 function generateApiDocs(): TsDocBlock {
   const apiMethods = getApiMetadata();
 
+  // Filter out web.* methods for separate documentation
+  const basicMethods = apiMethods.filter(m => !m.name.startsWith('web.'));
+
   return {
     kind: 'interface',
     name: 'RunCodeApi',
     description:
       'Global `api` object exposed inside the sandbox. Provides access to external services.',
-    members: apiMethods.map((method) => ({
+    members: basicMethods.map((method) => ({
       kind: 'method' as const,
       name: method.name,
       signature: method.signature,
@@ -230,16 +233,170 @@ function generateApiDocs(): TsDocBlock {
   };
 }
 
+/**
+ * Web API type definitions for comprehensive documentation
+ */
+const WEB_API_TYPES_DOCS = `
+// Web API Types - Global \`web\` object for web scraping, crawling, and search
+
+interface WebScrapeParams {
+  /** URL to scrape (required) */
+  url: string;
+  /** Output formats: "markdown" | "html" | "links" | "screenshot" | "json" */
+  formats?: Array<"markdown" | "html" | "links" | "screenshot" | "json">;
+  /** JSON Schema for structured extraction (when format includes "json") */
+  jsonSchema?: Record<string, unknown>;
+  /** Prompt to guide JSON extraction without schema */
+  jsonPrompt?: string;
+  /** Actions to perform before scraping */
+  actions?: Array<
+    | { type: "wait"; milliseconds: number }
+    | { type: "click"; selector: string }
+    | { type: "write"; text: string; selector?: string }
+    | { type: "press"; key: string }
+    | { type: "scroll"; direction?: "up" | "down"; amount?: number }
+  >;
+  /** CSS selector to wait for before scraping */
+  waitFor?: string;
+  /** Extract only main content (exclude nav, footer) */
+  onlyMainContent?: boolean;
+  /** Request timeout in milliseconds */
+  timeout?: number;
+}
+
+interface WebScrapeResult {
+  markdown?: string;      // Page content as markdown
+  html?: string;          // Page HTML content
+  links?: string[];       // Extracted links from the page
+  screenshot?: string;    // Screenshot URL
+  json?: Record<string, unknown>;  // Structured data (when json format used)
+  title?: string;         // Page title
+  description?: string;   // Page meta description
+  sourceUrl: string;      // The scraped URL
+  statusCode: number;     // HTTP status code
+}
+
+interface WebCrawlParams {
+  /** Starting URL to crawl (required) */
+  url: string;
+  /** Maximum pages to crawl (default: 10, max: 50) */
+  limit?: number;
+  /** Maximum link depth to crawl (default: 3, max: 5) */
+  maxDepth?: number;
+  /** Output formats for each page */
+  formats?: Array<"markdown" | "html" | "links">;
+  /** URL patterns to include (regex strings) */
+  includePaths?: string[];
+  /** URL patterns to exclude (regex strings) */
+  excludePaths?: string[];
+}
+
+interface WebCrawlResult {
+  status: "scraping" | "completed" | "failed";
+  total: number;      // Total pages discovered
+  completed: number;  // Pages successfully scraped
+  pages: WebScrapeResult[];
+}
+
+interface WebMapParams {
+  /** Website URL to map (required) */
+  url: string;
+  /** Search term to filter URLs */
+  search?: string;
+  /** Maximum URLs to return (default: 100, max: 500) */
+  limit?: number;
+  /** Include subdomain URLs */
+  includeSubdomains?: boolean;
+}
+
+interface WebMapResult {
+  urls: string[];  // List of discovered URLs
+  total: number;   // Total URLs found
+}
+
+interface WebSearchParams {
+  /** Search query (required) */
+  query: string;
+  /** Maximum results (default: 5, max: 10) */
+  limit?: number;
+  /** Country code for location (e.g., "US", "GB") */
+  country?: string;
+  /** Language code (e.g., "en", "es") */
+  language?: string;
+  /** Scrape full content from results */
+  scrapeResults?: boolean;
+}
+
+interface WebSearchResult {
+  results: Array<{
+    url: string;
+    title: string;
+    description?: string;
+    markdown?: string;  // Full page content (if scrapeResults=true)
+  }>;
+  total: number;
+}
+
+interface WebApi {
+  /** Scrape a URL and extract content as markdown, HTML, or structured JSON */
+  scrape(params: WebScrapeParams): Promise<WebScrapeResult>;
+  /** Crawl a website, discovering and scraping linked pages */
+  crawl(params: WebCrawlParams): Promise<WebCrawlResult>;
+  /** Discover all URLs on a website extremely fast */
+  map(params: WebMapParams): Promise<WebMapResult>;
+  /** Search the web and optionally scrape results for full content */
+  search(params: WebSearchParams): Promise<WebSearchResult>;
+}
+`;
+
 const RUN_CODE_API_TS = [
   ...RUN_CODE_TS_DOCS.map(renderDocBlock),
   renderDocBlock(generateApiDocs()),
+  WEB_API_TYPES_DOCS,
 ].join('\n\n');
 
 export const RUN_CODE_TOOL_PROMPT = [
   'runCode sandbox (default tool)',
   '- Consider runCode before other tools when required. Always use to confirm math beyond a trivial level. Write JavaScript (Promises supported) and return the result.',
-  '- Use the `api` bridge for external data; console output is surfaced back to the user.',
+  '- Use the `api` bridge for external data and `web` object for web scraping/search; console output is surfaced back to the user.',
   `- Code is limited to ${SANDBOX_CONFIG.MAX_CODE_LENGTH} characters with a timeout of ${SANDBOX_CONFIG.MIN_TIMEOUT_MS}-${SANDBOX_CONFIG.MAX_TIMEOUT_MS}ms.`,
+  '',
+  '**Web API (`web.*`)** - For web scraping, crawling, and search:',
+  '- `web.scrape({ url })` - Scrape a URL and get markdown, HTML, links, or structured JSON. Handles JS-rendered content and anti-bot protection.',
+  '- `web.crawl({ url, limit })` - Crawl a website starting from URL, auto-discovering linked pages (max 50 pages).',
+  '- `web.map({ url, search })` - Discover all URLs on a website extremely fast (ideal for site mapping).',
+  '- `web.search({ query, scrapeResults })` - Search the web and optionally scrape full content from results.',
+  '',
+  '**Examples:**',
+  '```javascript',
+  '// Basic scrape',
+  'const page = await web.scrape({ url: "https://example.com" });',
+  'console.log(page.markdown);',
+  '',
+  '// Extract structured data',
+  'const data = await web.scrape({',
+  '  url: "https://example.com/products",',
+  '  formats: ["json"],',
+  '  jsonPrompt: "Extract all product names and prices as an array"',
+  '});',
+  'console.log(data.json);',
+  '',
+  '// Search and get full content',
+  'const results = await web.search({',
+  '  query: "latest AI research papers",',
+  '  limit: 3,',
+  '  scrapeResults: true',
+  '});',
+  'results.results.forEach(r => console.log(r.title, r.markdown?.slice(0, 200)));',
+  '',
+  '// Crawl documentation',
+  'const docs = await web.crawl({',
+  '  url: "https://docs.example.com",',
+  '  limit: 10,',
+  '  includePaths: ["/docs/.*"]',
+  '});',
+  'docs.pages.forEach(p => console.log(p.title));',
+  '```',
   '',
   'TypeScript API:',
   '```ts',

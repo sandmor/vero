@@ -46,7 +46,7 @@ export function createBootstrapScript(): string {
 
 /**
  * Creates the API script that exposes external services to the sandbox.
- * Provides `api.getWeather()` and validates coordinates.
+ * Provides `api.getWeather()`, `api.fetch()`, and `web.*` methods.
  */
 export function createApiScript(locationHints: LocationHints | null): string {
   const hintsLiteral = locationHints ? JSON.stringify(locationHints) : 'null';
@@ -120,6 +120,12 @@ export function createApiScript(locationHints: LocationHints | null): string {
     '    };',
     '  }',
     '',
+    '  // Web API host functions',
+    '  const hostWebScrape = globalThis.__virid_host_web_scrape__;',
+    '  const hostWebCrawl = globalThis.__virid_host_web_crawl__;',
+    '  const hostWebMap = globalThis.__virid_host_web_map__;',
+    '  const hostWebSearch = globalThis.__virid_host_web_search__;',
+    '',
     '  globalThis.api = Object.freeze({',
     '    /**',
     '     * Fetch data from external URLs',
@@ -168,17 +174,279 @@ export function createApiScript(locationHints: LocationHints | null): string {
     '      return JSON.parse(responseText);',
     '    },',
     '  });',
+    '',
+    '  // ============================================================================',
+    '  // Web API - Web scraping, crawling, mapping, and search',
+    '  // ============================================================================',
+    '',
+    '  globalThis.web = Object.freeze({',
+    '    /**',
+    '     * Scrape a URL and extract content as markdown, HTML, or structured JSON.',
+    '     * Handles dynamic content, JavaScript-rendered pages, and anti-bot protection.',
+    '     *',
+    '     * @param {Object} params - Scrape parameters',
+    '     * @param {string} params.url - The URL to scrape (required)',
+    '     * @param {Array<string>} [params.formats] - Output formats: "markdown", "html", "links", "screenshot", "json"',
+    '     * @param {Object} [params.jsonSchema] - JSON Schema for structured extraction (when format includes "json")',
+    '     * @param {string} [params.jsonPrompt] - Prompt to guide JSON extraction without schema',
+    '     * @param {Array<Object>} [params.actions] - Actions to perform before scraping:',
+    '     *   - { type: "wait", milliseconds: number } - Wait for specified time',
+    '     *   - { type: "click", selector: string } - Click an element',
+    '     *   - { type: "write", text: string, selector?: string } - Type text',
+    '     *   - { type: "press", key: string } - Press a key (Enter, Tab, etc.)',
+    '     *   - { type: "scroll", direction?: "up"|"down", amount?: number }',
+    '     * @param {string} [params.waitFor] - CSS selector to wait for before scraping',
+    '     * @param {boolean} [params.onlyMainContent] - Extract only main content (exclude nav, footer)',
+    '     * @param {number} [params.timeout] - Request timeout in milliseconds',
+    '     *',
+    '     * @returns {Promise<WebScrapeResult>} Scraped content',
+    '     * @property {string} [markdown] - Page content as markdown',
+    '     * @property {string} [html] - Page HTML content',
+    '     * @property {string[]} [links] - Extracted links from the page',
+    '     * @property {string} [screenshot] - Screenshot URL',
+    '     * @property {Object} [json] - Structured data (when json format used)',
+    '     * @property {string} [title] - Page title',
+    '     * @property {string} [description] - Page meta description',
+    '     * @property {string} sourceUrl - The scraped URL',
+    '     * @property {number} statusCode - HTTP status code',
+    '     *',
+    '     * @example',
+    '     * // Basic scrape',
+    '     * const result = await web.scrape({ url: "https://example.com" });',
+    '     * console.log(result.markdown);',
+    '     *',
+    '     * @example',
+    '     * // Extract structured data',
+    '     * const result = await web.scrape({',
+    '     *   url: "https://example.com/products",',
+    '     *   formats: ["json"],',
+    '     *   jsonPrompt: "Extract all product names and prices"',
+    '     * });',
+    '     * console.log(result.json);',
+    '     *',
+    '     * @example',
+    '     * // With actions (login flow)',
+    '     * const result = await web.scrape({',
+    '     *   url: "https://example.com/login",',
+    '     *   actions: [',
+    '     *     { type: "write", text: "user@example.com", selector: "#email" },',
+    '     *     { type: "write", text: "password", selector: "#password" },',
+    '     *     { type: "click", selector: "button[type=submit]" },',
+    '     *     { type: "wait", milliseconds: 2000 }',
+    '     *   ]',
+    '     * });',
+    '     */',
+    '    async scrape(params) {',
+    '      if (typeof hostWebScrape !== "function") {',
+    '        throw new Error("Web scrape API is unavailable in this context");',
+    '      }',
+    '      if (!params || typeof params !== "object") {',
+    '        throw new TypeError("Params must be an object with url property");',
+    '      }',
+    '      if (typeof params.url !== "string" || !params.url) {',
+    '        throw new TypeError("URL must be a non-empty string");',
+    '      }',
+    '      const payload = JSON.stringify(params);',
+    '      const responseText = await hostWebScrape(payload);',
+    '      return JSON.parse(responseText);',
+    '    },',
+    '',
+    '    /**',
+    '     * Crawl a website starting from a URL, discovering and scraping linked pages.',
+    '     *',
+    '     * @param {Object} params - Crawl parameters',
+    '     * @param {string} params.url - The starting URL to crawl (required)',
+    '     * @param {number} [params.limit=10] - Maximum pages to crawl (max: 50)',
+    '     * @param {number} [params.maxDepth=3] - Maximum link depth to crawl (max: 5)',
+    '     * @param {Array<string>} [params.formats] - Output formats for each page',
+    '     * @param {Array<string>} [params.includePaths] - URL patterns to include (regex)',
+    '     * @param {Array<string>} [params.excludePaths] - URL patterns to exclude (regex)',
+    '     *',
+    '     * @returns {Promise<WebCrawlResult>} Crawl results',
+    '     * @property {string} status - "scraping", "completed", or "failed"',
+    '     * @property {number} total - Total pages discovered',
+    '     * @property {number} completed - Pages successfully scraped',
+    '     * @property {Array<WebScrapeResult>} pages - Scraped page data',
+    '     *',
+    '     * @example',
+    '     * // Crawl documentation site',
+    '     * const result = await web.crawl({',
+    '     *   url: "https://docs.example.com",',
+    '     *   limit: 20,',
+    '     *   includePaths: ["/docs/.*"]',
+    '     * });',
+    '     * console.log(`Crawled ${result.completed} pages`);',
+    '     * result.pages.forEach(page => console.log(page.title));',
+    '     */',
+    '    async crawl(params) {',
+    '      if (typeof hostWebCrawl !== "function") {',
+    '        throw new Error("Web crawl API is unavailable in this context");',
+    '      }',
+    '      if (!params || typeof params !== "object") {',
+    '        throw new TypeError("Params must be an object with url property");',
+    '      }',
+    '      if (typeof params.url !== "string" || !params.url) {',
+    '        throw new TypeError("URL must be a non-empty string");',
+    '      }',
+    '      const payload = JSON.stringify(params);',
+    '      const responseText = await hostWebCrawl(payload);',
+    '      return JSON.parse(responseText);',
+    '    },',
+    '',
+    '    /**',
+    '     * Discover all URLs on a website extremely fast.',
+    '     * Useful for site mapping and finding specific pages before scraping.',
+    '     *',
+    '     * @param {Object} params - Map parameters',
+    '     * @param {string} params.url - The website URL to map (required)',
+    '     * @param {string} [params.search] - Search term to filter URLs',
+    '     * @param {number} [params.limit=100] - Maximum URLs to return (max: 500)',
+    '     * @param {boolean} [params.includeSubdomains] - Include subdomain URLs',
+    '     *',
+    '     * @returns {Promise<WebMapResult>} Discovered URLs',
+    '     * @property {string[]} urls - List of discovered URLs',
+    '     * @property {number} total - Total URLs found',
+    '     *',
+    '     * @example',
+    '     * // Find all blog posts',
+    '     * const result = await web.map({',
+    '     *   url: "https://example.com",',
+    '     *   search: "blog"',
+    '     * });',
+    '     * console.log(`Found ${result.total} blog URLs`);',
+    '     * result.urls.forEach(url => console.log(url));',
+    '     */',
+    '    async map(params) {',
+    '      if (typeof hostWebMap !== "function") {',
+    '        throw new Error("Web map API is unavailable in this context");',
+    '      }',
+    '      if (!params || typeof params !== "object") {',
+    '        throw new TypeError("Params must be an object with url property");',
+    '      }',
+    '      if (typeof params.url !== "string" || !params.url) {',
+    '        throw new TypeError("URL must be a non-empty string");',
+    '      }',
+    '      const payload = JSON.stringify(params);',
+    '      const responseText = await hostWebMap(payload);',
+    '      return JSON.parse(responseText);',
+    '    },',
+    '',
+    '    /**',
+    '     * Search the web and optionally scrape results for full content.',
+    '     *',
+    '     * @param {Object} params - Search parameters',
+    '     * @param {string} params.query - Search query (required)',
+    '     * @param {number} [params.limit=5] - Maximum results (max: 10)',
+    '     * @param {string} [params.country] - Country code for location (e.g., "US", "GB")',
+    '     * @param {string} [params.language] - Language code (e.g., "en", "es")',
+    '     * @param {boolean} [params.scrapeResults] - Scrape full content from results',
+    '     *',
+    '     * @returns {Promise<WebSearchResult>} Search results',
+    '     * @property {Array<Object>} results - Search result items',
+    '     * @property {string} results[].url - Result URL',
+    '     * @property {string} results[].title - Result title',
+    '     * @property {string} [results[].description] - Result description/snippet',
+    '     * @property {string} [results[].markdown] - Full page content (if scrapeResults=true)',
+    '     * @property {number} total - Total results returned',
+    '     *',
+    '     * @example',
+    '     * // Basic search',
+    '     * const result = await web.search({ query: "best restaurants in NYC" });',
+    '     * result.results.forEach(r => console.log(r.title, r.url));',
+    '     *',
+    '     * @example',
+    '     * // Search and get full content',
+    '     * const result = await web.search({',
+    '     *   query: "climate change latest research",',
+    '     *   limit: 3,',
+    '     *   scrapeResults: true',
+    '     * });',
+    '     * result.results.forEach(r => console.log(r.markdown));',
+    '     */',
+    '    async search(params) {',
+    '      if (typeof hostWebSearch !== "function") {',
+    '        throw new Error("Web search API is unavailable in this context");',
+    '      }',
+    '      if (!params || typeof params !== "object") {',
+    '        throw new TypeError("Params must be an object with query property");',
+    '      }',
+    '      if (typeof params.query !== "string" || !params.query) {',
+    '        throw new TypeError("Query must be a non-empty string");',
+    '      }',
+    '      const payload = JSON.stringify(params);',
+    '      const responseText = await hostWebSearch(payload);',
+    '      return JSON.parse(responseText);',
+    '    },',
+    '  });',
     '})();',
   ].join('\n');
 }
 
 /**
+ * Transforms code to auto-return the last expression if it looks like a callable.
+ * This handles patterns like:
+ *   async function main() { ... }
+ *   main();  // <-- transforms to: return main();
+ */
+function transformLastExpressionToReturn(code: string): string {
+  const lines = code.split('\n');
+
+  // Find last non-empty, non-comment line
+  let lastLineIndex = lines.length - 1;
+  while (lastLineIndex >= 0) {
+    const trimmed = lines[lastLineIndex].trim();
+    if (trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('/*')) {
+      break;
+    }
+    lastLineIndex--;
+  }
+
+  if (lastLineIndex < 0) return code;
+
+  const lastLine = lines[lastLineIndex].trim();
+
+  // Skip if it already has a return, or is a declaration/control structure
+  const skipPrefixes = [
+    'const ', 'let ', 'var ', 'function ', 'async function ',
+    'class ', 'if ', 'if(', 'for ', 'for(', 'while ', 'while(',
+    'switch ', 'switch(', 'try ', 'try{', 'return ', 'throw ',
+    'import ', 'export ', '//', '/*', '{'
+  ];
+
+  if (skipPrefixes.some(prefix => lastLine.startsWith(prefix))) {
+    return code;
+  }
+
+  // Skip if it ends with a block close (likely end of function/if/etc)
+  if (lastLine === '}' || lastLine === '};') {
+    return code;
+  }
+
+  // Skip if it's already an IIFE or complex expression with chaining
+  // Patterns: ()(), (...)(), ()).catch(), ()).then(), etc.
+  if (/^\(.*\)\(\)|^\(.*\)\.[a-zA-Z]+\(|^\(.*\)\)\./.test(lastLine)) {
+    return code;
+  }
+
+  // Skip if line starts with opening paren (complex expression/IIFE)
+  if (lastLine.startsWith('(')) {
+    return code;
+  }
+
+  // Transform: remove trailing semicolon and wrap with return
+  const withoutSemi = lastLine.replace(/;$/, '');
+  lines[lastLineIndex] = `return (${withoutSemi});`;
+  return lines.join('\n');
+}
+
+/**
  * Creates the execution wrapper script for user code.
  * Attempts to evaluate as an expression first (to capture return values),
- * falling back to statement execution when the snippet is not expression-safe.
+ * falling back to statement execution with auto-return transformation.
  */
 export function createExecutionScript(code: string): string {
   const serializedSource = JSON.stringify(code);
+  const transformedSource = JSON.stringify(transformLastExpressionToReturn(code));
 
   return [
     '"use strict";',
@@ -186,16 +454,19 @@ export function createExecutionScript(code: string): string {
     '(async function () {',
     '  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;',
     `  const source = ${serializedSource};`,
+    `  const transformedSource = ${transformedSource};`,
     '  const expressionSource = "return (\\n" + source + "\\n);";',
     '  try {',
     '    let result;',
     '    try {',
+    '      // Try as pure expression first',
     '      const expressionFn = new AsyncFunction(expressionSource);',
     '      result = await expressionFn.call(globalThis);',
     '    } catch (expressionError) {',
     '      const errorName = expressionError?.name || expressionError?.constructor?.name;',
     '      if (errorName !== "SyntaxError") throw expressionError;',
-    '      const statementFn = new AsyncFunction(source);',
+    '      // Fall back to transformed source (auto-returns last expression)',
+    '      const statementFn = new AsyncFunction(transformedSource);',
     '      result = await statementFn.call(globalThis);',
     '    }',
     '    globalThis.__virid_last_result__ = { status: "ok", value: result };',

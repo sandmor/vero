@@ -7,6 +7,18 @@ import type { VMContext } from './vm-utils';
 import { setContextValue, evaluateScript } from './vm-utils';
 import { fetchWeather, fetchUrl, type FetchOptions } from './external-apis';
 import {
+  webScrape,
+  webCrawl,
+  webMap,
+  webSearch,
+} from './web-apis';
+import type {
+  WebScrapeParams,
+  WebCrawlParams,
+  WebMapParams,
+  WebSearchParams,
+} from './web-types';
+import {
   coerceFiniteNumber,
   normalizeText,
   validateCoordinates,
@@ -180,6 +192,210 @@ export function createFetchBridge(deadlineMs: number): ApiBridgeConfig {
   };
 }
 
+// ============================================================================
+// Web API Bridges
+// ============================================================================
+
+/**
+ * Creates a web scrape API bridge handler
+ */
+export function createWebScrapeBridge(deadlineMs: number): ApiBridgeConfig {
+  const handler: BridgeHandler = async (vmContext, payload) => {
+    logger.debug('Web scrape bridge called', { payload });
+    try {
+      if (!payload || typeof payload !== 'object') {
+        throw new ValidationError(
+          'Scrape payload must be an object with url property'
+        );
+      }
+
+      const params = payload as WebScrapeParams;
+
+      if (typeof params.url !== 'string' || !params.url) {
+        throw new ValidationError('URL must be a non-empty string');
+      }
+
+      const remaining = deadlineMs - Date.now();
+      if (remaining <= 0) {
+        throw new Error('Scrape request timed out before it could be sent');
+      }
+
+      logger.debug('Scraping URL', { url: params.url, remaining });
+      const result = await webScrape(params, remaining);
+      logger.debug('Scrape completed successfully', {
+        url: params.url,
+        hasMarkdown: !!result.markdown,
+        hasJson: !!result.json,
+      });
+      return JSON.stringify(result);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to process scrape request';
+      logger.error('Web scrape bridge error', {
+        message,
+        error: error instanceof Error ? error.stack : String(error),
+      });
+      throw error;
+    }
+  };
+
+  return {
+    functionName: '__virid_host_web_scrape__',
+    handler,
+  };
+}
+
+/**
+ * Creates a web crawl API bridge handler
+ */
+export function createWebCrawlBridge(deadlineMs: number): ApiBridgeConfig {
+  const handler: BridgeHandler = async (vmContext, payload) => {
+    logger.debug('Web crawl bridge called', { payload });
+    try {
+      if (!payload || typeof payload !== 'object') {
+        throw new ValidationError(
+          'Crawl payload must be an object with url property'
+        );
+      }
+
+      const params = payload as WebCrawlParams;
+
+      if (typeof params.url !== 'string' || !params.url) {
+        throw new ValidationError('URL must be a non-empty string');
+      }
+
+      const remaining = deadlineMs - Date.now();
+      if (remaining <= 0) {
+        throw new Error('Crawl request timed out before it could be sent');
+      }
+
+      logger.debug('Crawling URL', { url: params.url, remaining });
+      const result = await webCrawl(params, remaining);
+      logger.debug('Crawl completed successfully', {
+        url: params.url,
+        status: result.status,
+        pagesCount: result.pages.length,
+      });
+      return JSON.stringify(result);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to process crawl request';
+      logger.error('Web crawl bridge error', {
+        message,
+        error: error instanceof Error ? error.stack : String(error),
+      });
+      throw error;
+    }
+  };
+
+  return {
+    functionName: '__virid_host_web_crawl__',
+    handler,
+  };
+}
+
+/**
+ * Creates a web map API bridge handler
+ */
+export function createWebMapBridge(deadlineMs: number): ApiBridgeConfig {
+  const handler: BridgeHandler = async (vmContext, payload) => {
+    logger.debug('Web map bridge called', { payload });
+    try {
+      if (!payload || typeof payload !== 'object') {
+        throw new ValidationError(
+          'Map payload must be an object with url property'
+        );
+      }
+
+      const params = payload as WebMapParams;
+
+      if (typeof params.url !== 'string' || !params.url) {
+        throw new ValidationError('URL must be a non-empty string');
+      }
+
+      const remaining = deadlineMs - Date.now();
+      if (remaining <= 0) {
+        throw new Error('Map request timed out before it could be sent');
+      }
+
+      logger.debug('Mapping URL', { url: params.url, remaining });
+      const result = await webMap(params, remaining);
+      logger.debug('Map completed successfully', {
+        url: params.url,
+        urlsCount: result.urls.length,
+      });
+      return JSON.stringify(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to process map request';
+      logger.error('Web map bridge error', {
+        message,
+        error: error instanceof Error ? error.stack : String(error),
+      });
+      throw error;
+    }
+  };
+
+  return {
+    functionName: '__virid_host_web_map__',
+    handler,
+  };
+}
+
+/**
+ * Creates a web search API bridge handler
+ */
+export function createWebSearchBridge(deadlineMs: number): ApiBridgeConfig {
+  const handler: BridgeHandler = async (vmContext, payload) => {
+    logger.debug('Web search bridge called', { payload });
+    try {
+      if (!payload || typeof payload !== 'object') {
+        throw new ValidationError(
+          'Search payload must be an object with query property'
+        );
+      }
+
+      const params = payload as WebSearchParams;
+
+      if (typeof params.query !== 'string' || !params.query) {
+        throw new ValidationError('Query must be a non-empty string');
+      }
+
+      const remaining = deadlineMs - Date.now();
+      if (remaining <= 0) {
+        throw new Error('Search request timed out before it could be sent');
+      }
+
+      logger.debug('Searching web', { query: params.query, remaining });
+      const result = await webSearch(params, remaining);
+      logger.debug('Search completed successfully', {
+        query: params.query,
+        resultsCount: result.results.length,
+      });
+      return JSON.stringify(result);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to process search request';
+      logger.error('Web search bridge error', {
+        message,
+        error: error instanceof Error ? error.stack : String(error),
+      });
+      throw error;
+    }
+  };
+
+  return {
+    functionName: '__virid_host_web_search__',
+    handler,
+  };
+}
+
 /**
  * Installs API bridges into the VM context
  * Exposes async bridge functions that return VM-native promises so sandbox code
@@ -264,15 +480,15 @@ export function installApiBridges(
     const rejection =
       error instanceof Error
         ? {
-            message: error.message,
-            name: error.name,
-            stack: error.stack,
-          }
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+        }
         : {
-            message: String(error ?? 'Bridge error'),
-            name: 'Error',
-            stack: null,
-          };
+          message: String(error ?? 'Bridge error'),
+          name: 'Error',
+          stack: null,
+        };
 
     logger.error('Bridge handler error', {
       functionName,
@@ -445,6 +661,35 @@ export function getApiMetadata(): ApiMethodMetadata[] {
       description:
         'Fetch weather data from Open-Meteo API for the specified coordinates',
       returnType: 'Promise<WeatherData>',
+    },
+    // Web API methods
+    {
+      name: 'web.scrape',
+      signature: '(params: WebScrapeParams): Promise<WebScrapeResult>',
+      description:
+        'Scrape a URL and extract content as markdown, HTML, links, or structured JSON data. Supports page interactions (click, type, wait) before scraping.',
+      returnType: 'Promise<WebScrapeResult>',
+    },
+    {
+      name: 'web.crawl',
+      signature: '(params: WebCrawlParams): Promise<WebCrawlResult>',
+      description:
+        'Crawl a website starting from a URL, automatically discovering and scraping linked pages up to a specified limit and depth.',
+      returnType: 'Promise<WebCrawlResult>',
+    },
+    {
+      name: 'web.map',
+      signature: '(params: WebMapParams): Promise<WebMapResult>',
+      description:
+        'Discover all URLs on a website extremely fast. Useful for site mapping and finding specific pages before scraping.',
+      returnType: 'Promise<WebMapResult>',
+    },
+    {
+      name: 'web.search',
+      signature: '(params: WebSearchParams): Promise<WebSearchResult>',
+      description:
+        'Search the web and optionally scrape the search results for full content. Returns URLs, titles, descriptions, and markdown.',
+      returnType: 'Promise<WebSearchResult>',
     },
   ];
 }

@@ -61,6 +61,73 @@ export class VMError extends SandboxError {
   }
 }
 
+export class WebAPIError extends SandboxError {
+  public readonly statusCode?: number;
+  public readonly url?: string;
+  public readonly operation?: string;
+
+  constructor(
+    message: string,
+    statusCode?: number,
+    url?: string,
+    operation?: string,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = 'WebAPIError';
+    this.statusCode = statusCode;
+    this.url = url;
+    this.operation = operation;
+  }
+}
+
+export class WebScrapeError extends WebAPIError {
+  constructor(
+    message: string,
+    statusCode?: number,
+    url?: string,
+    options?: ErrorOptions
+  ) {
+    super(message, statusCode, url, 'scrape', options);
+    this.name = 'WebScrapeError';
+  }
+}
+
+export class WebCrawlError extends WebAPIError {
+  constructor(
+    message: string,
+    statusCode?: number,
+    url?: string,
+    options?: ErrorOptions
+  ) {
+    super(message, statusCode, url, 'crawl', options);
+    this.name = 'WebCrawlError';
+  }
+}
+
+export class WebMapError extends WebAPIError {
+  constructor(
+    message: string,
+    statusCode?: number,
+    url?: string,
+    options?: ErrorOptions
+  ) {
+    super(message, statusCode, url, 'map', options);
+    this.name = 'WebMapError';
+  }
+}
+
+export class WebSearchError extends WebAPIError {
+  constructor(
+    message: string,
+    statusCode?: number,
+    options?: ErrorOptions
+  ) {
+    super(message, statusCode, undefined, 'search', options);
+    this.name = 'WebSearchError';
+  }
+}
+
 /**
  * Serializable error format for tool responses
  */

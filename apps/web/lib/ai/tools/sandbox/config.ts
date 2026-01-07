@@ -8,10 +8,10 @@ export const SANDBOX_CONFIG = {
   MAX_CODE_LENGTH: 12_000,
 
   /** Default execution timeout in milliseconds */
-  DEFAULT_TIMEOUT_MS: 1_500,
+  DEFAULT_TIMEOUT_MS: 30_000,
 
-  /** Maximum allowed execution timeout in milliseconds */
-  MAX_TIMEOUT_MS: 5_000,
+  /** Maximum allowed execution timeout in milliseconds (90s for web API operations) */
+  MAX_TIMEOUT_MS: 90_000,
 
   /** Minimum allowed execution timeout in milliseconds */
   MIN_TIMEOUT_MS: 250,
@@ -20,10 +20,10 @@ export const SANDBOX_CONFIG = {
   MAX_LOG_LINES: 120,
 
   /** Maximum number of items in collections (arrays/objects) when serializing */
-  MAX_COLLECTION_ITEMS: 200,
+  MAX_COLLECTION_ITEMS: 500,
 
   /** Maximum depth for object serialization to prevent stack overflow */
-  MAX_SERIALIZATION_DEPTH: 6,
+  MAX_SERIALIZATION_DEPTH: 12,
 
   /** VM memory limit awareness (16 MB soft limit for monitoring) */
   MEMORY_LIMIT_BYTES: 16 * 1024 * 1024,

@@ -6,12 +6,20 @@
 export { SANDBOX_CONFIG, WEATHER_CONFIG } from './config';
 export type { SandboxConfig, WeatherConfig } from './config';
 
+export { WEB_API_CONFIG } from './web-config';
+export type { WebApiConfig } from './web-config';
+
 export {
   SandboxError,
   TimeoutError,
   WeatherAPIError,
   ValidationError,
   VMError,
+  WebAPIError,
+  WebScrapeError,
+  WebCrawlError,
+  WebMapError,
+  WebSearchError,
   serializeError,
   isTimeoutError,
 } from './errors';
@@ -35,3 +43,17 @@ export type {
 
 export { extractLocationHints, getApiMetadata } from './api-bridge';
 export type { LocationHints, ApiMethodMetadata } from './api-bridge';
+
+// Web API types
+export type {
+  WebScrapeParams,
+  WebCrawlParams,
+  WebMapParams,
+  WebSearchParams,
+  WebScrapeResult,
+  WebCrawlResult,
+  WebMapResult,
+  WebSearchResult,
+  ScrapeAction,
+  ScrapeFormat,
+} from './web-types';

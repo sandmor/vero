@@ -17,6 +17,10 @@ import {
 import {
   createWeatherBridge,
   createFetchBridge,
+  createWebScrapeBridge,
+  createWebCrawlBridge,
+  createWebMapBridge,
+  createWebSearchBridge,
   installApiBridges,
   extractLocationHints,
   type LocationHints,
@@ -147,11 +151,25 @@ export async function executeSandboxCode(
     // Install API bridges
     const weatherBridge = createWeatherBridge(deadline);
     const fetchBridge = createFetchBridge(deadline);
-    installApiBridges(vmContext, [weatherBridge, fetchBridge]);
+    const webScrapeBridge = createWebScrapeBridge(deadline);
+    const webCrawlBridge = createWebCrawlBridge(deadline);
+    const webMapBridge = createWebMapBridge(deadline);
+    const webSearchBridge = createWebSearchBridge(deadline);
+
+    const bridges = [
+      weatherBridge,
+      fetchBridge,
+      webScrapeBridge,
+      webCrawlBridge,
+      webMapBridge,
+      webSearchBridge,
+    ];
+
+    installApiBridges(vmContext, bridges);
 
     logger.debug('API bridges installed', {
-      bridgeCount: 2,
-      bridges: [weatherBridge.functionName, fetchBridge.functionName],
+      bridgeCount: bridges.length,
+      bridges: bridges.map((b) => b.functionName),
     });
 
     // Execute bootstrap script
