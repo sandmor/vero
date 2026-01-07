@@ -422,6 +422,12 @@ function transformLastExpressionToReturn(code: string): string {
     return code;
   }
 
+  // Skip if it's an IIFE closing pattern like })() or })();
+  // This pattern indicates the end of an immediately invoked function expression
+  if (/^\}\s*\)\s*\(\s*\)\s*;?\s*$/.test(lastLine)) {
+    return code;
+  }
+
   // Skip if it's already an IIFE or complex expression with chaining
   // Patterns: ()(), (...)(), ()).catch(), ()).then(), etc.
   if (/^\(.*\)\(\)|^\(.*\)\.[a-zA-Z]+\(|^\(.*\)\)\./.test(lastLine)) {
@@ -440,6 +446,14 @@ function transformLastExpressionToReturn(code: string): string {
 }
 
 /**
+ * Strips trailing semicolons from code to convert statements to expressions.
+ * This is needed because `return (code;)` is invalid but `return (code)` is valid.
+ */
+function stripTrailingSemicolons(code: string): string {
+  return code.replace(/;+\s*$/, '');
+}
+
+/**
  * Creates the execution wrapper script for user code.
  * Attempts to evaluate as an expression first (to capture return values),
  * falling back to statement execution with auto-return transformation.
@@ -447,6 +461,8 @@ function transformLastExpressionToReturn(code: string): string {
 export function createExecutionScript(code: string): string {
   const serializedSource = JSON.stringify(code);
   const transformedSource = JSON.stringify(transformLastExpressionToReturn(code));
+  // Strip trailing semicolons for expression evaluation - `return (expr;)` is invalid
+  const expressionCode = JSON.stringify(stripTrailingSemicolons(code));
 
   return [
     '"use strict";',
@@ -454,12 +470,13 @@ export function createExecutionScript(code: string): string {
     '(async function () {',
     '  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;',
     `  const source = ${serializedSource};`,
+    `  const expressionCode = ${expressionCode};`,
     `  const transformedSource = ${transformedSource};`,
-    '  const expressionSource = "return (\\n" + source + "\\n);";',
+    '  const expressionSource = "return (\\n" + expressionCode + "\\n);";',
     '  try {',
     '    let result;',
     '    try {',
-    '      // Try as pure expression first',
+    '      // Try as pure expression first (without trailing semicolons)',
     '      const expressionFn = new AsyncFunction(expressionSource);',
     '      result = await expressionFn.call(globalThis);',
     '    } catch (expressionError) {',
