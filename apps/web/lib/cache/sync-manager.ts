@@ -21,7 +21,6 @@ import {
 type SyncCallback = (options: {
   force: boolean;
   excludeChatIds?: Set<string>;
-  settingsOnly?: boolean;
 }) => Promise<void>;
 
 type SyncRequest = {
@@ -30,11 +29,10 @@ type SyncRequest = {
     | 'periodic'
     | 'manual'
     | 'cache-miss'
-    | 'settings-change'
+    | 'settings-change' // Legacy: kept for backwards compatibility, treated as regular sync
     | 'tab-request';
   chatId?: string;
   timestamp: number;
-  settingsOnly?: boolean;
 };
 
 interface ActiveChatState {
@@ -46,11 +44,16 @@ interface ActiveChatState {
   lastLocalUpdateAt: number;
 }
 
+/**
+ * Options for initializing the SyncManager.
+ *
+ * Design Note: Settings sync is consolidated with regular sync.
+ * The /api/cache/sync endpoint returns settings data (allowedModels, newChatDefaults)
+ * in the metadata field, so there's no need for separate settings-only syncs.
+ */
 type SyncManagerOptions = {
   /** Callback to execute the actual sync operation */
   onSync: SyncCallback;
-  /** Callback when settings need to be refreshed */
-  onSettingsRefresh?: () => Promise<void>;
   /** Callback when cache should be reloaded from storage (for follower tabs) */
   onCacheReload?: () => Promise<void>;
   /** Callback when messages are updated in another tab */
@@ -69,7 +72,6 @@ const SYNC_MANAGER_TAG = '[SyncManager]';
 
 export class SyncManager {
   private onSync: SyncCallback;
-  private onSettingsRefresh?: () => Promise<void>;
   private onCacheReload?: () => Promise<void>;
   private onMessagesUpdated?: (chatId: string, updatedAt: number) => void;
   private debounceMs: number;
@@ -91,10 +93,10 @@ export class SyncManager {
 
   // Tab leader coordination
   private tabLeader: TabLeaderElection | null = null;
+  private electionPromise: Promise<void> | null = null;
 
   constructor(options: SyncManagerOptions) {
     this.onSync = options.onSync;
-    this.onSettingsRefresh = options.onSettingsRefresh;
     this.onCacheReload = options.onCacheReload;
     this.onMessagesUpdated = options.onMessagesUpdated;
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
@@ -115,6 +117,13 @@ export class SyncManager {
 
   /**
    * Initialize tab leader election and register callbacks.
+   *
+   * IMPORTANT: The election promise resolves AFTER leadership is established.
+   * This allows other code to wait via waitForElection() before starting periodic
+   * operations, preventing burst API calls during the ~100ms election window.
+   *
+   * When a tab becomes leader, it immediately requests a manual sync to ensure
+   * it has the latest data. This sync is debounced with any other pending syncs.
    */
   private initializeTabLeader(): void {
     this.tabLeader = initializeTabLeader({
@@ -155,8 +164,8 @@ export class SyncManager {
       debug: this.debug,
     });
 
-    // Start the leader election
-    void this.tabLeader.start();
+    // Start the leader election and store the promise
+    this.electionPromise = this.tabLeader.start();
   }
 
   /**
@@ -164,6 +173,22 @@ export class SyncManager {
    */
   isLeader(): boolean {
     return this.tabLeader?.isLeader() ?? true;
+  }
+
+  /**
+   * Wait for the initial tab leader election to complete.
+   *
+   * CRITICAL: Always call this before starting periodic sync intervals!
+   * This prevents multiple tabs from making API calls during the election window,
+   * which would cause a burst of requests before the leader is determined.
+   *
+   * After this resolves, the tab is either a leader or follower, and the
+   * requestSync() method will correctly delegate to the leader tab if needed.
+   */
+  async waitForElection(): Promise<void> {
+    if (this.electionPromise) {
+      await this.electionPromise;
+    }
   }
 
   /**
@@ -319,6 +344,14 @@ export class SyncManager {
    * Request a cache sync. Requests are debounced and coalesced.
    * Only the leader tab will execute the sync.
    *
+   * Design Notes:
+   * - Settings data is included in every sync via the metadata field,
+   *   so there's no need for separate settings-only syncs.
+   * - Realtime events trigger syncs with echo filtering to avoid
+   *   syncing changes that originated from this tab.
+   * - Non-leader tabs delegate sync requests to the leader via BroadcastChannel.
+   * - Active chats are protected from external updates during generation.
+   *
    * @param source - What triggered the sync request
    * @param chatId - Optional chat ID that triggered the sync (for realtime)
    */
@@ -341,29 +374,6 @@ export class SyncManager {
       source,
       chatId,
       timestamp: Date.now(),
-    });
-
-    this.scheduleSync();
-  }
-
-  /**
-   * Request a settings-only sync.
-   * This is lighter weight than a full sync and only updates metadata.
-   */
-  requestSettingsSync(): void {
-    this.log('Settings sync requested');
-
-    // If not the leader, request the leader to sync
-    if (!this.isLeader()) {
-      this.log('Not leader, delegating settings sync to leader tab');
-      this.tabLeader?.requestSync('settings-change');
-      return;
-    }
-
-    this.pendingRequests.push({
-      source: 'settings-change',
-      timestamp: Date.now(),
-      settingsOnly: true,
     });
 
     this.scheduleSync();
@@ -437,10 +447,6 @@ export class SyncManager {
 
     this.log('Executing sync:', { requestCount: requests.length, force });
 
-    // Check if this is a settings-only sync
-    const isSettingsOnly =
-      requests.length > 0 && requests.every((r) => r.settingsOnly);
-
     // Determine which chats to exclude from sync (protected chats)
     const excludeChatIds = new Set<string>();
 
@@ -460,18 +466,24 @@ export class SyncManager {
     this.isSyncing = true;
     const syncStartTime = new Date().toISOString();
 
+    // Monitoring: Log sync execution in dev environment
+    if (this.debug) {
+      const tabRole = this.isLeader() ? 'LEADER' : 'FOLLOWER';
+      const excludedCount = excludeChatIds.size;
+      // eslint-disable-next-line no-console
+      console.info(
+        `[SYNC-MONITOR] Incremental sync triggered by ${tabRole} tab`,
+        { requestCount: requests.length, excludedChats: excludedCount, force }
+      );
+    }
+
     this.syncPromise = this.onSync({
       force,
       excludeChatIds: excludeChatIds.size > 0 ? excludeChatIds : undefined,
-      settingsOnly: isSettingsOnly,
     })
       .then(() => {
         // Notify other tabs about the completed sync
-        if (isSettingsOnly) {
-          this.notifySettingsUpdated(syncStartTime);
-        } else {
-          this.notifySyncComplete(syncStartTime);
-        }
+        this.notifySyncComplete(syncStartTime);
       })
       .catch((error) => {
         this.log('Sync failed:', error);

@@ -66,6 +66,12 @@ type FetchSettingsResponse = {
 export async function fetchSettings(
   signal?: AbortSignal
 ): Promise<FetchSettingsResponse> {
+  // Monitoring: Log API call in dev environment
+  if (IS_DEV) {
+    // eslint-disable-next-line no-console
+    console.info('[SETTINGS-MONITOR] Fetching /api/cache/settings');
+  }
+
   const response = await fetch('/api/cache/settings', {
     method: 'GET',
     credentials: 'include',

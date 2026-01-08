@@ -22,10 +22,10 @@ function createAlgorithm(iv: Uint8Array, aad?: Uint8Array): AesGcmParams {
   }
   return aad
     ? {
-      name: 'AES-GCM',
-      iv: iv as BufferSource,
-      additionalData: aad as BufferSource,
-    }
+        name: 'AES-GCM',
+        iv: iv as BufferSource,
+        additionalData: aad as BufferSource,
+      }
     : { name: 'AES-GCM', iv: iv as BufferSource };
 }
 
@@ -76,7 +76,7 @@ export async function encryptBytes(
   const algorithm = createAlgorithm(iv, aad);
   const plaintextSource: ArrayBuffer =
     plaintext.byteOffset === 0 &&
-      plaintext.byteLength === plaintext.buffer.byteLength
+    plaintext.byteLength === plaintext.buffer.byteLength
       ? (plaintext.buffer as ArrayBuffer)
       : plaintext.slice().buffer;
   const ciphertextBuffer = await cryptoRef.subtle.encrypt(
@@ -99,7 +99,7 @@ export async function decryptBytes(
   const algorithm = createAlgorithm(envelope.iv, envelope.aad);
   const ciphertextSource: ArrayBuffer =
     envelope.ciphertext.byteOffset === 0 &&
-      envelope.ciphertext.byteLength === envelope.ciphertext.buffer.byteLength
+    envelope.ciphertext.byteLength === envelope.ciphertext.buffer.byteLength
       ? (envelope.ciphertext.buffer as ArrayBuffer)
       : envelope.ciphertext.slice().buffer;
   const plaintextBuffer = await cryptoRef.subtle.decrypt(

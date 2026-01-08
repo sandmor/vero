@@ -46,9 +46,9 @@ const CACHE_METADATA_KEY = 'cache-metadata';
 const CACHE_METADATA_VERSION = 1;
 const SYNC_PAGE_SIZE = 100;
 // Sync interval: how often to check for updates (5 minutes)
+// Note: Incremental sync via /api/cache/sync already includes settings data
+// in the metadata field, so we don't need a separate settings sync.
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
-// Settings sync interval: how often to check for settings updates (2 minutes)
-const SETTINGS_SYNC_INTERVAL_MS = 2 * 60 * 1000;
 
 const manager = getEncryptedCacheManager();
 
@@ -675,10 +675,6 @@ type CacheContextValue = {
    */
   isSyncLeader: () => boolean;
   /**
-   * Request a settings-only refresh.
-   */
-  refreshSettings: () => void;
-  /**
    * Subscribe to message update events from other tabs.
    * Returns an unsubscribe function.
    */
@@ -704,7 +700,6 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   markGenerationEnded: () => {},
   recordLocalChange: () => {},
   isSyncLeader: () => true,
-  refreshSettings: () => {},
   subscribeToMessageUpdates: () => () => {},
 });
 
@@ -754,6 +749,15 @@ async function performIncrementalSync(
   let cursor: string | null = null;
   let hasMore = true;
   let isFirstPage = true;
+
+  // Monitoring: Log sync type in dev environment
+  if (IS_DEV) {
+    const syncType = lastSyncedAt ? 'INCREMENTAL' : 'INITIAL';
+    // eslint-disable-next-line no-console
+    console.info(
+      `[SYNC-MONITOR] Starting ${syncType} sync via /api/cache/sync`
+    );
+  }
 
   while (hasMore) {
     if (signal?.aborted) {
@@ -1213,11 +1217,20 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     [ensureManagerActivated]
   ); // Only depends on ensureManagerActivated (stable)
 
+  /**
+   * Refresh the cache by syncing with the server.
+   *
+   * Note: Settings data (allowedModels, newChatDefaults) are automatically
+   * included in the metadata field of /api/cache/sync responses, so there's
+   * no need for a separate settings sync endpoint call.
+   *
+   * @param options.force - Force a full sync even if cache is valid
+   * @param options.excludeChatIds - Chat IDs to exclude from sync (for active chat protection)
+   */
   const refreshCache = useCallback(
     (options?: {
       force?: boolean;
       excludeChatIds?: Set<string>;
-      settingsOnly?: boolean;
     }): Promise<void> => {
       const currentState = stateRef.current;
       const currentIsLoggedIn = isLoggedInRef.current;
@@ -1226,11 +1239,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         cacheDebug('refreshCache: skipped (user not logged in)');
         return Promise.resolve();
       }
-      if (
-        !options?.force &&
-        !options?.settingsOnly &&
-        currentState.isIntegrityValid
-      ) {
+      if (!options?.force && currentState.isIntegrityValid) {
         cacheDebug('refreshCache: skipped (cache integrity still valid)');
         return Promise.resolve();
       }
@@ -1240,7 +1249,6 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       }
 
       const excludeChatIds = options?.excludeChatIds;
-      const isSettingsOnly = options?.settingsOnly;
 
       const promise = (async () => {
         // Re-read state at start of async operation
@@ -1248,33 +1256,9 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         const qc = queryClientRef.current;
 
         try {
-          if (isSettingsOnly) {
-            // Settings-only sync - just refresh metadata
-            cacheDebug('refreshCache: starting settings-only sync');
-            await ensureManagerActivated();
-
-            const settingsSyncManager = getSettingsSyncManager();
-            const result = await settingsSyncManager.sync({
-              currentMetadata: state.metadata,
-              signal: abortControllerRef.current?.signal,
-              onMetadataUpdate: async (metadata) => {
-                await manager.storeMetadata(CACHE_METADATA_KEY, metadata);
-              },
-              onSettingsChanged: (event: SettingsChangeEvent) => {
-                cacheDebug('Settings changed:', event.changes);
-              },
-            });
-
-            if (result.success && result.hasChanges && result.metadata) {
-              setState((prev) => ({
-                ...prev,
-                metadata: result.metadata,
-              }));
-            }
-
-            return;
-          }
-
+          // Note: /api/cache/sync returns both chat updates AND settings data
+          // (allowedModels, newChatDefaults) in the metadata field, so we get
+          // everything in one efficient incremental sync call.
           cacheDebug('refreshCache: starting incremental sync', {
             forced: Boolean(options?.force),
             priorStatus: state.status,
@@ -1576,11 +1560,8 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     }
 
     const syncManager = initializeSyncManager({
-      onSync: async ({ force, excludeChatIds, settingsOnly }) => {
-        await refreshCacheRef.current({ force, excludeChatIds, settingsOnly });
-      },
-      onSettingsRefresh: async () => {
-        await refreshCacheRef.current({ settingsOnly: true });
+      onSync: async ({ force, excludeChatIds }) => {
+        await refreshCacheRef.current({ force, excludeChatIds });
       },
       onCacheReload: async () => {
         // This is called when another tab completes a sync
@@ -1611,42 +1592,75 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     };
   }, [isLoggedIn, state.status, loadFromCache]);
 
-  // Periodic sync effect - uses SyncManager for coordination
+  /**
+   * Periodic sync effect - coordinates with SyncManager for tab leadership.
+   *
+   * CRITICAL DESIGN DECISIONS:
+   *
+   * 1. Why wait for election?
+   *    We MUST wait for tab leader election to complete before starting the
+   *    periodic sync interval. Without this, all tabs would try to sync during
+   *    the ~100ms election window, causing a burst of API calls.
+   *
+   * 2. Why not check isLeader() before calling requestSync()?
+   *    The requestSync() method already handles leadership internally - if not
+   *    leader, it delegates to the leader tab via BroadcastChannel. Checking
+   *    isLeader() here would be redundant and could introduce race conditions
+   *    during leadership transitions.
+   *
+   * 3. Why is settings sync consolidated here?
+   *    The /api/cache/sync endpoint returns settings data (allowedModels,
+   *    newChatDefaults) in the metadata field of every response, so there's
+   *    no need for a separate /api/cache/settings call. This reduces API load
+   *    compared to having separate sync intervals.
+   *
+   * 4. How does this work with realtime?
+   *    Realtime events (WebSocket) trigger immediate syncs via requestSync(),
+   *    which get debounced and coalesced. This periodic sync is just a fallback
+   *    for when realtime is unavailable or to catch any missed events.
+   */
   useEffect(() => {
     if (!isLoggedIn || state.status !== 'ready') {
       return;
     }
 
-    const intervalId = setInterval(() => {
-      cacheDebug('Periodic sync: requesting through SyncManager');
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
+    // Wait for leader election before starting periodic syncs
+    const startPeriodicSync = async () => {
       const syncManager = getSyncManager();
-      syncManager?.requestSync('periodic');
-    }, SYNC_INTERVAL_MS);
+      if (!syncManager) return;
+
+      try {
+        cacheDebug('Waiting for tab leader election to complete...');
+        await syncManager.waitForElection();
+
+        if (cancelled) return;
+
+        cacheDebug(
+          'Tab leader election complete, starting periodic sync interval'
+        );
+
+        intervalId = setInterval(() => {
+          cacheDebug('Periodic sync: requesting through SyncManager');
+          const sm = getSyncManager();
+          sm?.requestSync('periodic');
+        }, SYNC_INTERVAL_MS);
+      } catch (error) {
+        console.warn('Error waiting for tab leader election:', error);
+      }
+    };
+
+    void startPeriodicSync();
 
     return () => {
-      clearInterval(intervalId);
+      cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
     };
   }, [isLoggedIn, state.status]); // Only re-setup interval when login or ready state changes
-
-  // Periodic settings sync effect - more frequent than full sync
-  useEffect(() => {
-    if (!isLoggedIn || state.status !== 'ready') {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      const syncManager = getSyncManager();
-      // Only the leader tab should perform settings sync
-      if (syncManager?.isLeader()) {
-        cacheDebug('Periodic settings sync: requesting through SyncManager');
-        syncManager.requestSettingsSync();
-      }
-    }, SETTINGS_SYNC_INTERVAL_MS);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [isLoggedIn, state.status]);
 
   // Sync manager method wrappers
   const setActiveChat = useCallback((chatId: string | null) => {
@@ -1672,11 +1686,6 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   const isSyncLeader = useCallback(() => {
     const syncManager = getSyncManager();
     return syncManager?.isLeader() ?? true;
-  }, []);
-
-  const refreshSettings = useCallback(() => {
-    const syncManager = getSyncManager();
-    syncManager?.requestSettingsSync();
   }, []);
 
   // Subscribe to message update events from other tabs
@@ -1865,7 +1874,6 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       markGenerationEnded,
       recordLocalChange,
       isSyncLeader,
-      refreshSettings,
       subscribeToMessageUpdates,
     }),
     [
@@ -1885,7 +1893,6 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       markGenerationEnded,
       recordLocalChange,
       isSyncLeader,
-      refreshSettings,
       subscribeToMessageUpdates,
     ]
   );

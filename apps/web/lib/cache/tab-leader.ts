@@ -103,7 +103,19 @@ export class TabLeaderElection {
 
   /**
    * Start the leader election process.
-   * Should be called when the cache system initializes.
+   *
+   * IMPORTANT: This promise resolves AFTER leadership is established (either as
+   * leader or follower). Callers should await this before starting periodic operations
+   * to prevent burst API calls during the election window.
+   *
+   * The election process:
+   * 1. Check for existing lease in localStorage
+   * 2. If lease exists and valid → become follower (or reclaim if it's ours)
+   * 3. If no valid lease → start election (~100ms delay for other tabs to respond)
+   * 4. Acquire lease and become leader, or become follower if another tab won
+   * 5. Promise resolves once leadership state is determined
+   *
+   * @returns Promise that resolves when election is complete
    */
   async start(): Promise<void> {
     if (this.destroyed) return;
@@ -137,6 +149,9 @@ export class TabLeaderElection {
       // No valid lease, start election
       await this.startElection();
     }
+
+    // Election complete - tab is now either leader or follower
+    this.log('Tab leader election complete, state:', this.state);
   }
 
   /**
