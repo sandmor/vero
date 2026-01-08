@@ -63,7 +63,7 @@ Operational management interface (in progress / evolving):
 - **Model Capabilities**: View persisted model capability matrix & usage (referenced by tiers)
 - **Housekeeping Tasks**: Planned actions (sync OpenRouter models, prune unused capabilities)
 
-## Client-Side Caching
+## Client-Side Caching & Edge Security
 
 To enhance performance and provide a more fluid user experience, Virid Chat implements an encrypted client-side caching mechanism.
 
@@ -71,6 +71,7 @@ To enhance performance and provide a more fluid user experience, Virid Chat impl
 
 - **Fast Initial Load**: Chat history and messages are loaded from a local IndexedDB cache, making navigation between chats nearly instantaneous.
 - **Cache Encryption**: All cached data is encrypted using AES-GCM via the Web Crypto API. The encryption key is derived from a server-side secret and a stable user session identifier, ensuring that each user's data is secure and private.
+- **Hybrid Edge Architecture**: Key derivation logic is "hoisted" to `@virid/shared` and runs on a **Cloudflare Worker** at the Edge for minimum latency. If the Worker is unavailable, the Next.js backend serves as a seamless fallback using the exact same logic.
 - **Cache Synchronization**: The client-side cache is kept in sync with the server. The application intelligently refreshes the cache in the background to ensure data consistency.
 - **Optimistic Updates**: The UI updates optimistically when new messages are sent or chats are created, providing a responsive feel.
 
@@ -200,6 +201,7 @@ A comprehensive operational dashboard providing real-time insights:
 - PostgreSQL primary storage (Neon friendly)
 - Redis (optional) future caching / ephemeral coordination; current rate limiting uses PostgreSQL
 - Vercel Blob for file attachments
+- **Cloudflare Workers** (Edge caching & auth logic)
 
 ### Development & Deployment
 
@@ -232,7 +234,9 @@ The project is structured as a monorepo with:
 
 - `apps/web` - Main Next.js application
 - `apps/realtime-gateway` - WebSocket gateway for chat notifications
+- `apps/cache-worker` - Cloudflare Worker for edge encryption
 - `packages/db` - Shared database package (`@virid/db`)
+- `packages/shared` - Shared isomorphic logic (`@virid/shared`)
 
 The root `package.json` provides convenience scripts to run commands across packages.
 
@@ -244,6 +248,7 @@ bun install
 # Web app: copy apps/web/.env.example to apps/web/.env.local (or .env) and fill in values.
 # Realtime gateway (optional): copy apps/realtime-gateway/.env.example to apps/realtime-gateway/.env.
 # Database tools: create packages/db/.env with DATABASE_URL for Prisma CLI.
+# Worker secrets: create apps/cache-worker/.dev.vars
 
 # 3. (First time) Push schema & generate client
 bun run db:push      # Applies schema without creating a migration (dev convenience)
@@ -262,6 +267,11 @@ bun run dev
 cd apps/realtime-gateway
 bun install
 bun run start:dev
+
+# 6. (Optional) Start Cache Worker
+# Runs the edge worker locally on port 8787
+cd apps/cache-worker
+bunx wrangler dev
 ```
 
 Navigate to http://localhost:3000.
@@ -290,23 +300,24 @@ Create `apps/web/.env.local` (or `.env`) for the Next app and ensure `DATABASE_U
 
 #### Optional
 
-| Variable                           | Purpose                                                                       |
-| ---------------------------------- | ----------------------------------------------------------------------------- |
-| `GUEST_SECRET`                     | Dedicated guest cookie signing secret; falls back to `AUTH_SECRET` if omitted |
-| `OPENAI_API_KEY`                   | Direct OpenAI API access (bypassing OpenRouter)                               |
-| `GOOGLE_GENERATIVE_AI_API_KEY`     | Direct Gemini API access                                                      |
-| `GOOGLE_API_KEY`                   | Alternate env name for direct Gemini access (either works)                    |
-| `DEFAULT_CHAT_MODEL`               | Default model for new chats and fallback                                      |
-| `TITLE_GENERATION_MODEL`           | Override model for automatic chat title generation                            |
-| `ARTIFACT_GENERATION_MODEL`        | Override model for artifact generation flows                                  |
-| `GUEST_MODELS`                     | Comma-separated fallback guest tier model list                                |
-| `REGULAR_MODELS`                   | Comma-separated fallback regular tier model list                              |
-| `REDIS_URL`                        | (Pluggable) Redis caching / future rate control                               |
-| `BLOB_READ_WRITE_TOKEN`            | Vercel Blob storage token                                                     |
-| `ADMIN_USER_ID`                    | Hard admin (takes precedence over email)                                      |
-| `ADMIN_EMAIL`                      | Fallback admin identity (bootstrap)                                           |
-| `NEXT_PUBLIC_DISABLE_SOCIAL_AUTH`  | Set to 1 to hide social auth buttons; omit or 0 to allow                      |
-| `NEXT_PUBLIC_REALTIME_GATEWAY_URL` | WebSocket URL for realtime updates (enable only when the gateway is running)  |
+| Variable                           | Purpose                                                                                                    |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `GUEST_SECRET`                     | Dedicated guest cookie signing secret; falls back to `AUTH_SECRET` if omitted                              |
+| `OPENAI_API_KEY`                   | Direct OpenAI API access (bypassing OpenRouter)                                                            |
+| `GOOGLE_GENERATIVE_AI_API_KEY`     | Direct Gemini API access                                                                                   |
+| `GOOGLE_API_KEY`                   | Alternate env name for direct Gemini access (either works)                                                 |
+| `DEFAULT_CHAT_MODEL`               | Default model for new chats and fallback                                                                   |
+| `TITLE_GENERATION_MODEL`           | Override model for automatic chat title generation                                                         |
+| `ARTIFACT_GENERATION_MODEL`        | Override model for artifact generation flows                                                               |
+| `GUEST_MODELS`                     | Comma-separated fallback guest tier model list                                                             |
+| `REGULAR_MODELS`                   | Comma-separated fallback regular tier model list                                                           |
+| `REDIS_URL`                        | (Pluggable) Redis caching / future rate control                                                            |
+| `BLOB_READ_WRITE_TOKEN`            | Vercel Blob storage token                                                                                  |
+| `ADMIN_USER_ID`                    | Hard admin (takes precedence over email)                                                                   |
+| `ADMIN_EMAIL`                      | Fallback admin identity (bootstrap)                                                                        |
+| `NEXT_PUBLIC_DISABLE_SOCIAL_AUTH`  | Set to 1 to hide social auth buttons; omit or 0 to allow                                                   |
+| `NEXT_PUBLIC_REALTIME_GATEWAY_URL` | WebSocket URL for realtime updates (enable only when the gateway is running)                               |
+| `NEXT_PUBLIC_CACHE_ENCRYPTION_URL` | URL of the Cloudflare Cache Worker (e.g., `http://localhost:8787`). If omitted, falls back to Next.js API. |
 
 #### Realtime Gateway (`apps/realtime-gateway/.env`) — optional service
 
@@ -316,6 +327,16 @@ Create `apps/web/.env.local` (or `.env`) for the Next app and ensure `DATABASE_U
 | `DATABASE_URL_UNPOOLED` | **Unpooled** PostgreSQL connection string for `LISTEN/NOTIFY` |
 | `CLERK_SECRET_KEY`      | Clerk Back-end API Key for token verification                 |
 | `CORS_ORIGINS`          | Allowed origins (e.g. `http://localhost:3000`)                |
+
+#### Cache Worker (`apps/cache-worker/.dev.vars`) — optional edge service
+
+| Variable                  | Purpose                                                                  |
+| :------------------------ | :----------------------------------------------------------------------- |
+| `CACHE_ENCRYPTION_SECRET` | Must match the web app's secret for valid decryption                     |
+| `GUEST_SECRET`            | Must match web app for guest cookie verification                         |
+| `CLERK_SECRET_KEY`        | For verifying Clerk sessions at the edge                                 |
+| `CLERK_PUBLISHABLE_KEY`   | Required for Clerk client initialization                                 |
+| `ALLOWED_ORIGINS`         | Comma-separated list of origins (e.g., `http://localhost:3000`) for CORS |
 
 ### Database Setup
 
