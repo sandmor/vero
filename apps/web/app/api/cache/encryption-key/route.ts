@@ -1,34 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { hkdfSync } from 'crypto';
 import { readGuestSession } from '@/lib/auth/guest';
-
-const KEY_LENGTH_BYTES = 32;
-const HKDF_DIGEST = 'sha256';
-const HKDF_INFO = Buffer.from('virid-cache-encryption', 'utf8');
+import { deriveEncryptionKey, deriveTestingKey } from '@virid/shared/encryption';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function getSecretKey(): Buffer | null {
+function getSecretKey(): string | null {
   const secret = process.env.CACHE_ENCRYPTION_SECRET;
   if (!secret) {
     return null;
   }
-  return Buffer.from(secret, 'base64');
-}
-
-function deriveKey(stableId: string, secret: Buffer): string {
-  const ikm = Buffer.from(stableId, 'utf8');
-  const salt = secret;
-  const derived = hkdfSync(HKDF_DIGEST, ikm, salt, HKDF_INFO, KEY_LENGTH_BYTES);
-  return Buffer.from(derived).toString('base64');
-}
-
-function e2eKey(): string {
-  const sessionSeed = process.env.APP_E2E_SESSION_ID ?? 'virid-e2e-session';
-  const secret = process.env.APP_E2E_SECRET ?? 'virid-e2e-secret';
-  return deriveKey(sessionSeed, Buffer.from(secret, 'utf8'));
+  return secret;
 }
 
 async function resolveStableSessionId(): Promise<{
@@ -83,8 +66,13 @@ function unauthorizedResponse(): NextResponse {
 }
 
 export async function POST(_request: NextRequest) {
+  // E2E Testing Path
   if (process.env.APP_E2E === '1') {
-    const key = e2eKey();
+    const sessionSeed = process.env.APP_E2E_SESSION_ID ?? 'virid-e2e-session';
+    const secret = process.env.APP_E2E_SECRET ?? 'virid-e2e-secret';
+    
+    const key = deriveTestingKey(sessionSeed, secret);
+    
     return NextResponse.json(
       { key },
       {
@@ -95,6 +83,7 @@ export async function POST(_request: NextRequest) {
     );
   }
 
+  // Production/Development Path
   const secret = getSecretKey();
   if (!secret) {
     console.error('CACHE_ENCRYPTION_SECRET is not configured.');
@@ -111,7 +100,7 @@ export async function POST(_request: NextRequest) {
   }
 
   try {
-    const key = deriveKey(stableId, secret);
+    const key = deriveEncryptionKey(stableId, secret);
 
     return NextResponse.json(
       { key },

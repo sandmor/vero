@@ -1,0 +1,22 @@
+{
+  "name": "@virid/shared",
+  "version": "0.1.0",
+  "module": "index.ts",
+  "type": "module",
+  "exports": {
+    "./encryption": "./src/encryption.ts",
+    "./auth": "./src/auth.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "dependencies": {
+    "@clerk/backend": "^2.29.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

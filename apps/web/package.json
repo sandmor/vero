@@ -63,6 +63,7 @@
     "@vercel/functions": "^3.3.4",
     "@vercel/otel": "^2.1.0",
     "@virid/db": "workspace:*",
+    "@virid/shared": "workspace:*",
     "@xstate/react": "^6.0.0",
     "ai": "^6.0.3",
     "babel-plugin-react-compiler": "^1.0.0",
