@@ -1,0 +1,15 @@
+{
+  "name": "cache-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@clerk/backend": "^2.29.1",
+    "@virid/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260108.0",
+    "typescript": "^5",
+    "wrangler": "^4.58.0"
+  }
+}

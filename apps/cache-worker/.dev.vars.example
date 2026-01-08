@@ -1,0 +1,14 @@
+# Required for cache encryption key derivation
+CACHE_ENCRYPTION_SECRET=your_base64_secret_here
+
+# Required for guest session verification (fallback to AUTH_SECRET)
+GUEST_SECRET=your_guest_secret_here
+
+# Required for Clerk authentication at the edge
+CLERK_SECRET_KEY=your_clerk_secret_key_here
+CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key_here
+
+# Comma-separated list of origins allowed to call this worker
+# Local Dev: http://localhost:3000
+# Prod: https://mydomain.com,https://www.mydomain.com
+ALLOWED_ORIGINS=http://localhost:3000

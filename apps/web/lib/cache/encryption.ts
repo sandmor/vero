@@ -131,9 +131,13 @@ export async function decryptJson<T>(
 export async function fetchEncryptionKey(
   signal?: AbortSignal
 ): Promise<{ cryptoKey: CryptoKey; base64Key: string }> {
-  const response = await fetch('/api/cache/encryption-key', {
+  const url =
+    process.env.NEXT_PUBLIC_CACHE_ENCRYPTION_URL || '/api/cache/encryption-key';
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     signal,
   });
 
