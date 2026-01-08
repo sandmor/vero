@@ -34,12 +34,15 @@ export async function createGuestSession(maxAgeSeconds = 60 * 60 * 24) {
   const json = JSON.stringify(payload);
   const signature = signGuestSession(json, getSecret());
   const jar = await cookies();
+  const domain = process.env.COOKIE_DOMAIN;
+
   jar.set(COOKIE_NAME, Buffer.from(json).toString('base64') + '.' + signature, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
     maxAge: maxAgeSeconds,
     secure: process.env.NODE_ENV === 'production',
+    domain,
   });
   return payload;
 }
@@ -64,5 +67,7 @@ export async function readGuestSession(): Promise<GuestSessionPayload | null> {
 
 export async function clearGuestSession() {
   const jar = await cookies();
-  jar.delete(COOKIE_NAME);
+  const domain = process.env.COOKIE_DOMAIN;
+  // Note: 'path' and 'domain' must match how it was set for deletion to work
+  jar.delete({ name: COOKIE_NAME, path: '/', domain });
 }
