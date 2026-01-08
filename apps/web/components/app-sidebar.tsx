@@ -13,6 +13,7 @@ import {
   SidebarMenu,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { Logo } from '@/components/logo';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { useMultiSelection } from '@/hooks/use-multi-selection';
 import { useAppSession } from '@/hooks/use-app-session';
@@ -61,13 +62,14 @@ export function AppSidebar() {
         <SidebarMenu>
           <div className="flex flex-row items-center justify-between">
             <Link
-              className="flex flex-row items-center gap-3"
+              className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-muted"
               href="/"
               onClick={() => {
                 setOpenMobile(false);
               }}
             >
-              <span className="cursor-pointer rounded-md px-2 font-semibold text-lg hover:bg-muted">
+              <Logo size={32} variant="glyph" />
+              <span className="whitespace-nowrap font-semibold text-lg">
                 Virid Chat
               </span>
             </Link>

@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useClerk, useAuth } from '@clerk/nextjs';
-import { Loader } from 'lucide-react';
+import { Logo } from '@/components/logo';
 
 // Generic OAuth callback landing page. Clerk will redirect here first, then to redirectUrlComplete.
 // We still attempt a defensive redirect if a session is already present but Clerk didn't auto-forward.
@@ -23,7 +23,7 @@ export default function SSOCallbackPage() {
   return (
     <div className="flex h-dvh w-screen items-center justify-center">
       <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground">
-        <Loader />
+        <Logo size={64} className="animate-pulse" />
         <p>Finishing sign-in with Google…</p>
         {!sessionId && (
           <button
