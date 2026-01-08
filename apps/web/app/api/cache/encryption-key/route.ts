@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { readGuestSession } from '@/lib/auth/guest';
-import { deriveEncryptionKey, deriveTestingKey } from '@virid/shared/encryption';
+import {
+  deriveEncryptionKey,
+  deriveTestingKey,
+} from '@virid/shared/encryption';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,9 +73,9 @@ export async function POST(_request: NextRequest) {
   if (process.env.APP_E2E === '1') {
     const sessionSeed = process.env.APP_E2E_SESSION_ID ?? 'virid-e2e-session';
     const secret = process.env.APP_E2E_SECRET ?? 'virid-e2e-secret';
-    
+
     const key = deriveTestingKey(sessionSeed, secret);
-    
+
     return NextResponse.json(
       { key },
       {

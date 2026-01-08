@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth/admin';
-import { getUsageStats, getUsageStatsForDateRange, TimeRange } from '@/lib/admin/analytics';
+import {
+  getUsageStats,
+  getUsageStatsForDateRange,
+  TimeRange,
+} from '@/lib/admin/analytics';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +27,10 @@ export async function GET(req: NextRequest) {
       const to = new Date(toParam);
 
       if (isNaN(from.getTime()) || isNaN(to.getTime())) {
-        return NextResponse.json({ error: 'Invalid date format' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'Invalid date format' },
+          { status: 400 }
+        );
       }
 
       stats = await getUsageStatsForDateRange(from, to);
@@ -36,6 +43,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(stats);
   } catch (error) {
     console.error('Admin stats error:', error);
-    return NextResponse.json({ error: 'Unauthorized or Server Error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Unauthorized or Server Error' },
+      { status: 500 }
+    );
   }
 }

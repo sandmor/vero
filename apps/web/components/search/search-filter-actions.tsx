@@ -102,7 +102,10 @@ export function SearchFilterActions({
                   size="icon"
                   className={cn(
                     'h-7 w-7',
-                    (sortBy !== 'relevance' || dateFilter || searchScope === 'titles') && 'text-primary'
+                    (sortBy !== 'relevance' ||
+                      dateFilter ||
+                      searchScope === 'titles') &&
+                      'text-primary'
                   )}
                 >
                   <Settings className="h-3.5 w-3.5" />
@@ -183,8 +186,8 @@ export function SearchFilterActions({
                     <span>{preset.label}</span>
                     {dateFilter?.after?.getTime() ===
                       preset.getFilter().after?.getTime() && (
-                        <Check className="ml-auto h-4 w-4" />
-                      )}
+                      <Check className="ml-auto h-4 w-4" />
+                    )}
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
@@ -328,7 +331,7 @@ export function SearchFilterActions({
                 className={cn(
                   'w-full text-left px-2 py-1.5 text-sm rounded-sm hover:bg-accent',
                   dateFilter?.after?.getTime() ===
-                  preset.getFilter().after?.getTime() && 'bg-accent'
+                    preset.getFilter().after?.getTime() && 'bg-accent'
                 )}
               >
                 {preset.label}

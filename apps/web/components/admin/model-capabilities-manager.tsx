@@ -215,7 +215,10 @@ export function ModelCapabilitiesManager({
       const modelId = entry.suggestedModelId || entry.providerModelId;
 
       if (!modelId) {
-        setStatusMessage({ type: 'error', message: 'Catalog entry missing id' });
+        setStatusMessage({
+          type: 'error',
+          message: 'Catalog entry missing id',
+        });
         return;
       }
 

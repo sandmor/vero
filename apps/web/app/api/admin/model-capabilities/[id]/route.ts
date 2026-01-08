@@ -16,7 +16,8 @@ export async function PUT(
   try {
     await requireAdmin();
     const body = await req.json();
-    const { name, creator, supportsTools, supportedFormats, maxOutputTokens } = body;
+    const { name, creator, supportsTools, supportedFormats, maxOutputTokens } =
+      body;
 
     const existing = await prisma.model.findUnique({ where: { id } });
     if (!existing) {
@@ -31,7 +32,9 @@ export async function PUT(
       supportedFormats:
         supportedFormats ?? (existing.supportedFormats as ModelFormat[]),
       maxOutputTokens:
-        maxOutputTokens !== undefined ? maxOutputTokens : existing.maxOutputTokens,
+        maxOutputTokens !== undefined
+          ? maxOutputTokens
+          : existing.maxOutputTokens,
     });
 
     return NextResponse.json({ ok: true });

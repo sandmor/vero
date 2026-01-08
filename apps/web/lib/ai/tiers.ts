@@ -56,7 +56,10 @@ const FALLBACK_TIERS: Record<UserType, TierRecord> = {
 // 60s TTL simple cache; reuse provider TTL constant if desired later
 const TTL_MS = 60_000;
 let cacheStore: Record<string, { value: TierRecord; fetchedAt: number }> = {};
-let cacheStoreWithModels: Record<string, { value: TierRecordWithModels; fetchedAt: number }> = {};
+let cacheStoreWithModels: Record<
+  string,
+  { value: TierRecordWithModels; fetchedAt: number }
+> = {};
 
 async function fetchTier(id: string): Promise<TierRecord> {
   const row = await prisma.tier
@@ -99,7 +102,8 @@ async function fetchTier(id: string): Promise<TierRecord> {
     bucketCapacity:
       row.bucketCapacity ?? FALLBACK_TIERS[id as UserType].bucketCapacity,
     bucketRefillAmount:
-      row.bucketRefillAmount ?? FALLBACK_TIERS[id as UserType].bucketRefillAmount,
+      row.bucketRefillAmount ??
+      FALLBACK_TIERS[id as UserType].bucketRefillAmount,
     bucketRefillIntervalSeconds:
       row.bucketRefillIntervalSeconds ??
       FALLBACK_TIERS[id as UserType].bucketRefillIntervalSeconds,
@@ -165,7 +169,8 @@ async function fetchTierWithModels(id: string): Promise<TierRecordWithModels> {
     bucketCapacity:
       row.bucketCapacity ?? FALLBACK_TIERS[id as UserType].bucketCapacity,
     bucketRefillAmount:
-      row.bucketRefillAmount ?? FALLBACK_TIERS[id as UserType].bucketRefillAmount,
+      row.bucketRefillAmount ??
+      FALLBACK_TIERS[id as UserType].bucketRefillAmount,
     bucketRefillIntervalSeconds:
       row.bucketRefillIntervalSeconds ??
       FALLBACK_TIERS[id as UserType].bucketRefillIntervalSeconds,
@@ -185,7 +190,9 @@ export async function getTier(id: string): Promise<TierRecord> {
 /**
  * Get a tier with full model capabilities included (cached)
  */
-export async function getTierWithModels(id: string): Promise<TierRecordWithModels> {
+export async function getTierWithModels(
+  id: string
+): Promise<TierRecordWithModels> {
   const now = Date.now();
   const existing = cacheStoreWithModels[id];
   if (existing && now - existing.fetchedAt < TTL_MS) return existing.value;

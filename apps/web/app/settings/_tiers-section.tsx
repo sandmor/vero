@@ -1,10 +1,21 @@
 import { CatalogRefreshButton } from '@/components/admin/catalog-refresh-button';
-import { TierEditor, type TierActionState } from '@/components/admin/tier-editor';
-import { ensureModelCapabilities, upsertModel, upsertModelProvider } from '@/lib/ai/model-capabilities';
+import {
+  TierEditor,
+  type TierActionState,
+} from '@/components/admin/tier-editor';
+import {
+  ensureModelCapabilities,
+  upsertModel,
+  upsertModelProvider,
+} from '@/lib/ai/model-capabilities';
 import { getTierWithModels, invalidateTierCache } from '@/lib/ai/tiers';
 import { prisma, PrismaClient } from '@virid/db';
 import { revalidatePath } from 'next/cache';
-import type { CatalogEntry, ModelFormat, ModelPricing } from '@/lib/ai/model-capabilities/types';
+import type {
+  CatalogEntry,
+  ModelFormat,
+  ModelPricing,
+} from '@/lib/ai/model-capabilities/types';
 import { parseModelId } from '@/lib/ai/model-id';
 
 // Transaction client type - using PrismaClient directly for proper type inference

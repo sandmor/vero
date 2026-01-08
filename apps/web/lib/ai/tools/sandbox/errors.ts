@@ -118,11 +118,7 @@ export class WebMapError extends WebAPIError {
 }
 
 export class WebSearchError extends WebAPIError {
-  constructor(
-    message: string,
-    statusCode?: number,
-    options?: ErrorOptions
-  ) {
+  constructor(message: string, statusCode?: number, options?: ErrorOptions) {
     super(message, statusCode, undefined, 'search', options);
     this.name = 'WebSearchError';
   }

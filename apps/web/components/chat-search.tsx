@@ -115,7 +115,8 @@ export function ChatSearch({
   // Determine if search should be expanded (focused, has query, or has active filters)
   // Only expand after mounted to prevent hydration flash
   const shouldExpand =
-    isMounted && (isExpanded || showResults || hasActiveFilters || searchScope === 'titles');
+    isMounted &&
+    (isExpanded || showResults || hasActiveFilters || searchScope === 'titles');
 
   // Handle click outside to collapse
   useEffect(() => {
@@ -139,7 +140,14 @@ export function ChatSearch({
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [query, hasActiveFilters, searchScope, isModalOpen, isDropdownOpen, isPopoverOpen]);
+  }, [
+    query,
+    hasActiveFilters,
+    searchScope,
+    isModalOpen,
+    isDropdownOpen,
+    isPopoverOpen,
+  ]);
 
   return (
     <>
@@ -245,56 +253,60 @@ export function ChatSearch({
 
             {/* Active filters - only show when expanded and has filters */}
             <AnimatePresence>
-              {shouldExpand && (hasActiveFilters || searchScope === 'titles') && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.15, ease: 'easeOut' }}
-                >
-                  <SearchActiveFilters
-                    dateFilter={dateFilter}
-                    sortBy={sortBy}
-                    searchScope={searchScope}
-                    onClearDate={() => setDateFilter(null)}
-                    onResetSort={() => setSortBy('relevance')}
-                    onResetScope={() => setSearchScope('content')}
-                  />
-                </motion.div>
-              )}
+              {shouldExpand &&
+                (hasActiveFilters || searchScope === 'titles') && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                  >
+                    <SearchActiveFilters
+                      dateFilter={dateFilter}
+                      sortBy={sortBy}
+                      searchScope={searchScope}
+                      onClearDate={() => setDateFilter(null)}
+                      onResetSort={() => setSortBy('relevance')}
+                      onResetScope={() => setSearchScope('content')}
+                    />
+                  </motion.div>
+                )}
             </AnimatePresence>
 
             {/* Search tips - shown when expanded but no active search */}
             <AnimatePresence>
-              {shouldExpand && !showResults && !hasActiveFilters && searchScope !== 'titles' && (
-                <motion.div
-                  className="text-xs text-muted-foreground space-y-1 px-1 overflow-hidden"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                >
-                  <div className="flex justify-between items-center">
-                    <p className="font-medium">Search tips:</p>
-                    <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded border">
-                      ⌘K
-                    </span>
-                  </div>
-                  <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                    <li>
-                      <code className="bg-muted px-1 rounded">
-                        &quot;exact phrase&quot;
-                      </code>{' '}
-                      for exact matches
-                    </li>
-                    <li>
-                      <code className="bg-muted px-1 rounded">-exclude</code> to
-                      exclude terms
-                    </li>
-                    <li>Use filters for date ranges</li>
-                  </ul>
-                </motion.div>
-              )}
+              {shouldExpand &&
+                !showResults &&
+                !hasActiveFilters &&
+                searchScope !== 'titles' && (
+                  <motion.div
+                    className="text-xs text-muted-foreground space-y-1 px-1 overflow-hidden"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                  >
+                    <div className="flex justify-between items-center">
+                      <p className="font-medium">Search tips:</p>
+                      <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded border">
+                        ⌘K
+                      </span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                      <li>
+                        <code className="bg-muted px-1 rounded">
+                          &quot;exact phrase&quot;
+                        </code>{' '}
+                        for exact matches
+                      </li>
+                      <li>
+                        <code className="bg-muted px-1 rounded">-exclude</code>{' '}
+                        to exclude terms
+                      </li>
+                      <li>Use filters for date ranges</li>
+                    </ul>
+                  </motion.div>
+                )}
             </AnimatePresence>
 
             {/* Cache status messages */}

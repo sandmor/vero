@@ -10,7 +10,10 @@ type SyncResponse = {
   synced: number;
   removed?: number;
   errors?: string[];
-  details?: Record<string, { synced: number; removed?: number; errors: string[] }>;
+  details?: Record<
+    string,
+    { synced: number; removed?: number; errors: string[] }
+  >;
 };
 
 export function useManagedModels() {
@@ -206,10 +209,7 @@ export function useCatalogSync() {
   const queryClient = useQueryClient();
 
   const syncCatalog = useMutation({
-    mutationFn: async (data: {
-      source: SyncSource;
-      provider?: string;
-    }) => {
+    mutationFn: async (data: { source: SyncSource; provider?: string }) => {
       const res = await fetch('/api/admin/model-capabilities/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

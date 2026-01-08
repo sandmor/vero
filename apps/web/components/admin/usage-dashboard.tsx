@@ -43,7 +43,11 @@ import {
   ProviderUsageWidget,
   BYOKWidget,
 } from './analytics/widgets';
-import { ModelStatsTable, UserStatsTable, RecentActivityTable } from './analytics/data-tables';
+import {
+  ModelStatsTable,
+  UserStatsTable,
+  RecentActivityTable,
+} from './analytics/data-tables';
 import { formatCost, formatTokens, formatNumber } from './analytics/charts';
 import { cn } from '@/lib/utils';
 
@@ -81,24 +85,30 @@ interface StatsResponse {
 }
 
 export function UsageDashboard() {
-  const [dateRange, setDateRange] = useState<DateRangeValue>(getDefaultDateRange);
+  const [dateRange, setDateRange] =
+    useState<DateRangeValue>(getDefaultDateRange);
   const [activeTab, setActiveTab] = useState('overview');
   const { config, updateWidget } = useDashboardConfig();
 
   // Fetch data with date range
-  const { data, isLoading, isError, refetch, isFetching } = useQuery<StatsResponse>({
-    queryKey: ['admin-stats', dateRange.from.toISOString(), dateRange.to.toISOString()],
-    queryFn: async () => {
-      const params = dateRangeToParams(dateRange);
-      const res = await fetch(
-        `/api/admin/stats?from=${encodeURIComponent(params.from)}&to=${encodeURIComponent(params.to)}`
-      );
-      if (!res.ok) throw new Error('Failed to fetch stats');
-      return res.json();
-    },
-    staleTime: 60000,
-    refetchOnWindowFocus: false,
-  });
+  const { data, isLoading, isError, refetch, isFetching } =
+    useQuery<StatsResponse>({
+      queryKey: [
+        'admin-stats',
+        dateRange.from.toISOString(),
+        dateRange.to.toISOString(),
+      ],
+      queryFn: async () => {
+        const params = dateRangeToParams(dateRange);
+        const res = await fetch(
+          `/api/admin/stats?from=${encodeURIComponent(params.from)}&to=${encodeURIComponent(params.to)}`
+        );
+        if (!res.ok) throw new Error('Failed to fetch stats');
+        return res.json();
+      },
+      staleTime: 60000,
+      refetchOnWindowFocus: false,
+    });
 
   // Auto refresh
   useEffect(() => {
@@ -190,27 +200,39 @@ ${userStatsCsv}`;
   // Widget update handlers
   const handleMetricChange = useCallback(
     (widgetId: string) => (metric: MetricType) => {
-      updateWidget(widgetId, { settings: { ...config.widgets.find((w) => w.id === widgetId)?.settings, metric } });
+      updateWidget(widgetId, {
+        settings: {
+          ...config.widgets.find((w) => w.id === widgetId)?.settings,
+          metric,
+        },
+      });
     },
     [config.widgets, updateWidget]
   );
 
   const handleChartTypeChange = useCallback(
     (widgetId: string) => (chartType: ChartType) => {
-      updateWidget(widgetId, { settings: { ...config.widgets.find((w) => w.id === widgetId)?.settings, chartType } });
+      updateWidget(widgetId, {
+        settings: {
+          ...config.widgets.find((w) => w.id === widgetId)?.settings,
+          chartType,
+        },
+      });
     },
     [config.widgets, updateWidget]
   );
 
   // Get visible widgets
   const visibleWidgets = useMemo(
-    () => config.widgets.filter((w) => w.visible).sort((a, b) => a.order - b.order),
+    () =>
+      config.widgets.filter((w) => w.visible).sort((a, b) => a.order - b.order),
     [config.widgets]
   );
 
   // Get sparkline data from time series
   const sparklineData = useMemo(() => {
-    if (!data?.dataOverTime) return { requests: [], tokens: [], cost: [], users: [] };
+    if (!data?.dataOverTime)
+      return { requests: [], tokens: [], cost: [], users: [] };
     return {
       requests: data.dataOverTime.map((d) => d.requests),
       tokens: data.dataOverTime.map((d) => d.tokens),
@@ -227,12 +249,18 @@ ${userStatsCsv}`;
     return (
       <div className="flex h-[400px] w-full flex-col items-center justify-center gap-4">
         <div className="text-center">
-          <p className="text-lg font-medium text-red-500">Failed to load usage statistics</p>
+          <p className="text-lg font-medium text-red-500">
+            Failed to load usage statistics
+          </p>
           <p className="text-sm text-muted-foreground mt-1">
             Please try again or check the server logs
           </p>
         </div>
-        <ButtonWithFeedback onClick={() => refetch()} variant="outline" size="sm">
+        <ButtonWithFeedback
+          onClick={() => refetch()}
+          variant="outline"
+          size="sm"
+        >
           <RefreshCcw className="mr-2 h-4 w-4" />
           Retry
         </ButtonWithFeedback>
@@ -240,8 +268,16 @@ ${userStatsCsv}`;
     );
   }
 
-  const { kpi, dataOverTime, modelDistribution, modelStats, providerUsage, userStats, byokBreakdown, recentActivity } =
-    data!;
+  const {
+    kpi,
+    dataOverTime,
+    modelDistribution,
+    modelStats,
+    providerUsage,
+    userStats,
+    byokBreakdown,
+    recentActivity,
+  } = data!;
 
   return (
     <div className="space-y-6">
@@ -254,11 +290,26 @@ ${userStatsCsv}`;
         <DateRangePicker value={dateRange} onChange={setDateRange} />
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCcw className={cn('h-4 w-4', isFetching && 'animate-spin')} />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCcw
+              className={cn('h-4 w-4', isFetching && 'animate-spin')}
+            />
           </Button>
-          <DashboardConfigurator onRefresh={() => refetch()} isRefreshing={isFetching} />
-          <ButtonWithFeedback variant="outline" size="sm" className="h-9" onClick={handleExport}>
+          <DashboardConfigurator
+            onRefresh={() => refetch()}
+            isRefreshing={isFetching}
+          />
+          <ButtonWithFeedback
+            variant="outline"
+            size="sm"
+            className="h-9"
+            onClick={handleExport}
+          >
             <Download className="mr-2 h-4 w-4" />
             Export
           </ButtonWithFeedback>
@@ -341,7 +392,9 @@ ${userStatsCsv}`;
             {visibleWidgets.find((w) => w.id === 'overview-chart') && (
               <div className={getWidgetSizeClass('full')}>
                 <TimeSeriesWidget
-                  widget={visibleWidgets.find((w) => w.id === 'overview-chart')!}
+                  widget={
+                    visibleWidgets.find((w) => w.id === 'overview-chart')!
+                  }
                   data={dataOverTime}
                   onMetricChange={handleMetricChange('overview-chart')}
                   onChartTypeChange={handleChartTypeChange('overview-chart')}
@@ -353,7 +406,9 @@ ${userStatsCsv}`;
             {visibleWidgets.find((w) => w.id === 'token-breakdown') && (
               <div className={getWidgetSizeClass('medium')}>
                 <TokenBreakdownWidget
-                  widget={visibleWidgets.find((w) => w.id === 'token-breakdown')!}
+                  widget={
+                    visibleWidgets.find((w) => w.id === 'token-breakdown')!
+                  }
                   totalTokens={kpi.totalTokens}
                 />
               </div>
@@ -377,7 +432,9 @@ ${userStatsCsv}`;
             {visibleWidgets.find((w) => w.id === 'model-distribution') && (
               <div className={getWidgetSizeClass('medium')}>
                 <ModelDistributionWidget
-                  widget={visibleWidgets.find((w) => w.id === 'model-distribution')!}
+                  widget={
+                    visibleWidgets.find((w) => w.id === 'model-distribution')!
+                  }
                   data={modelDistribution}
                   onMetricChange={handleMetricChange('model-distribution')}
                 />
@@ -388,7 +445,9 @@ ${userStatsCsv}`;
             {visibleWidgets.find((w) => w.id === 'provider-usage') && (
               <div className={getWidgetSizeClass('medium')}>
                 <ProviderUsageWidget
-                  widget={visibleWidgets.find((w) => w.id === 'provider-usage')!}
+                  widget={
+                    visibleWidgets.find((w) => w.id === 'provider-usage')!
+                  }
                   data={providerUsage}
                 />
               </div>
@@ -401,7 +460,8 @@ ${userStatsCsv}`;
                   widget={{
                     ...visibleWidgets.find((w) => w.id === 'cost-over-time')!,
                     settings: {
-                      ...visibleWidgets.find((w) => w.id === 'cost-over-time')!.settings,
+                      ...visibleWidgets.find((w) => w.id === 'cost-over-time')!
+                        .settings,
                       metric: 'cost',
                     },
                   }}

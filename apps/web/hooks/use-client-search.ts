@@ -17,7 +17,10 @@ import {
   type DateFilter,
 } from '@/lib/search/search-utils';
 
-export type { SortOption, HighlightRange } from '@/lib/search/search-index.types';
+export type {
+  SortOption,
+  HighlightRange,
+} from '@/lib/search/search-index.types';
 
 export interface MessageSearchResult {
   id: string;
@@ -303,9 +306,9 @@ export function useClientSearch(
 
     const serializedDateFilter = dateFilter
       ? {
-        after: dateFilter.after?.toISOString(),
-        before: dateFilter.before?.toISOString(),
-      }
+          after: dateFilter.after?.toISOString(),
+          before: dateFilter.before?.toISOString(),
+        }
       : null;
 
     const searchOptions: WorkerSearchOptions = {
@@ -327,10 +330,10 @@ export function useClientSearch(
             const chat = chatMap.get(result.chatId);
             return chat
               ? ({
-                item: chat,
-                score: result.score,
-                matches: [],
-              } as SearchResult<Chat>)
+                  item: chat,
+                  score: result.score,
+                  matches: [],
+                } as SearchResult<Chat>)
               : null;
           })
           .filter(Boolean) as SearchResult<Chat>[];
@@ -454,4 +457,3 @@ export function useClientSearch(
     hasActiveFilters,
   };
 }
-

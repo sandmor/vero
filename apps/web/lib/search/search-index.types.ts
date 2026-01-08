@@ -83,42 +83,46 @@ export type WorkerRequest =
   | { type: 'init'; encryptionKey: string; requestId: string }
   | { type: 'load'; requestId: string }
   | {
-    type: 'sync';
-    chats: IndexableChat[];
-    requestId: string;
-  }
+      type: 'sync';
+      chats: IndexableChat[];
+      requestId: string;
+    }
   | {
-    type: 'search';
-    query: string;
-    options: WorkerSearchOptions;
-    knownChatIds: string[];
-    requestId: string;
-  };
+      type: 'search';
+      query: string;
+      options: WorkerSearchOptions;
+      knownChatIds: string[];
+      requestId: string;
+    };
 
 export type WorkerPayload =
   | { type: 'init'; encryptionKey: string }
   | { type: 'load' }
   | { type: 'sync'; chats: IndexableChat[] }
   | {
-    type: 'search';
-    query: string;
-    options: WorkerSearchOptions;
-    knownChatIds: string[];
-  };
+      type: 'search';
+      query: string;
+      options: WorkerSearchOptions;
+      knownChatIds: string[];
+    };
 
 type WorkerResponseBase = { requestId: string };
 
 export type WorkerResponse =
   | ({ type: 'initialized' } & WorkerResponseBase)
-  | ({ type: 'loaded'; fromStorage?: boolean; chatCount?: number } & WorkerResponseBase)
   | ({
-    type: 'synced';
-    changed: boolean;
-  } & WorkerResponseBase)
+      type: 'loaded';
+      fromStorage?: boolean;
+      chatCount?: number;
+    } & WorkerResponseBase)
   | ({
-    type: 'searchResults';
-    chatResults: WorkerChatResult[];
-    messageResults: WorkerMessageResult[];
-  } & WorkerResponseBase)
+      type: 'synced';
+      changed: boolean;
+    } & WorkerResponseBase)
+  | ({
+      type: 'searchResults';
+      chatResults: WorkerChatResult[];
+      messageResults: WorkerMessageResult[];
+    } & WorkerResponseBase)
   | ({ type: 'keepalive' } & WorkerResponseBase)
   | ({ type: 'error'; message: string } & WorkerResponseBase);

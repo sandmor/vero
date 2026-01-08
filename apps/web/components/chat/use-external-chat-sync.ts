@@ -4,10 +4,10 @@ import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import type { ChatMessage } from '@/lib/types';
 
 type UseExternalChatSyncArgs = {
-    chatId: string;
-    messages: ChatMessage[];
-    setMessages: (fn: (prev: ChatMessage[]) => ChatMessage[]) => void;
-    isStreaming: boolean;
+  chatId: string;
+  messages: ChatMessage[];
+  setMessages: (fn: (prev: ChatMessage[]) => ChatMessage[]) => void;
+  isStreaming: boolean;
 };
 
 /**
@@ -23,71 +23,71 @@ type UseExternalChatSyncArgs = {
  * - Integrates with existing tab-leader election system
  */
 export function useExternalChatSync({
-    chatId,
-    messages,
-    setMessages,
-    isStreaming,
+  chatId,
+  messages,
+  setMessages,
+  isStreaming,
 }: UseExternalChatSyncArgs) {
-    const queryClient = useQueryClient();
-    const { subscribeToMessageUpdates, refreshCache } = useEncryptedCache();
-    const lastLocalUpdateRef = useRef(Date.now());
-    const isStreamingRef = useRef(isStreaming);
-    const chatIdRef = useRef(chatId);
+  const queryClient = useQueryClient();
+  const { subscribeToMessageUpdates, refreshCache } = useEncryptedCache();
+  const lastLocalUpdateRef = useRef(Date.now());
+  const isStreamingRef = useRef(isStreaming);
+  const chatIdRef = useRef(chatId);
 
-    // Keep refs in sync
-    useEffect(() => {
-        isStreamingRef.current = isStreaming;
-    }, [isStreaming]);
+  // Keep refs in sync
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
 
-    useEffect(() => {
-        chatIdRef.current = chatId;
-    }, [chatId]);
+  useEffect(() => {
+    chatIdRef.current = chatId;
+  }, [chatId]);
 
-    // Subscribe to message update events from other tabs
-    useEffect(() => {
-        if (!chatId) {
-            return;
-        }
+  // Subscribe to message update events from other tabs
+  useEffect(() => {
+    if (!chatId) {
+      return;
+    }
 
-        const handleMessagesUpdated = async (
-            updatedChatId: string,
-            updatedAt: number
-        ) => {
-            // Only handle updates for our chat
-            if (updatedChatId !== chatIdRef.current) {
-                return;
-            }
+    const handleMessagesUpdated = async (
+      updatedChatId: string,
+      updatedAt: number
+    ) => {
+      // Only handle updates for our chat
+      if (updatedChatId !== chatIdRef.current) {
+        return;
+      }
 
-            // Don't sync while streaming - local state is authoritative
-            if (isStreamingRef.current) {
-                return;
-            }
+      // Don't sync while streaming - local state is authoritative
+      if (isStreamingRef.current) {
+        return;
+      }
 
-            // Ignore if this was our own update (within 2 seconds)
-            const timeSinceLocalUpdate = updatedAt - lastLocalUpdateRef.current;
-            if (timeSinceLocalUpdate < 2000 && timeSinceLocalUpdate >= 0) {
-                return;
-            }
+      // Ignore if this was our own update (within 2 seconds)
+      const timeSinceLocalUpdate = updatedAt - lastLocalUpdateRef.current;
+      if (timeSinceLocalUpdate < 2000 && timeSinceLocalUpdate >= 0) {
+        return;
+      }
 
-            // Invalidate the bootstrap query cache to trigger a fresh fetch
-            // This will cause the Chat component to re-render with updated data
-            await queryClient.invalidateQueries({
-                queryKey: ['chat', 'bootstrap', updatedChatId],
-            });
+      // Invalidate the bootstrap query cache to trigger a fresh fetch
+      // This will cause the Chat component to re-render with updated data
+      await queryClient.invalidateQueries({
+        queryKey: ['chat', 'bootstrap', updatedChatId],
+      });
 
-            // Also trigger a cache refresh to ensure IndexedDB is updated
-            await refreshCache({ force: true });
-        };
+      // Also trigger a cache refresh to ensure IndexedDB is updated
+      await refreshCache({ force: true });
+    };
 
-        const unsubscribe = subscribeToMessageUpdates(handleMessagesUpdated);
+    const unsubscribe = subscribeToMessageUpdates(handleMessagesUpdated);
 
-        return unsubscribe;
-    }, [chatId, queryClient, refreshCache, subscribeToMessageUpdates]);
+    return unsubscribe;
+  }, [chatId, queryClient, refreshCache, subscribeToMessageUpdates]);
 
-    // Mark local updates to filter out echo events
-    const markLocalUpdate = useCallback(() => {
-        lastLocalUpdateRef.current = Date.now();
-    }, []);
+  // Mark local updates to filter out echo events
+  const markLocalUpdate = useCallback(() => {
+    lastLocalUpdateRef.current = Date.now();
+  }, []);
 
-    return { markLocalUpdate };
+  return { markLocalUpdate };
 }

@@ -10,7 +10,8 @@ import { Settings, BarChart3 } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Admin Dashboard | Usage Analytics',
-  description: 'Monitor token usage, costs, and system performance across all users and models.',
+  description:
+    'Monitor token usage, costs, and system performance across all users and models.',
 };
 
 export default async function AdminPage() {

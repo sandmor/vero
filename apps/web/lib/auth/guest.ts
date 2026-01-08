@@ -50,7 +50,7 @@ export async function readGuestSession(): Promise<GuestSessionPayload | null> {
   if (!raw) return null;
 
   const parsed = parseGuestSession(raw, getSecret());
-  
+
   if (!parsed) {
     // If we have a cookie but it's invalid or expired, clear it.
     try {
@@ -58,7 +58,7 @@ export async function readGuestSession(): Promise<GuestSessionPayload | null> {
     } catch {}
     return null;
   }
-  
+
   return parsed;
 }
 

@@ -2,8 +2,10 @@
   "name": "virid-monorepo",
   "private": true,
   "scripts": {
-    "dev": "bun run --cwd apps/web dev",
+    "dev": "concurrently -n \"web,gate,work\" -c \"cyan,magenta,yellow\" \"bun dev:web\" \"bun dev:gateway\" \"bun dev:worker\"",
+    "dev:web": "bun run --cwd apps/web dev",
     "dev:gateway": "bun run --cwd apps/realtime-gateway start:dev",
+    "dev:worker": "bun run --cwd apps/cache-worker wrangler dev",
     "build": "bun run build:db && bun run build:web && bun run build:gateway",
     "build:web": "bun run --cwd apps/web build",
     "build:db": "bun run --cwd packages/db build",
@@ -18,5 +20,8 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
 }

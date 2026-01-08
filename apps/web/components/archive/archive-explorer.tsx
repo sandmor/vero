@@ -614,10 +614,11 @@ export function ArchiveExplorer() {
           {status !== 'idle' && (
             <motion.div
               key={status}
-              className={`absolute right-4 top-4 flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium shadow-sm ${status === 'error'
-                ? 'bg-destructive/15 text-destructive'
-                : 'bg-emerald-500/10 text-emerald-500'
-                }`}
+              className={`absolute right-4 top-4 flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium shadow-sm ${
+                status === 'error'
+                  ? 'bg-destructive/15 text-destructive'
+                  : 'bg-emerald-500/10 text-emerald-500'
+              }`}
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}

@@ -25,7 +25,13 @@ type SyncCallback = (options: {
 }) => Promise<void>;
 
 type SyncRequest = {
-  source: 'realtime' | 'periodic' | 'manual' | 'cache-miss' | 'settings-change' | 'tab-request';
+  source:
+    | 'realtime'
+    | 'periodic'
+    | 'manual'
+    | 'cache-miss'
+    | 'settings-change'
+    | 'tab-request';
   chatId?: string;
   timestamp: number;
   settingsOnly?: boolean;
@@ -432,7 +438,8 @@ export class SyncManager {
     this.log('Executing sync:', { requestCount: requests.length, force });
 
     // Check if this is a settings-only sync
-    const isSettingsOnly = requests.length > 0 && requests.every((r) => r.settingsOnly);
+    const isSettingsOnly =
+      requests.length > 0 && requests.every((r) => r.settingsOnly);
 
     // Determine which chats to exclude from sync (protected chats)
     const excludeChatIds = new Set<string>();

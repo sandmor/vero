@@ -407,13 +407,32 @@ function transformLastExpressionToReturn(code: string): string {
 
   // Skip if it already has a return, or is a declaration/control structure
   const skipPrefixes = [
-    'const ', 'let ', 'var ', 'function ', 'async function ',
-    'class ', 'if ', 'if(', 'for ', 'for(', 'while ', 'while(',
-    'switch ', 'switch(', 'try ', 'try{', 'return ', 'throw ',
-    'import ', 'export ', '//', '/*', '{'
+    'const ',
+    'let ',
+    'var ',
+    'function ',
+    'async function ',
+    'class ',
+    'if ',
+    'if(',
+    'for ',
+    'for(',
+    'while ',
+    'while(',
+    'switch ',
+    'switch(',
+    'try ',
+    'try{',
+    'return ',
+    'throw ',
+    'import ',
+    'export ',
+    '//',
+    '/*',
+    '{',
   ];
 
-  if (skipPrefixes.some(prefix => lastLine.startsWith(prefix))) {
+  if (skipPrefixes.some((prefix) => lastLine.startsWith(prefix))) {
     return code;
   }
 
@@ -460,7 +479,9 @@ function stripTrailingSemicolons(code: string): string {
  */
 export function createExecutionScript(code: string): string {
   const serializedSource = JSON.stringify(code);
-  const transformedSource = JSON.stringify(transformLastExpressionToReturn(code));
+  const transformedSource = JSON.stringify(
+    transformLastExpressionToReturn(code)
+  );
   // Strip trailing semicolons for expression evaluation - `return (expr;)` is invalid
   const expressionCode = JSON.stringify(stripTrailingSemicolons(code));
 

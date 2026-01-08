@@ -68,7 +68,10 @@ import { updateChatTitleById } from '@/lib/db/queries';
 import { ZodError } from 'zod';
 import { type PostRequestBody, createPostRequestBodySchema } from './schema';
 import { prisma } from '@virid/db';
-import { getModelCapabilities, type ResolvedModelCapabilities } from '@/lib/ai/model-capabilities';
+import {
+  getModelCapabilities,
+  type ResolvedModelCapabilities,
+} from '@/lib/ai/model-capabilities';
 import { getSettings } from '@/lib/settings';
 import { CHAT_TOOL_IDS, normalizeChatToolIds } from '@/lib/ai/tool-ids';
 import type { ChatSettings, MessageTreeNode } from '@/lib/db/schema';
@@ -381,7 +384,9 @@ export async function POST(request: Request) {
 
     // Check if this is a BYOK model request
     const isUserByokModel = isByokModelId(selectedChatModel);
-    const parsedByokModel = isUserByokModel ? parseByokModelId(selectedChatModel) : null;
+    const parsedByokModel = isUserByokModel
+      ? parseByokModelId(selectedChatModel)
+      : null;
 
     // For BYOK models, resolve credentials; for platform models, use regular flow
     let byokResolution: Awaited<ReturnType<typeof resolveByokModel>> = null;
@@ -458,15 +463,19 @@ export async function POST(request: Request) {
     );
 
     // Resolve capabilities - for BYOK models, use the resolution info; for platform models, query DB
-    let modelCapabilities: ResolvedModelCapabilities | { supportsTools: boolean; provider: string; pricing: null } | null;
+    let modelCapabilities:
+      | ResolvedModelCapabilities
+      | { supportsTools: boolean; provider: string; pricing: null }
+      | null;
 
     if (isUserByokModel && byokResolution) {
       // BYOK model - use resolution info for capabilities
       modelCapabilities = {
         supportsTools: byokResolution.supportsTools,
-        provider: parsedByokModel!.sourceType === 'platform'
-          ? parsedByokModel!.providerId
-          : 'custom',
+        provider:
+          parsedByokModel!.sourceType === 'platform'
+            ? parsedByokModel!.providerId
+            : 'custom',
         pricing: null,
       } as any;
     } else {
@@ -488,25 +497,26 @@ export async function POST(request: Request) {
     }
 
     // Create model promise based on whether it's BYOK or platform
-    const modelPromise = shouldUseByokKey && parsedByokModel && byokResolution
-      ? Promise.resolve(getByokLanguageModel(parsedByokModel, byokResolution))
-      : getLanguageModel(selectedChatModel);
+    const modelPromise =
+      shouldUseByokKey && parsedByokModel && byokResolution
+        ? Promise.resolve(getByokLanguageModel(parsedByokModel, byokResolution))
+        : getLanguageModel(selectedChatModel);
 
     let regenerationParentMessageId: string | null = null;
 
     const effectiveUserMessagePromise: Promise<ChatMessage> =
       regenerationContextPromise
         ? regenerationContextPromise.then((context) => {
-          const [userMessage] = convertToUIMessages([context.parent]);
-          if (!userMessage) {
-            throw new ChatSDKError(
-              'bad_request:chat',
-              'Failed to resolve user message for regeneration'
-            );
-          }
-          regenerationParentMessageId = userMessage.id;
-          return userMessage;
-        })
+            const [userMessage] = convertToUIMessages([context.parent]);
+            if (!userMessage) {
+              throw new ChatSDKError(
+                'bad_request:chat',
+                'Failed to resolve user message for regeneration'
+              );
+            }
+            regenerationParentMessageId = userMessage.id;
+            return userMessage;
+          })
         : Promise.resolve(requestUserMessage);
 
     // Regeneration replays an existing user turn; avoid duplicating it in persistence.
@@ -528,8 +538,8 @@ export async function POST(request: Request) {
         const streamIdPromise =
           streamId && streamContext
             ? createStreamId({ streamId, chatId: id }).catch((e) =>
-              console.warn('Failed to persist stream id (non-fatal)', e)
-            )
+                console.warn('Failed to persist stream id (non-fatal)', e)
+              )
             : Promise.resolve<void>(undefined);
 
         const [
@@ -589,20 +599,20 @@ export async function POST(request: Request) {
         persistUserMessagePromise = skipUserPersistence
           ? Promise.resolve()
           : saveMessages({
-            messages: [
-              {
-                chatId: id,
-                id: effectiveUserMessage.id,
-                role: 'user',
-                parts: effectiveUserMessage.parts,
-                attachments: [],
-                createdAt: new Date(),
-                parentId: lastPersistedDbMessage?.id,
-              },
-            ],
-          }).catch((e) => {
-            console.warn('Failed to persist user message (non-fatal)', e);
-          });
+              messages: [
+                {
+                  chatId: id,
+                  id: effectiveUserMessage.id,
+                  role: 'user',
+                  parts: effectiveUserMessage.parts,
+                  attachments: [],
+                  createdAt: new Date(),
+                  parentId: lastPersistedDbMessage?.id,
+                },
+              ],
+            }).catch((e) => {
+              console.warn('Failed to persist user message (non-fatal)', e);
+            });
 
         const uiMessages = skipUserPersistence
           ? dbUiMessages
@@ -657,7 +667,8 @@ export async function POST(request: Request) {
           };
         } else if (provider === 'xai') {
           providerOptions.xai = {
-            reasoningEffort: effectiveReasoningEffort === 'low' ? 'low' : 'high',
+            reasoningEffort:
+              effectiveReasoningEffort === 'low' ? 'low' : 'high',
           };
         }
 
@@ -675,8 +686,8 @@ export async function POST(request: Request) {
           : normalizedAllowedTools === undefined
             ? [...allToolIds]
             : normalizedAllowedTools.filter((toolId) =>
-              allToolIdsSet.has(toolId)
-            );
+                allToolIdsSet.has(toolId)
+              );
 
         const basePromptParts = getDefaultSystemPromptParts();
         const promptResolution = buildPromptPartsFromConfig(
@@ -724,7 +735,7 @@ export async function POST(request: Request) {
           for (const message of promptComposition.messages) {
             const normalizedDepth =
               typeof message.depth === 'number' &&
-                Number.isFinite(message.depth)
+              Number.isFinite(message.depth)
                 ? Math.max(0, Math.floor(message.depth))
                 : 0;
 
@@ -802,8 +813,14 @@ export async function POST(request: Request) {
         let effectiveMaxOutputTokens: number | undefined;
         if (shouldUseByokKey && byokResolution?.maxOutputTokens) {
           effectiveMaxOutputTokens = byokResolution.maxOutputTokens;
-        } else if (!shouldUseByokKey && modelCapabilities && 'maxOutputTokens' in modelCapabilities && modelCapabilities.maxOutputTokens) {
-          effectiveMaxOutputTokens = modelCapabilities.maxOutputTokens as number;
+        } else if (
+          !shouldUseByokKey &&
+          modelCapabilities &&
+          'maxOutputTokens' in modelCapabilities &&
+          modelCapabilities.maxOutputTokens
+        ) {
+          effectiveMaxOutputTokens =
+            modelCapabilities.maxOutputTokens as number;
         } else {
           effectiveMaxOutputTokens = appSettings.maxOutputTokens;
         }
@@ -860,7 +877,7 @@ export async function POST(request: Request) {
         dataStream.merge(
           result.toUIMessageStream({
             sendReasoning: true,
-            messageMetadata: ({ }) => {
+            messageMetadata: ({}) => {
               return {
                 model: selectedChatModel,
               };
@@ -908,10 +925,14 @@ export async function POST(request: Request) {
 
             const inputTokens = finalMergedUsage.inputTokens ?? 0;
             const outputTokens = finalMergedUsage.outputTokens ?? 0;
-            const reasoningTokens = finalMergedUsage.outputTokenDetails?.reasoningTokens ?? 0;
-            const cachedInputTokens = finalMergedUsage.inputTokenDetails?.cacheReadTokens ?? 0;
+            const reasoningTokens =
+              finalMergedUsage.outputTokenDetails?.reasoningTokens ?? 0;
+            const cachedInputTokens =
+              finalMergedUsage.inputTokenDetails?.cacheReadTokens ?? 0;
 
-            const inputP = pricing?.prompt ? Math.round(pricing.prompt * 1_000_000) : 0;
+            const inputP = pricing?.prompt
+              ? Math.round(pricing.prompt * 1_000_000)
+              : 0;
             const outputP = pricing?.completion
               ? Math.round(pricing.completion * 1_000_000)
               : 0;

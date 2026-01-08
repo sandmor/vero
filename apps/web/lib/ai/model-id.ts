@@ -15,7 +15,7 @@
  * Build a model ID from creator and model name
  */
 export function buildModelId(creator: string, modelName: string): string {
-    return `${creator}:${modelName}`;
+  return `${creator}:${modelName}`;
 }
 
 /**
@@ -23,16 +23,16 @@ export function buildModelId(creator: string, modelName: string): string {
  * Returns null if the ID is invalid (no colon separator)
  */
 export function parseModelId(
-    id: string
+  id: string
 ): { creator: string; modelName: string } | null {
-    const colonIndex = id.indexOf(':');
-    if (colonIndex === -1) {
-        return null;
-    }
-    return {
-        creator: id.slice(0, colonIndex),
-        modelName: id.slice(colonIndex + 1),
-    };
+  const colonIndex = id.indexOf(':');
+  if (colonIndex === -1) {
+    return null;
+  }
+  return {
+    creator: id.slice(0, colonIndex),
+    modelName: id.slice(colonIndex + 1),
+  };
 }
 
 /**
@@ -40,8 +40,8 @@ export function parseModelId(
  * Returns the full ID if no colon is found
  */
 export function getModelName(id: string): string {
-    const parsed = parseModelId(id);
-    return parsed?.modelName ?? id;
+  const parsed = parseModelId(id);
+  return parsed?.modelName ?? id;
 }
 
 /**
@@ -49,6 +49,6 @@ export function getModelName(id: string): string {
  * Returns null if no colon is found
  */
 export function getCreator(id: string): string | null {
-    const parsed = parseModelId(id);
-    return parsed?.creator ?? null;
+  const parsed = parseModelId(id);
+  return parsed?.creator ?? null;
 }

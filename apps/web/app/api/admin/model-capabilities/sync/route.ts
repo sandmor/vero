@@ -52,10 +52,9 @@ export async function POST(req: NextRequest) {
         result = {
           synced: allResults.totalSynced,
           removed: allResults.totalRemoved,
-          errors: Object.entries(allResults.results)
-            .flatMap(([providerId, r]) =>
-              r.errors.map((e) => `${providerId}: ${e}`)
-            ),
+          errors: Object.entries(allResults.results).flatMap(
+            ([providerId, r]) => r.errors.map((e) => `${providerId}: ${e}`)
+          ),
           details: allResults.results,
         };
       }

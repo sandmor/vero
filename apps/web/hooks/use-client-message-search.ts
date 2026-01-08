@@ -47,9 +47,9 @@ export function useClientMessageSearch(
       const run = async () => {
         const serializedDate = dateFilter
           ? {
-            after: dateFilter.after?.toISOString(),
-            before: dateFilter.before?.toISOString(),
-          }
+              after: dateFilter.after?.toISOString(),
+              before: dateFilter.before?.toISOString(),
+            }
           : null;
 
         try {
@@ -79,7 +79,10 @@ export function useClientMessageSearch(
               score: message.score,
             })
           );
-          console.log("Search results snippets", mapped.map(r => r.snippet.length));
+          console.log(
+            'Search results snippets',
+            mapped.map((r) => r.snippet.length)
+          );
 
           // Sort results
           if (sortBy === 'newest') {

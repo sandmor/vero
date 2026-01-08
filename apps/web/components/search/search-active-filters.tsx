@@ -25,7 +25,8 @@ export function SearchActiveFilters({
   onResetSort,
   onResetScope,
 }: SearchActiveFiltersProps) {
-  const hasFilters = dateFilter || sortBy !== 'relevance' || searchScope === 'titles';
+  const hasFilters =
+    dateFilter || sortBy !== 'relevance' || searchScope === 'titles';
 
   if (!hasFilters) return null;
 

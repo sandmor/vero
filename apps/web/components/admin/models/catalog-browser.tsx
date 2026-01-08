@@ -113,7 +113,9 @@ export function CatalogBrowser({
         ) : (
           filteredCatalog.map((entry) => {
             const candidateId = entry.suggestedModelId ?? entry.providerModelId;
-            const isAdded = candidateId ? existingModelIds.has(candidateId) : false;
+            const isAdded = candidateId
+              ? existingModelIds.has(candidateId)
+              : false;
 
             return (
               <div

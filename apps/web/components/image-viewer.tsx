@@ -297,8 +297,8 @@ export function ImageViewer({ src, alt, isOpen, onClose }: ImageViewerProps) {
               </IconButton>
             </div>
             <div className="pointer-events-none select-none text-[10px] font-medium tracking-wide text-white/40">
-              Scroll / pinch to zoom · drag to pan · dbl‑click to toggle zoom · Esc
-              to close
+              Scroll / pinch to zoom · drag to pan · dbl‑click to toggle zoom ·
+              Esc to close
             </div>
           </div>
 
@@ -334,10 +334,12 @@ export function ImageViewer({ src, alt, isOpen, onClose }: ImageViewerProps) {
               src={src}
               alt={alt}
               className="select-none will-change-transform"
-              style={{
-                maxWidth: scale === 1 ? '100%' : 'none',
-                maxHeight: scale === 1 ? '100%' : 'none',
-              } as any}
+              style={
+                {
+                  maxWidth: scale === 1 ? '100%' : 'none',
+                  maxHeight: scale === 1 ? '100%' : 'none',
+                } as any
+              }
               draggable={false}
             />
           </div>

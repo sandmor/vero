@@ -205,12 +205,12 @@ function PureMultimodalInput({
     return messages.some((message) =>
       Array.isArray(message.parts)
         ? message.parts.some(
-          (part) =>
-            !!part &&
-            typeof part === 'object' &&
-            'type' in part &&
-            part.type === 'file'
-        )
+            (part) =>
+              !!part &&
+              typeof part === 'object' &&
+              'type' in part &&
+              part.type === 'file'
+          )
         : false
     );
   }, [attachments, uploadQueue, messages]);
@@ -584,7 +584,10 @@ function PureModelSelectorCompact({
         type="button"
         data-testid="model-selector"
       >
-        <CreatorLogo creatorSlug={selectedModel?.creator ?? ''} className="h-4 w-4" />
+        <CreatorLogo
+          creatorSlug={selectedModel?.creator ?? ''}
+          className="h-4 w-4"
+        />
         <span className="hidden text-xs font-medium sm:block">
           {selectedModel?.name}
         </span>

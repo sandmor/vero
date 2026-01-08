@@ -131,16 +131,18 @@ export async function POST(request: NextRequest) {
   const byokModelInfo = byokModels.map((m) => ({
     id: m.fullModelId,
     displayName: m.displayName,
-    providerSlug: m.sourceType === 'platform' && m.providerId
-      ? m.providerId
-      : m.sourceType === 'custom' && m.customProviderSlug
-        ? m.customProviderSlug
-        : 'custom',
-    providerDisplayName: m.sourceType === 'platform' && m.providerId
-      ? displayProviderName(m.providerId)
-      : m.sourceType === 'custom' && m.customProviderName
-        ? m.customProviderName
-        : 'Custom',
+    providerSlug:
+      m.sourceType === 'platform' && m.providerId
+        ? m.providerId
+        : m.sourceType === 'custom' && m.customProviderSlug
+          ? m.customProviderSlug
+          : 'custom',
+    providerDisplayName:
+      m.sourceType === 'platform' && m.providerId
+        ? displayProviderName(m.providerId)
+        : m.sourceType === 'custom' && m.customProviderName
+          ? m.customProviderName
+          : 'Custom',
     supportsTools: m.supportsTools,
   }));
 

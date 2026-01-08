@@ -16,10 +16,7 @@ import {
 } from '@/components/ui/collapsible';
 import { toast } from '@/components/toast';
 import { AnimatedButtonLabel } from '@/components/ui/animated-button';
-import {
-  getAllProviders,
-  displayProviderName,
-} from '@/lib/ai/registry';
+import { getAllProviders, displayProviderName } from '@/lib/ai/registry';
 import { CreatorLogo } from '@/components/creator-logo';
 
 // Get all providers for iteration
@@ -200,7 +197,11 @@ export function ProvidersEditor({
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background border border-border/40 shadow-sm group-hover:scale-105 transition-transform">
-                        <CreatorLogo creatorSlug={p} className="h-6 w-6" size={24} />
+                        <CreatorLogo
+                          creatorSlug={p}
+                          className="h-6 w-6"
+                          size={24}
+                        />
                       </div>
                       <div className="flex flex-col text-left">
                         <span className="text-base font-semibold tracking-tight">

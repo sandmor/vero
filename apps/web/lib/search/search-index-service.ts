@@ -238,12 +238,18 @@ class SearchIndexService {
         }
 
         // Log whether we loaded from storage (instant search) or started fresh
-        if (response.fromStorage && response.chatCount && response.chatCount > 0) {
+        if (
+          response.fromStorage &&
+          response.chatCount &&
+          response.chatCount > 0
+        ) {
           console.info(
             `[SearchService] Loaded ${response.chatCount} chats from persistent storage (instant search ready)`
           );
         } else {
-          console.info('[SearchService] Starting with fresh index, will sync from cache');
+          console.info(
+            '[SearchService] Starting with fresh index, will sync from cache'
+          );
         }
 
         this.snapshotLoaded = true;

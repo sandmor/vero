@@ -93,7 +93,7 @@ const MarkdownComponent = ({
         'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_.katex-display]:my-4 [&_.katex-display]:overflow-x-auto [&_.katex-display]:break-words [&_.katex-display]:px-2 [&_.katex-display]:py-3 [&_.katex-display]:rounded-md [&_.katex-display]:bg-muted/40 [&_code]:whitespace-pre-wrap [&_code]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto',
         className
       )}
-      mode='static'
+      mode="static"
       {...mergedProps}
     >
       {content}

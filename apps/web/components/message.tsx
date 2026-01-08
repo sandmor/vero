@@ -35,9 +35,8 @@ const MessageAvatar = ({ role, model }: { role: string; model?: string }) => {
     if (isByokModelId(model)) {
       const parsed = parseByokModelId(model);
       if (parsed) {
-        creator = parsed.sourceType === 'platform'
-          ? parsed.providerId
-          : 'custom';
+        creator =
+          parsed.sourceType === 'platform' ? parsed.providerId : 'custom';
       }
     } else {
       creator = getCreator(model);
@@ -154,9 +153,9 @@ const PurePreviewMessage = ({
           <span className="font-medium text-muted-foreground text-xs capitalize">
             {message.role === 'user'
               ? 'You'
-              : (allowedModels?.find((m) => m.id === effectiveModelId)?.name ||
+              : allowedModels?.find((m) => m.id === effectiveModelId)?.name ||
                 getModelName(effectiveModelId) ||
-                'AI')}
+                'AI'}
           </span>
         </div>
 
@@ -187,7 +186,7 @@ const PurePreviewMessage = ({
             </div>
           )}
 
-          <div className='flex flex-col w-full rounded-2xl border border-border/60 overflow-hidden bg-muted text-foreground/90 dark:bg-muted/40'>
+          <div className="flex flex-col w-full rounded-2xl border border-border/60 overflow-hidden bg-muted text-foreground/90 dark:bg-muted/40">
             {shouldShowPlaceholder ? (
               <div className="px-5 py-4">
                 <EmptyMessagePlaceholder
@@ -287,11 +286,11 @@ const PurePreviewMessage = ({
                                   onSubmitWithoutRegenerate={
                                     onEditMessageOnly
                                       ? async (nextText) => {
-                                        await onEditMessageOnly(
-                                          message.id,
-                                          nextText
-                                        );
-                                      }
+                                          await onEditMessageOnly(
+                                            message.id,
+                                            nextText
+                                          );
+                                        }
                                       : undefined
                                   }
                                 />

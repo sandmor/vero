@@ -6,12 +6,7 @@
 import type { VMContext } from './vm-utils';
 import { setContextValue, evaluateScript } from './vm-utils';
 import { fetchWeather, fetchUrl, type FetchOptions } from './external-apis';
-import {
-  webScrape,
-  webCrawl,
-  webMap,
-  webSearch,
-} from './web-apis';
+import { webScrape, webCrawl, webMap, webSearch } from './web-apis';
 import type {
   WebScrapeParams,
   WebCrawlParams,
@@ -331,7 +326,9 @@ export function createWebMapBridge(deadlineMs: number): ApiBridgeConfig {
       return JSON.stringify(result);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to process map request';
+        error instanceof Error
+          ? error.message
+          : 'Failed to process map request';
       logger.error('Web map bridge error', {
         message,
         error: error instanceof Error ? error.stack : String(error),
@@ -480,15 +477,15 @@ export function installApiBridges(
     const rejection =
       error instanceof Error
         ? {
-          message: error.message,
-          name: error.name,
-          stack: error.stack,
-        }
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+          }
         : {
-          message: String(error ?? 'Bridge error'),
-          name: 'Error',
-          stack: null,
-        };
+            message: String(error ?? 'Bridge error'),
+            name: 'Error',
+            stack: null,
+          };
 
     logger.error('Bridge handler error', {
       functionName,

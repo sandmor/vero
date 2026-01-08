@@ -313,9 +313,7 @@ export function getInternalProviderId(modelsDevId: string): string {
 /**
  * Get default capabilities for a provider
  */
-export function getProviderDefaults(
-  id: string
-): ProviderConfig['defaults'] {
+export function getProviderDefaults(id: string): ProviderConfig['defaults'] {
   return getProviderConfig(id).defaults;
 }
 

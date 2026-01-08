@@ -129,7 +129,6 @@ export const LogoMeta = ({ size = 16 }: { size?: number }) => {
   );
 };
 
-
 export const LogoMistral = ({ size = 16 }: { size?: number }) => {
   return (
     <svg
@@ -151,7 +150,10 @@ export const LogoMistral = ({ size = 16 }: { size?: number }) => {
         fill="#F2A73B"
         d="M209.45454 46.54545h46.54545V93.0909h-46.54545zM23.27273 46.54545h46.54545V93.0909H23.27273z"
       />
-      <path fill="currentColor" d="M139.63636 46.54545h46.54545V93.0909h-46.54545z" />
+      <path
+        fill="currentColor"
+        d="M139.63636 46.54545h46.54545V93.0909h-46.54545z"
+      />
       <path
         fill="#F2A73B"
         d="M162.90909 46.54545h46.54545V93.0909h-46.54545zM69.81818 46.54545h46.54545V93.0909H69.81818z"
@@ -160,16 +162,34 @@ export const LogoMistral = ({ size = 16 }: { size?: number }) => {
         fill="#EE792F"
         d="M116.36364 93.09091h46.54545v46.54545h-46.54545zM162.90909 93.09091h46.54545v46.54545h-46.54545zM69.81818 93.09091h46.54545v46.54545H69.81818z"
       />
-      <path fill="currentColor" d="M93.09091 139.63636h46.54545v46.54545H93.09091z" />
-      <path fill="#EB5829" d="M116.36364 139.63636h46.54545v46.54545h-46.54545z" />
+      <path
+        fill="currentColor"
+        d="M93.09091 139.63636h46.54545v46.54545H93.09091z"
+      />
+      <path
+        fill="#EB5829"
+        d="M116.36364 139.63636h46.54545v46.54545h-46.54545z"
+      />
       <path
         fill="#EE792F"
         d="M209.45454 93.09091h46.54545v46.54545h-46.54545zM23.27273 93.09091h46.54545v46.54545H23.27273z"
       />
-      <path fill="currentColor" d="M186.18182 139.63636h46.54545v46.54545h-46.54545z" />
-      <path fill="#EB5829" d="M209.45454 139.63636h46.54545v46.54545h-46.54545z" />
-      <path fill="currentColor" d="M186.18182 186.18182h46.54545v46.54545h-46.54545z" />
-      <path fill="#EB5829" d="M23.27273 139.63636h46.54545v46.54545H23.27273z" />
+      <path
+        fill="currentColor"
+        d="M186.18182 139.63636h46.54545v46.54545h-46.54545z"
+      />
+      <path
+        fill="#EB5829"
+        d="M209.45454 139.63636h46.54545v46.54545h-46.54545z"
+      />
+      <path
+        fill="currentColor"
+        d="M186.18182 186.18182h46.54545v46.54545h-46.54545z"
+      />
+      <path
+        fill="#EB5829"
+        d="M23.27273 139.63636h46.54545v46.54545H23.27273z"
+      />
       <path
         fill="#EA3326"
         d="M209.45454 186.18182h46.54545v46.54545h-46.54545zM23.27273 186.18182h46.54545v46.54545H23.27273z"
@@ -181,7 +201,7 @@ export const LogoMistral = ({ size = 16 }: { size?: number }) => {
 export const LogoDeepSeek = ({ size = 16 }: { size?: number }) => {
   return (
     <svg
-      style={{ flex: "none", lineHeight: "1" }}
+      style={{ flex: 'none', lineHeight: '1' }}
       width={size}
       height={size}
       viewBox="0 0 24 24"
@@ -300,7 +320,7 @@ export const LogoQwen = ({ size = 16 }: { size?: number }) => {
     <svg
       fill="currentColor"
       fillRule="evenodd"
-      style={{ flex: "none", lineHeight: "1" }}
+      style={{ flex: 'none', lineHeight: '1' }}
       viewBox="0 0 24 24"
       width={size}
       height={size}
@@ -327,4 +347,3 @@ export const LogoZai = ({ size = 16 }: { size?: number }) => {
     </svg>
   );
 };
-

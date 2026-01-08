@@ -2,7 +2,10 @@
 
 import Link from 'next/link';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import type { MessageSearchResult, HighlightRange } from '@/hooks/use-client-search';
+import type {
+  MessageSearchResult,
+  HighlightRange,
+} from '@/hooks/use-client-search';
 import { formatDistanceToNow } from 'date-fns';
 
 interface SearchResultItemProps {
@@ -10,10 +13,7 @@ interface SearchResultItemProps {
   onSelect?: () => void;
 }
 
-export function SearchResultItem({
-  result,
-  onSelect,
-}: SearchResultItemProps) {
+export function SearchResultItem({ result, onSelect }: SearchResultItemProps) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -32,7 +32,10 @@ export function SearchResultItem({
             </span>
           </div>
           <p className="text-xs text-muted-foreground line-clamp-2 break-words w-full leading-relaxed">
-            <HighlightedSnippet text={result.snippet} highlights={result.highlights} />
+            <HighlightedSnippet
+              text={result.snippet}
+              highlights={result.highlights}
+            />
           </p>
         </Link>
       </SidebarMenuButton>
@@ -79,9 +82,7 @@ function HighlightedSnippet({
 
   // Add remaining text after the last highlight
   if (lastEnd < text.length) {
-    segments.push(
-      <span key="text-end">{text.slice(lastEnd)}</span>
-    );
+    segments.push(<span key="text-end">{text.slice(lastEnd)}</span>);
   }
 
   return <>{segments}</>;

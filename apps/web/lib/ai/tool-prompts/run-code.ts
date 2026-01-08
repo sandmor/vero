@@ -8,18 +8,18 @@ import { getApiMetadata } from '../tools/sandbox/api-bridge';
 
 type TsDocBlock =
   | {
-    kind: 'interface';
-    name: string;
-    description?: string;
-    extends?: string[];
-    members: TsInterfaceMember[];
-  }
+      kind: 'interface';
+      name: string;
+      description?: string;
+      extends?: string[];
+      members: TsInterfaceMember[];
+    }
   | {
-    kind: 'type';
-    name: string;
-    description?: string;
-    type: string;
-  };
+      kind: 'type';
+      name: string;
+      description?: string;
+      type: string;
+    };
 
 type TsInterfaceMember = {
   kind: 'property' | 'method';
@@ -217,7 +217,7 @@ function generateApiDocs(): TsDocBlock {
   const apiMethods = getApiMetadata();
 
   // Filter out web.* methods for separate documentation
-  const basicMethods = apiMethods.filter(m => !m.name.startsWith('web.'));
+  const basicMethods = apiMethods.filter((m) => !m.name.startsWith('web.'));
 
   return {
     kind: 'interface',

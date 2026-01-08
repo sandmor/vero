@@ -222,8 +222,8 @@ export async function configureChatMocks(
             : input instanceof URL
               ? input.href
               : ((input && typeof input === 'object' && 'url' in input
-                ? (input as { url?: string }).url
-                : undefined) ?? window.location.origin);
+                  ? (input as { url?: string }).url
+                  : undefined) ?? window.location.origin);
         const { pathname } = new URL(targetUrl, window.location.origin);
 
         if (pathname === '/api/cache/sync') {
