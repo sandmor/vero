@@ -1,6 +1,7 @@
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@virid/db';
-import { readGuestSession } from './guest';
+import { readGuestSession, clearGuestSession } from './guest';
+import { migrateGuestData } from './migration';
 import type { AppSession } from './types';
 
 export async function getAppSession(): Promise<AppSession | null> {
@@ -53,6 +54,21 @@ export async function getAppSession(): Promise<AppSession | null> {
         } catch {
           /* non-fatal */
         }
+
+        // Check for upgrade path: User is logged in, but has a guest session cookie
+        try {
+          const guest = await readGuestSession();
+          if (guest?.uid && guest.uid !== a.userId) {
+            // Found a guest session that doesn't match current user (different ID)
+            // Migrate server-side data from guest -> user
+            await migrateGuestData(guest.uid, a.userId);
+            // Cleanup guest session immediately after migration
+            await clearGuestSession();
+          }
+        } catch (e) {
+          console.warn('Failed to migrate guest session', e);
+        }
+
         return {
           user: {
             id: a.userId,
