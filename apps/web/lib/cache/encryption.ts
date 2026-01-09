@@ -131,8 +131,19 @@ export async function decryptJson<T>(
 export async function fetchEncryptionKey(
   signal?: AbortSignal
 ): Promise<{ cryptoKey: CryptoKey; base64Key: string }> {
-  const url =
-    process.env.NEXT_PUBLIC_CACHE_ENCRYPTION_URL || '/api/cache/encryption-key';
+  let url = process.env.NEXT_PUBLIC_CACHE_ENCRYPTION_URL;
+
+  if (url) {
+    // If a custom worker/gateway URL is provided, ensure we target the v1/keys endpoint
+    // Remove trailing slash for consistency
+    url = url.replace(/\/$/, '');
+    if (!url.endsWith('/v1/keys')) {
+      url = `${url}/v1/keys`;
+    }
+  } else {
+    // Default to the Next.js API route
+    url = '/api/cache/encryption-key';
+  }
 
   const response = await fetch(url, {
     method: 'POST',

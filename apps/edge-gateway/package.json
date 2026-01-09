@@ -1,11 +1,12 @@
 {
-  "name": "vero-cache-worker",
+  "name": "vero-edge-gateway",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "dependencies": {
     "@clerk/backend": "^2.29.1",
-    "@vero/shared": "workspace:*"
+    "@vero/shared": "workspace:*",
+    "hono": "^4.11.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260108.0",

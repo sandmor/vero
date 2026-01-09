@@ -1,4 +1,4 @@
-name = "vero-cache-encryption-worker"
+name = "vero-edge-gateway"
 main = "src/index.ts"
 compatibility_date = "2026-01-08"
 compatibility_flags = ["nodejs_compat"]
