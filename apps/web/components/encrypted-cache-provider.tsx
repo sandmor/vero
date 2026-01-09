@@ -621,6 +621,8 @@ type OptimisticState = {
   pendingChats: OptimisticChat[];
   deletedChatIds: Set<string>;
   titleUpdates: Map<string, string>;
+  /** Map of chatId -> bumped timestamp for optimistic reordering */
+  bumpedChatUpdates: Map<string, number>;
 };
 
 type CacheContextValue = {
@@ -648,6 +650,11 @@ type CacheContextValue = {
   addOptimisticChat: (chat: { id: string; title: string }) => void;
   removeOptimisticChat: (chatId: string) => void;
   updateChatTitle: (chatId: string, newTitle: string) => void;
+  /**
+   * Optimistically bump a chat to the top of the sidebar.
+   * This updates the chat's updatedAt locally for immediate UI feedback.
+   */
+  bumpChatToTop: (chatId: string) => void;
   // Sync manager integration
   /**
    * Set the active chat being viewed. This chat receives special sync protection.
@@ -691,6 +698,7 @@ const EncryptedCacheContext = createContext<CacheContextValue>({
   addOptimisticChat: () => {},
   removeOptimisticChat: () => {},
   updateChatTitle: () => {},
+  bumpChatToTop: () => {},
   setActiveChat: () => {},
   markGenerationStarted: () => {},
   markGenerationEnded: () => {},
@@ -841,8 +849,8 @@ function primeChatHistoryQuery(
 
   if (!cachedChatList.length) return;
 
-  // Sort by createdAt descending to match the expected order
-  cachedChatList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  // Sort by updatedAt descending (most recently updated first)
+  cachedChatList.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
   // Only skip update if there's existing data and forceUpdate is false
   if (!forceUpdate && existing) {
@@ -962,6 +970,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     pendingChats: [],
     deletedChatIds: new Set(),
     titleUpdates: new Map(),
+    bumpedChatUpdates: new Map(),
   });
 
   // Add an optimistic chat for immediate sidebar display
@@ -996,9 +1005,24 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Bump a chat to the top of the sidebar optimistically
+  const bumpChatToTop = useCallback((chatId: string) => {
+    setOptimisticState((prev) => {
+      const newBumpedChatUpdates = new Map(prev.bumpedChatUpdates);
+      newBumpedChatUpdates.set(chatId, Date.now());
+      return { ...prev, bumpedChatUpdates: newBumpedChatUpdates };
+    });
+  }, []);
+
   // Clear optimistic state for chats that now exist in the real cache
   useEffect(() => {
     const realChatIds = new Set(state.cachedChats.map((c) => c.chatId));
+    // Build a map of real chat updatedAt times
+    const realChatUpdatedAt = new Map<string, number>();
+    for (const chat of state.cachedChats) {
+      realChatUpdatedAt.set(chat.chatId, chat.lastUpdatedAt);
+    }
+
     setOptimisticState((prev) => {
       const filteredPending = prev.pendingChats.filter(
         (c) => !realChatIds.has(c.id)
@@ -1011,15 +1035,26 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       const filteredTitles = new Map(
         [...prev.titleUpdates].filter(([id]) => realChatIds.has(id))
       );
+      // Clear bumped chat updates that are now reflected in the real cache
+      // (i.e., the real cache updatedAt is >= our bumped time)
+      const filteredBumped = new Map(
+        [...prev.bumpedChatUpdates].filter(([id, bumpedAt]) => {
+          const realUpdatedAt = realChatUpdatedAt.get(id);
+          // Keep the bump if the real cache hasn't caught up yet
+          return realUpdatedAt === undefined || realUpdatedAt < bumpedAt;
+        })
+      );
       if (
         filteredPending.length !== prev.pendingChats.length ||
         filteredDeleted.size !== prev.deletedChatIds.size ||
-        filteredTitles.size !== prev.titleUpdates.size
+        filteredTitles.size !== prev.titleUpdates.size ||
+        filteredBumped.size !== prev.bumpedChatUpdates.size
       ) {
         return {
           pendingChats: filteredPending,
           deletedChatIds: filteredDeleted,
           titleUpdates: filteredTitles,
+          bumpedChatUpdates: filteredBumped,
         };
       }
       return prev;
@@ -1826,21 +1861,43 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
   // Merge optimistic state with real cached chats for UI
   const mergedCachedChats = useMemo(() => {
-    // Filter out deleted chats and apply title updates
+    // Filter out deleted chats and apply title updates + bumped timestamps
     const filteredChats = state.cachedChats
       .filter((c) => !optimisticState.deletedChatIds.has(c.chatId))
       .map((entry) => {
+        let updatedEntry = entry;
         const titleUpdate = optimisticState.titleUpdates.get(entry.chatId);
+        const bumpedAt = optimisticState.bumpedChatUpdates.get(entry.chatId);
+
         if (titleUpdate && entry.data.chat) {
-          return {
-            ...entry,
+          updatedEntry = {
+            ...updatedEntry,
             data: {
-              ...entry.data,
-              chat: { ...entry.data.chat, title: titleUpdate },
+              ...updatedEntry.data,
+              chat: { ...updatedEntry.data.chat, title: titleUpdate },
             },
           };
         }
-        return entry;
+
+        // Apply bumped timestamp if it's newer than the current lastUpdatedAt
+        if (bumpedAt && bumpedAt > entry.lastUpdatedAt) {
+          updatedEntry = {
+            ...updatedEntry,
+            lastUpdatedAt: bumpedAt,
+            data: {
+              ...updatedEntry.data,
+              lastUpdatedAt: new Date(bumpedAt).toISOString(),
+              chat: updatedEntry.data.chat
+                ? {
+                    ...updatedEntry.data.chat,
+                    updatedAt: new Date(bumpedAt).toISOString(),
+                  }
+                : updatedEntry.data.chat,
+            },
+          };
+        }
+
+        return updatedEntry;
       });
 
     // Add pending optimistic chats that aren't in real cache
@@ -1897,6 +1954,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       addOptimisticChat,
       removeOptimisticChat,
       updateChatTitle,
+      bumpChatToTop,
       setActiveChat,
       markGenerationStarted,
       markGenerationEnded,
@@ -1916,6 +1974,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       addOptimisticChat,
       removeOptimisticChat,
       updateChatTitle,
+      bumpChatToTop,
       setActiveChat,
       markGenerationStarted,
       markGenerationEnded,

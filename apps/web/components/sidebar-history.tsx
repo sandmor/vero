@@ -1,13 +1,6 @@
 'use client';
 
-import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
-import { AnimatePresence, motion } from 'framer-motion';
-import { useParams, useRouter } from 'next/navigation';
-import type { SessionUser } from '@/lib/auth/types';
-import { useCallback, useMemo, useState } from 'react';
-import type { TouchEvent as ReactTouchEvent } from 'react';
-import { toast } from 'sonner';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,13 +19,21 @@ import {
   SidebarMenu,
   useSidebar,
 } from '@/components/ui/sidebar';
-import type { Chat } from '@/lib/db/schema';
-import { CheckSquare, Loader2, Trash2 } from 'lucide-react';
-import { ChatItem } from './sidebar-history-item';
-import { ChatSearch } from './chat-search';
-import { useEncryptedCache } from '@/components/encrypted-cache-provider';
-import { deserializeChat } from '@/lib/chat/serialization';
+import type { SessionUser } from '@/lib/auth/types';
 import { getEncryptedCacheManager } from '@/lib/cache/cache-manager';
+import { getSyncManager } from '@/lib/cache/sync-manager';
+import { deserializeChat } from '@/lib/chat/serialization';
+import type { Chat } from '@/lib/db/schema';
+import { useQueryClient } from '@tanstack/react-query';
+import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
+import { CheckSquare, Loader2, Trash2 } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import type { TouchEvent as ReactTouchEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
+import { ChatSearch } from './chat-search';
+import { ChatItem } from './sidebar-history-item';
 
 type GroupedChats = {
   today: Chat[];
@@ -66,6 +67,11 @@ type SelectionProps = {
 
 const PAGE_SIZE = 50;
 
+/**
+ * Group chats by their updatedAt date into time-based buckets.
+ * Chats are grouped based on when they were last updated, making recently
+ * active conversations appear in the appropriate recent group.
+ */
 const groupChatsByDate = (chats: Chat[]): GroupedChats => {
   const now = new Date();
   const oneWeekAgo = subWeeks(now, 1);
@@ -73,7 +79,8 @@ const groupChatsByDate = (chats: Chat[]): GroupedChats => {
 
   return chats.reduce(
     (groups, chat) => {
-      const chatDate = new Date(chat.createdAt);
+      // Use updatedAt for grouping - this determines which time bucket the chat appears in
+      const chatDate = new Date(chat.updatedAt);
 
       if (isToday(chatDate)) {
         groups.today.push(chat);
@@ -120,15 +127,26 @@ export function SidebarHistory({
     refreshCache,
     updateChatTitle,
     removeOptimisticChat,
+    bumpChatToTop,
+    subscribeToMessageUpdates,
   } = useEncryptedCache();
+
+  // Subscribe to cross-tab message updates to bump chats to top
+  useEffect(() => {
+    const unsubscribe = subscribeToMessageUpdates((chatId) => {
+      // When another tab updates a chat, bump it to the top in this tab too
+      bumpChatToTop(chatId);
+    });
+    return unsubscribe;
+  }, [subscribeToMessageUpdates, bumpChatToTop]);
 
   // Derive chat list directly from cache (includes optimistic state)
   const allChats = useMemo(() => {
     const chats = cachedChats.map((entry) => deserializeChat(entry.data.chat));
-    // Sort by createdAt descending (newest first)
+    // Sort by updatedAt descending (most recently updated first)
     return chats.sort(
       (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
   }, [cachedChats]);
 
@@ -319,8 +337,13 @@ export function SidebarHistory({
     (chatId: string, newTitle: string) => {
       // Update optimistic state for immediate UI feedback
       updateChatTitle(chatId, newTitle);
+      // Bump the chat to top of sidebar since it was just updated
+      bumpChatToTop(chatId);
+      // Notify other tabs
+      const syncManager = getSyncManager();
+      syncManager?.notifyMessagesUpdated(chatId);
     },
-    [updateChatTitle]
+    [updateChatTitle, bumpChatToTop]
   );
 
   const handleLoadMore = useCallback(() => {
@@ -508,173 +531,235 @@ export function SidebarHistory({
           )}
 
           <SidebarMenu>
-            {(() => {
-              const groupedChats = groupChatsByDate(visibleChats);
+            <LayoutGroup>
+              {(() => {
+                const groupedChats = groupChatsByDate(visibleChats);
 
-              return (
-                <div className="flex flex-col gap-6">
-                  {groupedChats.today.length > 0 && (
-                    <div>
-                      <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
-                        Today
+                return (
+                  <div className="flex flex-col gap-6">
+                    {groupedChats.today.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                          Today
+                        </div>
+                        {groupedChats.today.map((chat) => (
+                          <motion.div
+                            key={chat.id}
+                            layout
+                            layoutId={chat.id}
+                            transition={{
+                              layout: {
+                                type: 'spring',
+                                stiffness: 500,
+                                damping: 35,
+                              },
+                            }}
+                          >
+                            <ChatItem
+                              chat={chat}
+                              isActive={chat.id === id}
+                              onDelete={(chatId) => {
+                                setDeleteId(chatId);
+                                setShowDeleteDialog(true);
+                              }}
+                              onRename={handleRename}
+                              setOpenMobile={setOpenMobile}
+                              selection={{
+                                isSelectionMode,
+                                isSelected: selectedSet.has(chat.id),
+                                onToggle: handleToggleSelection,
+                                onRangeToggle: handleRangeSelection,
+                                onPressStart: handlePressStart,
+                                onPressEnd: handlePressEnd,
+                                onTouchStart: handleTouchStart,
+                                onTouchMove: handleTouchMove,
+                                onTouchEnd: handleTouchEnd,
+                              }}
+                            />
+                          </motion.div>
+                        ))}
                       </div>
-                      {groupedChats.today.map((chat) => (
-                        <ChatItem
-                          chat={chat}
-                          isActive={chat.id === id}
-                          key={chat.id}
-                          onDelete={(chatId) => {
-                            setDeleteId(chatId);
-                            setShowDeleteDialog(true);
-                          }}
-                          onRename={handleRename}
-                          setOpenMobile={setOpenMobile}
-                          selection={{
-                            isSelectionMode,
-                            isSelected: selectedSet.has(chat.id),
-                            onToggle: handleToggleSelection,
-                            onRangeToggle: handleRangeSelection,
-                            onPressStart: handlePressStart,
-                            onPressEnd: handlePressEnd,
-                            onTouchStart: handleTouchStart,
-                            onTouchMove: handleTouchMove,
-                            onTouchEnd: handleTouchEnd,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                    )}
 
-                  {groupedChats.yesterday.length > 0 && (
-                    <div>
-                      <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
-                        Yesterday
+                    {groupedChats.yesterday.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                          Yesterday
+                        </div>
+                        {groupedChats.yesterday.map((chat) => (
+                          <motion.div
+                            key={chat.id}
+                            layout
+                            layoutId={chat.id}
+                            transition={{
+                              layout: {
+                                type: 'spring',
+                                stiffness: 500,
+                                damping: 35,
+                              },
+                            }}
+                          >
+                            <ChatItem
+                              chat={chat}
+                              isActive={chat.id === id}
+                              onDelete={(chatId) => {
+                                setDeleteId(chatId);
+                                setShowDeleteDialog(true);
+                              }}
+                              onRename={handleRename}
+                              setOpenMobile={setOpenMobile}
+                              selection={{
+                                isSelectionMode,
+                                isSelected: selectedSet.has(chat.id),
+                                onToggle: handleToggleSelection,
+                                onRangeToggle: handleRangeSelection,
+                                onPressStart: handlePressStart,
+                                onPressEnd: handlePressEnd,
+                                onTouchStart: handleTouchStart,
+                                onTouchMove: handleTouchMove,
+                                onTouchEnd: handleTouchEnd,
+                              }}
+                            />
+                          </motion.div>
+                        ))}
                       </div>
-                      {groupedChats.yesterday.map((chat) => (
-                        <ChatItem
-                          chat={chat}
-                          isActive={chat.id === id}
-                          key={chat.id}
-                          onDelete={(chatId) => {
-                            setDeleteId(chatId);
-                            setShowDeleteDialog(true);
-                          }}
-                          onRename={handleRename}
-                          setOpenMobile={setOpenMobile}
-                          selection={{
-                            isSelectionMode,
-                            isSelected: selectedSet.has(chat.id),
-                            onToggle: handleToggleSelection,
-                            onRangeToggle: handleRangeSelection,
-                            onPressStart: handlePressStart,
-                            onPressEnd: handlePressEnd,
-                            onTouchStart: handleTouchStart,
-                            onTouchMove: handleTouchMove,
-                            onTouchEnd: handleTouchEnd,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                    )}
 
-                  {groupedChats.lastWeek.length > 0 && (
-                    <div>
-                      <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
-                        Last 7 days
+                    {groupedChats.lastWeek.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                          Last 7 days
+                        </div>
+                        {groupedChats.lastWeek.map((chat) => (
+                          <motion.div
+                            key={chat.id}
+                            layout
+                            layoutId={chat.id}
+                            transition={{
+                              layout: {
+                                type: 'spring',
+                                stiffness: 500,
+                                damping: 35,
+                              },
+                            }}
+                          >
+                            <ChatItem
+                              chat={chat}
+                              isActive={chat.id === id}
+                              onDelete={(chatId) => {
+                                setDeleteId(chatId);
+                                setShowDeleteDialog(true);
+                              }}
+                              onRename={handleRename}
+                              setOpenMobile={setOpenMobile}
+                              selection={{
+                                isSelectionMode,
+                                isSelected: selectedSet.has(chat.id),
+                                onToggle: handleToggleSelection,
+                                onRangeToggle: handleRangeSelection,
+                                onPressStart: handlePressStart,
+                                onPressEnd: handlePressEnd,
+                                onTouchStart: handleTouchStart,
+                                onTouchMove: handleTouchMove,
+                                onTouchEnd: handleTouchEnd,
+                              }}
+                            />
+                          </motion.div>
+                        ))}
                       </div>
-                      {groupedChats.lastWeek.map((chat) => (
-                        <ChatItem
-                          chat={chat}
-                          isActive={chat.id === id}
-                          key={chat.id}
-                          onDelete={(chatId) => {
-                            setDeleteId(chatId);
-                            setShowDeleteDialog(true);
-                          }}
-                          onRename={handleRename}
-                          setOpenMobile={setOpenMobile}
-                          selection={{
-                            isSelectionMode,
-                            isSelected: selectedSet.has(chat.id),
-                            onToggle: handleToggleSelection,
-                            onRangeToggle: handleRangeSelection,
-                            onPressStart: handlePressStart,
-                            onPressEnd: handlePressEnd,
-                            onTouchStart: handleTouchStart,
-                            onTouchMove: handleTouchMove,
-                            onTouchEnd: handleTouchEnd,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                    )}
 
-                  {groupedChats.lastMonth.length > 0 && (
-                    <div>
-                      <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
-                        Last 30 days
+                    {groupedChats.lastMonth.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                          Last 30 days
+                        </div>
+                        {groupedChats.lastMonth.map((chat) => (
+                          <motion.div
+                            key={chat.id}
+                            layout
+                            layoutId={chat.id}
+                            transition={{
+                              layout: {
+                                type: 'spring',
+                                stiffness: 500,
+                                damping: 35,
+                              },
+                            }}
+                          >
+                            <ChatItem
+                              chat={chat}
+                              isActive={chat.id === id}
+                              onDelete={(chatId) => {
+                                setDeleteId(chatId);
+                                setShowDeleteDialog(true);
+                              }}
+                              onRename={handleRename}
+                              setOpenMobile={setOpenMobile}
+                              selection={{
+                                isSelectionMode,
+                                isSelected: selectedSet.has(chat.id),
+                                onToggle: handleToggleSelection,
+                                onRangeToggle: handleRangeSelection,
+                                onPressStart: handlePressStart,
+                                onPressEnd: handlePressEnd,
+                                onTouchStart: handleTouchStart,
+                                onTouchMove: handleTouchMove,
+                                onTouchEnd: handleTouchEnd,
+                              }}
+                            />
+                          </motion.div>
+                        ))}
                       </div>
-                      {groupedChats.lastMonth.map((chat) => (
-                        <ChatItem
-                          chat={chat}
-                          isActive={chat.id === id}
-                          key={chat.id}
-                          onDelete={(chatId) => {
-                            setDeleteId(chatId);
-                            setShowDeleteDialog(true);
-                          }}
-                          onRename={handleRename}
-                          setOpenMobile={setOpenMobile}
-                          selection={{
-                            isSelectionMode,
-                            isSelected: selectedSet.has(chat.id),
-                            onToggle: handleToggleSelection,
-                            onRangeToggle: handleRangeSelection,
-                            onPressStart: handlePressStart,
-                            onPressEnd: handlePressEnd,
-                            onTouchStart: handleTouchStart,
-                            onTouchMove: handleTouchMove,
-                            onTouchEnd: handleTouchEnd,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                    )}
 
-                  {groupedChats.older.length > 0 && (
-                    <div>
-                      <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
-                        Older than last month
+                    {groupedChats.older.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1 text-sidebar-foreground/50 text-xs">
+                          Older than last month
+                        </div>
+                        {groupedChats.older.map((chat) => (
+                          <motion.div
+                            key={chat.id}
+                            layout
+                            layoutId={chat.id}
+                            transition={{
+                              layout: {
+                                type: 'spring',
+                                stiffness: 500,
+                                damping: 35,
+                              },
+                            }}
+                          >
+                            <ChatItem
+                              chat={chat}
+                              isActive={chat.id === id}
+                              onDelete={(chatId) => {
+                                setDeleteId(chatId);
+                                setShowDeleteDialog(true);
+                              }}
+                              onRename={handleRename}
+                              setOpenMobile={setOpenMobile}
+                              selection={{
+                                isSelectionMode,
+                                isSelected: selectedSet.has(chat.id),
+                                onToggle: handleToggleSelection,
+                                onRangeToggle: handleRangeSelection,
+                                onPressStart: handlePressStart,
+                                onPressEnd: handlePressEnd,
+                                onTouchStart: handleTouchStart,
+                                onTouchMove: handleTouchMove,
+                                onTouchEnd: handleTouchEnd,
+                              }}
+                            />
+                          </motion.div>
+                        ))}
                       </div>
-                      {groupedChats.older.map((chat) => (
-                        <ChatItem
-                          chat={chat}
-                          isActive={chat.id === id}
-                          key={chat.id}
-                          onDelete={(chatId) => {
-                            setDeleteId(chatId);
-                            setShowDeleteDialog(true);
-                          }}
-                          onRename={handleRename}
-                          setOpenMobile={setOpenMobile}
-                          selection={{
-                            isSelectionMode,
-                            isSelected: selectedSet.has(chat.id),
-                            onToggle: handleToggleSelection,
-                            onRangeToggle: handleRangeSelection,
-                            onPressStart: handlePressStart,
-                            onPressEnd: handlePressEnd,
-                            onTouchStart: handleTouchStart,
-                            onTouchMove: handleTouchMove,
-                            onTouchEnd: handleTouchEnd,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+                    )}
+                  </div>
+                );
+              })()}
+            </LayoutGroup>
           </SidebarMenu>
 
           <motion.div

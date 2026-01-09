@@ -1,41 +1,41 @@
-import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
-import type { DataUIPart } from 'ai';
-import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useMachine } from '@xstate/react';
-import { toast } from '@/components/toast';
-import type { ChatPreferences } from './use-chat-preferences';
-import { ChatSDKError, toChatError } from '@/lib/errors';
-import type { ChatMessage, CustomUIDataTypes } from '@/lib/types';
-import type { MessageTreeResult } from '@/lib/db/schema';
-import type { AppUsage } from '@/lib/usage';
-import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
-import {
-  fetchWithErrorHandlers,
-  generateUUID,
-  getTextFromMessage,
-} from '@/lib/utils';
-import { buildEditedUserMessageParts } from '@/lib/message-editing';
-import type { VisibilityType } from '../visibility-selector';
 import {
   branchMessageAction,
   forkChatAction,
   updateBranchSelection,
   updateMessageTextAction,
 } from '@/app/actions/chat';
-import type React from 'react';
+import { useEncryptedCache } from '@/components/encrypted-cache-provider';
+import { toast } from '@/components/toast';
+import { getSyncManager } from '@/lib/cache/sync-manager';
+import type { MessageTreeResult } from '@/lib/db/schema';
+import { ChatSDKError, toChatError } from '@/lib/errors';
 import type { MessageDeletionMode } from '@/lib/message-deletion';
+import { buildEditedUserMessageParts } from '@/lib/message-editing';
 import { chatOperationsMachine } from '@/lib/state-machines/chat-operations.machine';
+import type { ChatMessage, CustomUIDataTypes } from '@/lib/types';
+import type { AppUsage } from '@/lib/usage';
+import {
+  fetchWithErrorHandlers,
+  generateUUID,
+  getTextFromMessage,
+} from '@/lib/utils';
+import type { BranchSelectionOperation } from '@/lib/utils/branch-planning';
 import {
   buildSelectionSnapshot,
   cloneSelectionSnapshot,
 } from '@/lib/utils/selection-snapshot';
-import type { BranchSelectionOperation } from '@/lib/utils/branch-planning';
-import { useEncryptedCache } from '@/components/encrypted-cache-provider';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
+import { useChat } from '@ai-sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useMachine } from '@xstate/react';
+import type { DataUIPart } from 'ai';
+import { DefaultChatTransport } from 'ai';
+import { useRouter } from 'next/navigation';
+import type React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { VisibilityType } from '../visibility-selector';
+import type { ChatPreferences } from './use-chat-preferences';
 import { useExternalChatSync } from './use-external-chat-sync';
-import { getSyncManager } from '@/lib/cache/sync-manager';
 
 const IS_E2E = process.env.NEXT_PUBLIC_E2E === '1';
 
@@ -99,6 +99,7 @@ export function useChatMessaging({
     markGenerationStarted,
     markGenerationEnded,
     recordLocalChange,
+    bumpChatToTop,
   } = useEncryptedCache();
 
   const {
@@ -328,6 +329,14 @@ export function useChatMessaging({
         triggerRegenerate: (messageId: string) => {
           regenerate({ messageId });
         },
+        onNavigationComplete: () => {
+          // Branch navigation updates the server timestamp, so bump the chat to top
+          recordLocalChange(chatId);
+          bumpChatToTop(chatId);
+          // Notify other tabs about the navigation
+          const syncManager = getSyncManager();
+          syncManager?.notifyMessagesUpdated(chatId);
+        },
       },
     }
   );
@@ -377,6 +386,8 @@ export function useChatMessaging({
       markGenerationEnded();
       // Record local change for echo filtering
       recordLocalChange(chatId);
+      // Bump this chat to top of sidebar (optimistic UI update)
+      bumpChatToTop(chatId);
 
       // Notify other tabs about the message update via the tab-leader BroadcastChannel
       const syncManager = getSyncManager();
@@ -391,6 +402,7 @@ export function useChatMessaging({
     markGenerationStarted,
     markGenerationEnded,
     recordLocalChange,
+    bumpChatToTop,
   ]);
 
   // Sync messages with the machine when they change externally
@@ -829,6 +841,11 @@ export function useChatMessaging({
 
         // Record local change for sync echo filtering
         recordLocalChange(chatId);
+        // Bump chat to top of sidebar
+        bumpChatToTop(chatId);
+        // Notify other tabs
+        const syncManager = getSyncManager();
+        syncManager?.notifyMessagesUpdated(chatId);
 
         // Reset selection state
         selectionRef.current = null;
@@ -862,6 +879,7 @@ export function useChatMessaging({
     },
     [
       assignSelection,
+      bumpChatToTop,
       chatId,
       ensureOperationsReady,
       fetchTree,
@@ -958,6 +976,11 @@ export function useChatMessaging({
 
         // Record local change for sync echo filtering
         recordLocalChange(chatId);
+        // Bump chat to top of sidebar
+        bumpChatToTop(chatId);
+        // Notify other tabs
+        const syncManager = getSyncManager();
+        syncManager?.notifyMessagesUpdated(chatId);
 
         // Invalidate the bootstrap query cache so the updated message is fetched on reload
         queryClient.invalidateQueries({
@@ -979,6 +1002,7 @@ export function useChatMessaging({
       }
     },
     [
+      bumpChatToTop,
       chatId,
       ensureOperationsReady,
       isReadonly,

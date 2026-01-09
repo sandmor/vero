@@ -14,27 +14,27 @@
  * - Rollback on failure restores previous state
  */
 
-import {
-  setup,
-  assign,
-  fromPromise,
-  type ActorRefFrom,
-  type DoneActorEvent,
-} from 'xstate';
+import { toast } from '@/components/toast';
 import type { MessageTreeResult } from '@/lib/db/schema';
-import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 import type { ChatMessage } from '@/lib/types';
+import { convertToUIMessages } from '@/lib/utils';
 import {
   planBranchSwitch,
-  type BranchSwitchPlan,
   type BranchSelectionOperation,
+  type BranchSwitchPlan,
 } from '@/lib/utils/branch-planning';
 import {
   buildSelectionSnapshot,
   cloneSelectionSnapshot,
 } from '@/lib/utils/selection-snapshot';
-import { convertToUIMessages } from '@/lib/utils';
-import { toast } from '@/components/toast';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
+import {
+  assign,
+  fromPromise,
+  setup,
+  type ActorRefFrom,
+  type DoneActorEvent,
+} from 'xstate';
 
 // ============================================================================
 // Types
@@ -92,6 +92,7 @@ export type ChatOperationsContext = {
     snapshot: BranchSelectionSnapshot | null
   ) => Promise<void>;
   triggerRegenerate: (messageId: string) => void;
+  onNavigationComplete?: () => void;
 };
 
 export type ChatOperationsEvents =
@@ -136,6 +137,7 @@ export type ChatOperationsInput = {
     snapshot: BranchSelectionSnapshot | null
   ) => Promise<void>;
   triggerRegenerate: (messageId: string) => void;
+  onNavigationComplete?: () => void;
 };
 
 // ============================================================================
@@ -469,6 +471,10 @@ export const chatOperationsMachine = setup({
       });
     },
 
+    notifyNavigationComplete: ({ context }) => {
+      context.onNavigationComplete?.();
+    },
+
     logError: ({ event }) => {
       if ('error' in event) {
         console.error('Chat operation error:', event.error);
@@ -562,6 +568,7 @@ export const chatOperationsMachine = setup({
     fetchTree: input.fetchTree,
     persistBranchSelection: input.persistBranchSelection,
     triggerRegenerate: input.triggerRegenerate,
+    onNavigationComplete: input.onNavigationComplete,
   }),
 
   initial: 'idle',
@@ -704,6 +711,7 @@ export const chatOperationsMachine = setup({
                 'clearPendingNavigation',
                 'clearActiveOperation',
                 'clearRollbackState',
+                'notifyNavigationComplete',
               ],
             },
             onError: {
