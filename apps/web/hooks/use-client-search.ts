@@ -267,12 +267,12 @@ export function useClientSearch(
         case 'newest':
           return copy.sort(
             (a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
           );
         case 'oldest':
           return copy.sort(
             (a, b) =>
-              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
           );
         case 'title':
           return copy.sort((a, b) => a.title.localeCompare(b.title));

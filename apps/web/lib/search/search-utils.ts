@@ -39,15 +39,15 @@ export interface SearchFilters {
 /**
  * Apply date filters to search results
  */
-export function applyDateFilter<T extends { createdAt: Date | string }>(
+export function applyDateFilter<T extends { updatedAt: Date | string }>(
   items: T[],
   filter: DateFilter
 ): T[] {
   return items.filter((item) => {
     const date =
-      item.createdAt instanceof Date
-        ? item.createdAt
-        : new Date(item.createdAt);
+      item.updatedAt instanceof Date
+        ? item.updatedAt
+        : new Date(item.updatedAt);
 
     if (filter.after && date < filter.after) return false;
     if (filter.before && date > filter.before) return false;

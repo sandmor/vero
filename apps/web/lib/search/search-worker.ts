@@ -741,14 +741,12 @@ function sortChatResults(
     case 'newest':
       return sorted.sort(
         (a, b) =>
-          toTimestamp(b.createdAt ?? b.updatedAt) -
-          toTimestamp(a.createdAt ?? a.updatedAt)
+          toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt)
       );
     case 'oldest':
       return sorted.sort(
         (a, b) =>
-          toTimestamp(a.createdAt ?? a.updatedAt) -
-          toTimestamp(b.createdAt ?? b.updatedAt)
+          toTimestamp(a.updatedAt) - toTimestamp(b.updatedAt)
       );
     case 'title':
       return sorted.sort((a, b) =>
@@ -853,7 +851,7 @@ async function handleSearch(
       continue;
     }
 
-    if (passesDateFilter(doc.createdAt ?? doc.updatedAt, options)) {
+    if (passesDateFilter(doc.updatedAt, options)) {
       filteredChatResults.push({
         chatId: doc.chatId,
         title: doc.title,
