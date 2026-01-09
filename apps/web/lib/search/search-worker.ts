@@ -349,11 +349,19 @@ async function searchQuery(
 ): Promise<Set<string>> {
   if (!query.trim()) return new Set();
 
-  const results = await index.searchAsync(query, {
+  const searchOptions: any = {
     suggest: true,
     limit: 1000,
-    ...(field ? { pluck: field } : {}),
-  });
+  };
+
+  if (field) {
+    // Map field aliases (e.g., 'title' -> 'chatTitle' for message index)
+    const actualField =
+      field === 'title' && index === messageIndex ? 'chatTitle' : field;
+    searchOptions.index = [actualField];
+  }
+
+  const results = await index.searchAsync(query, searchOptions);
 
   return getIdsFromResults(results);
 }
