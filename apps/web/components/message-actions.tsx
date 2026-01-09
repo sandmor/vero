@@ -229,7 +229,7 @@ export function PureMessageActions({
           </Tooltip>
         )}
 
-        {message.role === 'user' && setMode && (
+        {(message.role === 'user' || message.role === 'assistant') && setMode && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

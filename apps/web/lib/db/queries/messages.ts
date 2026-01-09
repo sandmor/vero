@@ -411,6 +411,7 @@ export async function branchMessageWithEdit({
             attachments: true,
             model: true,
             pathText: true,
+            parts: true,
           },
         }),
       ]);
@@ -452,6 +453,17 @@ export async function branchMessageWithEdit({
       const label = toBase36Label(nextIndex);
       const path = parentPath ? `${parentPath}.${label}` : label;
 
+      // Build updated parts: keep all non-text parts, replace/add text part
+      const existingParts = (pivot.parts as unknown[]) ?? [];
+      const nonTextParts = existingParts.filter(
+        (part: unknown) =>
+          typeof part === 'object' &&
+          part !== null &&
+          'type' in part &&
+          (part as { type: unknown }).type !== 'text'
+      );
+      const newParts = [...nonTextParts, { type: 'text', text: trimmed }];
+
       // Insert the new message
       await tx.$executeRaw(
         PrismaRuntime.sql`
@@ -461,7 +473,7 @@ export async function branchMessageWithEdit({
             ${newMessageId}::uuid,
             ${chatId}::uuid,
             ${pivot.role},
-            ${JSON.stringify([{ type: 'text', text: trimmed }])}::jsonb,
+            ${JSON.stringify(newParts)}::jsonb,
             ${JSON.stringify(pivot.attachments ?? [])}::jsonb,
             ${new Date()},
             ${pivot.model ?? null},
