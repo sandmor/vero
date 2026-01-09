@@ -7,6 +7,7 @@ COPY package.json bun.lock tsconfig.base.json ./
 # Workspace manifests needed for dependency graph
 COPY apps/realtime-gateway/package.json ./apps/realtime-gateway/package.json
 COPY packages/db/package.json ./packages/db/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/db/prisma.config.ts ./packages/db/prisma.config.ts
 COPY packages/db/prisma ./packages/db/prisma
 # apps/web is a workspace dependency; we only need its package.json for resolution
@@ -43,6 +44,7 @@ WORKDIR /usr/src/app
 COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/realtime-gateway/package.json ./apps/realtime-gateway/package.json
 COPY packages/db/package.json ./packages/db/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/db/prisma.config.ts ./packages/db/prisma.config.ts
 COPY packages/db/prisma ./packages/db/prisma
 COPY apps/web/package.json ./apps/web/package.json
