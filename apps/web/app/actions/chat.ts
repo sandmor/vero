@@ -5,7 +5,10 @@ import { cookies } from 'next/headers';
 import type { VisibilityType } from '@/components/visibility-selector';
 import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 import { getLanguageModel } from '@/lib/ai/providers';
-import { TITLE_GENERATION_MODEL } from '@/lib/ai/models';
+import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
+import { type SystemAgentSettings } from '@/lib/ai/system-agents';
+import { getSystemAgentBySlug } from '@/lib/db/queries';
+import { buildPromptFromSystemAgent } from '@/lib/ai/system-agent-prompt';
 import {
   forkChat,
   getChatById,
@@ -52,12 +55,57 @@ export async function saveReasoningEffortAsCookie(
   cookieStore.set('chat-reasoning', effort);
 }
 
+/**
+ * Default system prompt for title generation, used as fallback.
+ */
+const DEFAULT_TITLE_PROMPT = `- you will generate a short title based on the conversation content
+- ensure it is not more than 80 characters long
+- the title should be a summary of the main topic or question being discussed
+- focus on the user's intent and the conversation's core subject
+- do not surround the title with quotes
+- do not include any introductory phrases like "Title:" or "Summary:"
+- do not use markdown. The title must be in plain text, only emojis are allowed`;
+
+/**
+ * Generate a title for a chat based on its message history.
+ * Uses the "title-generation" system agent if available and enabled,
+ * otherwise falls back to default settings.
+ */
 export async function generateTitleFromChatHistory({
   messages,
 }: {
   messages: UIMessage[];
 }) {
-  const model = await getLanguageModel(TITLE_GENERATION_MODEL);
+  // Try to get the title-generation system agent
+  let modelId = DEFAULT_CHAT_MODEL;
+  let systemPrompt = DEFAULT_TITLE_PROMPT;
+
+  try {
+    const titleAgent = await getSystemAgentBySlug('title-generation');
+
+    if (titleAgent) {
+      const settings = titleAgent.settings as SystemAgentSettings | null;
+
+      // Use agent's model if configured
+      if (settings?.modelId) {
+        modelId = settings.modelId;
+      }
+
+      // Build prompt from agent's prompt config
+      const agentPrompt = buildPromptFromSystemAgent(settings);
+      if (agentPrompt) {
+        systemPrompt = agentPrompt;
+      }
+    }
+  } catch (error) {
+    // Fall back to defaults if system agent lookup fails
+    console.warn(
+      'Failed to load title-generation system agent, using defaults:',
+      error
+    );
+  }
+
+  const model = await getLanguageModel(modelId);
   const { output } = await generateText({
     model,
     output: Output.object({
@@ -68,14 +116,7 @@ export async function generateTitleFromChatHistory({
           .describe('A short title summarizing the conversation'),
       }),
     }),
-    system: `\n
-    - you will generate a short title based on the conversation content
-    - ensure it is not more than 80 characters long
-    - the title should be a summary of the main topic or question being discussed
-    - focus on the user's intent and the conversation's core subject
-    - do not surround the title with quotes
-    - do not include any introductory phrases like "Title:" or "Summary:"
-    - do not use markdown. The title must be in plain text, only emojis are allowed`,
+    system: systemPrompt,
     prompt: JSON.stringify(messages),
   });
 

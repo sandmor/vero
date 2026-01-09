@@ -61,7 +61,32 @@ Operational management interface (in progress / evolving):
 - **Provider API Keys**: Database overrides trump environment variables (`Provider` table)
 - **Tier Management**: Adjust model allow lists + bucket config (backed by `Tier` rows, with fallbacks if missing)
 - **Model Capabilities**: View persisted model capability matrix & usage (referenced by tiers)
+- **System Agents**: Configure platform-level AI agents for special tasks (see below)
 - **Housekeeping Tasks**: Planned actions (sync OpenRouter models, prune unused capabilities)
+
+### System Agents
+
+System agents are platform-level AI agents that perform special automated tasks. Unlike user agents, they:
+
+- **Admin-only**: Can only be viewed and configured by administrators
+- **Cannot be deleted**: They're integral to platform functionality
+- **Resettable**: Each can be reset to its default configuration at any time
+- **Isolated**: Don't have associated chats or user ownership
+
+#### Available System Agents
+
+| Agent            | Slug               | Purpose                                                           |
+| ---------------- | ------------------ | ----------------------------------------------------------------- |
+| Title Generation | `title-generation` | Automatically generates concise titles for new chat conversations |
+
+#### Configuring System Agents
+
+Access system agents via **Settings → Admin → System Agents**. For each agent you can:
+
+- **Enable/Disable**: Toggle whether the agent is active
+- **Change Model**: Select which AI model the agent uses
+- **Customize Prompt**: Modify the system prompt blocks to change behavior
+- **Reset to Defaults**: Restore the original configuration
 
 ## Client-Side Caching & Edge Security
 
@@ -308,7 +333,6 @@ Create `apps/web/.env.local` (or `.env`) for the Next app and ensure `DATABASE_U
 | `GOOGLE_GENERATIVE_AI_API_KEY`     | Direct Gemini API access                                                                                   |
 | `GOOGLE_API_KEY`                   | Alternate env name for direct Gemini access (either works)                                                 |
 | `DEFAULT_CHAT_MODEL`               | Default model for new chats and fallback                                                                   |
-| `TITLE_GENERATION_MODEL`           | Override model for automatic chat title generation                                                         |
 | `ARTIFACT_GENERATION_MODEL`        | Override model for artifact generation flows                                                               |
 | `GUEST_MODELS`                     | Comma-separated fallback guest tier model list                                                             |
 | `REGULAR_MODELS`                   | Comma-separated fallback regular tier model list                                                           |

@@ -51,6 +51,7 @@ export type Agent = Prisma.AgentGetPayload<{}>;
 export type Stream = Prisma.StreamGetPayload<{}>;
 export type ArchiveEntry = Prisma.ArchiveEntryGetPayload<{}>;
 export type ArchiveLink = Prisma.ArchiveLinkGetPayload<{}>;
+export type SystemAgent = Prisma.SystemAgentGetPayload<{}>;
 
 // Message is the current message table used by the app
 export type DBMessage = Prisma.MessageGetPayload<{}>;

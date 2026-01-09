@@ -32,8 +32,6 @@ function resolveDefaultChatModel() {
 
 export const DEFAULT_CHAT_MODEL = resolveDefaultChatModel();
 
-export const TITLE_GENERATION_MODEL =
-  process.env.TITLE_GENERATION_MODEL ?? DEFAULT_CHAT_MODEL;
 export const ARTIFACT_GENERATION_MODEL =
   process.env.ARTIFACT_GENERATION_MODEL ?? DEFAULT_CHAT_MODEL;
 

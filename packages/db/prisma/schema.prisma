@@ -182,6 +182,22 @@ model Agent {
   @@map("Agent")
 }
 
+// System-owned agents for platform-level AI tasks (title generation, etc.)
+// Unlike regular Agents, these are not user-owned and cannot be deleted.
+// They perform special functions and can only be viewed/edited by admins.
+model SystemAgent {
+  id          String   @id @default(uuid()) @db.Uuid
+  slug        String   @unique @db.VarChar(64) // Stable identifier (e.g., "title-generation")
+  name        String   @db.VarChar(128)
+  description String?  @db.Text
+  // Runtime settings (model, prompt, etc.) - same shape as Agent settings
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("SystemAgent")
+}
+
 model Chat {
   id          String   @id @default(uuid()) @db.Uuid
   createdAt   DateTime
@@ -423,7 +439,7 @@ model PlatformCustomProvider {
   updatedAt DateTime @updatedAt
 
   // Platform custom models using this provider directly
-  models PlatformCustomModel[]
+  models         PlatformCustomModel[]
   // Regular models that can be routed through this custom provider
   modelProviders ModelProvider[]
 

@@ -4,10 +4,22 @@ import TiersSection from './_tiers-section';
 import ModelCapabilitiesSection from './_model-capabilities-section';
 import PlatformSection from './_platform-section';
 import SettingsSection from './_settings-section';
+import SystemAgentsSection from './_system-agents-section';
 
 export default function AdminSections() {
   return (
     <div className="space-y-10 px-2 py-6 max-w-5xl mx-auto w-full animate-in fade-in-0 slide-in-from-bottom-4">
+      <Suspense
+        fallback={
+          <div className="rounded-3xl border border-border/60 bg-muted/10 p-6 shadow-sm animate-pulse">
+            <p className="text-sm text-muted-foreground">
+              Loading system agents…
+            </p>
+          </div>
+        }
+      >
+        <SystemAgentsSection />
+      </Suspense>
       <Suspense
         fallback={
           <div className="rounded-3xl border border-border/60 bg-muted/10 p-6 shadow-sm animate-pulse">
