@@ -1,6 +1,6 @@
+import { createClerkClient } from '@clerk/backend';
 import { parseGuestSession } from '@virid/shared/auth';
 import { deriveEncryptionKey } from '@virid/shared/encryption';
-import { createClerkClient } from '@clerk/backend';
 
 export interface Env {
   CACHE_ENCRYPTION_SECRET: string;
@@ -48,9 +48,19 @@ export default {
     const guestCookie = cookieHeader
       .split('; ')
       .find((s) => s.trim().startsWith('guest_session='))
-      ?.split('=')[1];
+      ?.slice('guest_session='.length);
 
-    const guest = parseGuestSession(guestCookie, env.GUEST_SECRET);
+    let decodedGuestCookie: string | undefined;
+    if (guestCookie) {
+      try {
+        decodedGuestCookie = decodeURIComponent(guestCookie);
+      } catch (e) {
+        console.error('Failed to decode guest_session cookie:', e);
+        decodedGuestCookie = guestCookie; // fallback to raw value
+      }
+    }
+
+    const guest = parseGuestSession(decodedGuestCookie, env.GUEST_SECRET);
     let stableId = guest?.uid;
 
     // Fallback to Clerk
