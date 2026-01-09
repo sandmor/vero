@@ -156,7 +156,7 @@ installApiBridges([weatherBridge, fetchBridge, webScrapeBridge, ...]) → VM-nat
 ```
 User calls api.getWeather(coords)
   ↓
-VM creates Promise via __virid_bridge_executor__.dispatch()
+VM creates Promise via __vero_bridge_executor__.dispatch()
   ↓
 Host executes async handler (fetchWeather)
   ↓
@@ -385,7 +385,7 @@ export async function fetchHttp(url: string, timeout: number): Promise<string> {
 ```typescript
 export function createHttpBridge(deadline: number): ApiBridgeConfig {
   return {
-    functionName: '__virid_host_fetch__',
+    functionName: '__vero_host_fetch__',
     handler: async (vmContext, payload) => {
       const { url } = validatePayload(payload);
       return await fetchHttp(url, deadline - Date.now());
@@ -401,7 +401,7 @@ export function createHttpBridge(deadline: number): ApiBridgeConfig {
 globalThis.api = {
   // ...existing methods
   async fetch(url) {
-    const hostFetch = globalThis.__virid_host_fetch__;
+    const hostFetch = globalThis.__vero_host_fetch__;
     return await hostFetch(JSON.stringify({ url }));
   },
 };

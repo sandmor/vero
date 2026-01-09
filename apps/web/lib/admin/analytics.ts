@@ -1,4 +1,4 @@
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import {
   subHours,
   subDays,

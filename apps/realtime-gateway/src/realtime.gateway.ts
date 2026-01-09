@@ -11,7 +11,7 @@ import { verifyToken } from '@clerk/backend';
 import { ConfigService } from '@nestjs/config';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { Client } from 'pg';
-import { CHAT_NOTIFICATION_CHANNEL } from '@virid/db';
+import { CHAT_NOTIFICATION_CHANNEL } from '@vero/db';
 import { PrismaService } from './prisma.service.js';
 
 @WebSocketGateway({ path: '/ws' })

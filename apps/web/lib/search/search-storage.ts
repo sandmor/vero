@@ -19,7 +19,7 @@
 
 import type { ChatDoc, MessageDoc } from './search-index.types';
 
-const DB_NAME = 'ViridSearchIndex';
+const DB_NAME = 'VeroSearchIndex';
 const DB_VERSION = 1;
 const AES_GCM_IV_LENGTH = 12;
 

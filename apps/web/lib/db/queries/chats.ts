@@ -1,5 +1,5 @@
-import type { Prisma } from '@virid/db';
-import { prisma } from '@virid/db';
+import type { Prisma } from '@vero/db';
+import { prisma } from '@vero/db';
 import { ChatSDKError } from '../../errors';
 import type { Chat, ChatSettings, DBMessage, MessageTreeNode } from '../schema';
 import type { AppUsage } from '../../usage';

@@ -7,7 +7,7 @@
  * - User BYOK models
  */
 
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import { isKnownProvider, providerSupportsByok } from '@/lib/ai/registry';
 import {
   formatByokPlatformModelId,

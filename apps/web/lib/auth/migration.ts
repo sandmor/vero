@@ -1,4 +1,4 @@
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 
 /**
  * Migrates all data owned by a guest user to a regular user.

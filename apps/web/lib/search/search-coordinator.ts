@@ -16,7 +16,7 @@
  * - Race conditions result in eventual consistency, not data loss
  */
 
-const SEARCH_CHANNEL = 'virid-search-sync';
+const SEARCH_CHANNEL = 'vero-search-sync';
 
 type SearchBroadcastMessage =
   | {

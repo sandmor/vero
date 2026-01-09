@@ -195,7 +195,7 @@ export async function fetchUrl(
       method,
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Virid-Sandbox/1.0',
+        'User-Agent': 'Vero-Sandbox/1.0',
         ...options.headers,
       },
     };

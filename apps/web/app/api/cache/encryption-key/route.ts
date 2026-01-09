@@ -4,7 +4,7 @@ import { readGuestSession } from '@/lib/auth/guest';
 import {
   deriveEncryptionKey,
   deriveTestingKey,
-} from '@virid/shared/encryption';
+} from '@vero/shared/encryption';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,8 +71,8 @@ function unauthorizedResponse(): NextResponse {
 export async function POST(_request: NextRequest) {
   // E2E Testing Path
   if (process.env.APP_E2E === '1') {
-    const sessionSeed = process.env.APP_E2E_SESSION_ID ?? 'virid-e2e-session';
-    const secret = process.env.APP_E2E_SECRET ?? 'virid-e2e-secret';
+    const sessionSeed = process.env.APP_E2E_SESSION_ID ?? 'vero-e2e-session';
+    const secret = process.env.APP_E2E_SECRET ?? 'vero-e2e-secret';
 
     const key = deriveTestingKey(sessionSeed, secret);
 

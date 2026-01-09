@@ -1,4 +1,4 @@
-import type { Prisma } from '@virid/db';
+import type { Prisma } from '@vero/db';
 import type { AppUsage } from '../usage';
 import type { VisibilityType } from '@/components/visibility-selector';
 

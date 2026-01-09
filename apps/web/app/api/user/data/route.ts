@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
-import { prisma } from '@virid/db';
-import { Prisma as PrismaRuntime } from '@virid/db';
+import { prisma } from '@vero/db';
+import { Prisma as PrismaRuntime } from '@vero/db';
 import { ChatSDKError } from '@/lib/errors';
 import type { UserPreferences } from '@/lib/db/schema';
 

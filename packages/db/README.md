@@ -1,6 +1,6 @@
-# @virid/db
+# @vero/db
 
-Shared database package for the Virid monorepo. Provides the Prisma client, schema, and utilities for database access.
+Shared database package for the Vero monorepo. Provides the Prisma client, schema, and utilities for database access.
 
 ## Installation
 
@@ -9,7 +9,7 @@ This package is used internally within the monorepo. Add it as a dependency to y
 ```json
 {
   "dependencies": {
-    "@virid/db": "workspace:*"
+    "@vero/db": "workspace:*"
   }
 }
 ```
@@ -21,7 +21,7 @@ This package is used internally within the monorepo. Add it as a dependency to y
 Create a `.env` file in `packages/db/` with:
 
 ```bash
-DATABASE_URL="postgresql://user:password@localhost:5432/virid?schema=public"
+DATABASE_URL="postgresql://user:password@localhost:5432/vero?schema=public"
 ```
 
 The app-specific env files live alongside each app (e.g., `apps/web/.env.local`). This package reads only `packages/db/.env` (and `.env.local`) when running Prisma commands.
@@ -45,7 +45,7 @@ cd packages/db && bun run db:generate
 Import the Prisma client and types in your application:
 
 ```typescript
-import { prisma, Prisma } from '@virid/db';
+import { prisma, Prisma } from '@vero/db';
 
 // Use the Prisma client
 const users = await prisma.user.findMany();

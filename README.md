@@ -1,4 +1,4 @@
-<h1 align="center">Virid Chat</h1>
+<h1 align="center">Vero Chat</h1>
 
 Advanced multimodal AI chat application built with Next.js 16 (App Router), React 19, Prisma & PostgreSQL. It features advanced chat branching and message versioning, tier‑aware model registry, runtime model capability introspection, and granular administrative controls.
 
@@ -90,13 +90,13 @@ Access system agents via **Settings → Admin → System Agents**. For each agen
 
 ## Client-Side Caching & Edge Security
 
-To enhance performance and provide a more fluid user experience, Virid Chat implements an encrypted client-side caching mechanism.
+To enhance performance and provide a more fluid user experience, Vero Chat implements an encrypted client-side caching mechanism.
 
 ### Key Features
 
 - **Fast Initial Load**: Chat history and messages are loaded from a local IndexedDB cache, making navigation between chats nearly instantaneous.
 - **Cache Encryption**: All cached data is encrypted using AES-GCM via the Web Crypto API. The encryption key is derived from a server-side secret and a stable user session identifier, ensuring that each user's data is secure and private.
-- **Hybrid Edge Architecture**: Key derivation logic is "hoisted" to `@virid/shared` and runs on a **Cloudflare Worker** at the Edge for minimum latency. If the Worker is unavailable, the Next.js backend serves as a seamless fallback using the exact same logic.
+- **Hybrid Edge Architecture**: Key derivation logic is "hoisted" to `@vero/shared` and runs on a **Cloudflare Worker** at the Edge for minimum latency. If the Worker is unavailable, the Next.js backend serves as a seamless fallback using the exact same logic.
 - **Cache Synchronization**: The client-side cache is kept in sync with the server. The application intelligently refreshes the cache in the background to ensure data consistency.
 - **Optimistic Updates**: The UI updates optimistically when new messages are sent or chats are created, providing a responsive feel.
 
@@ -261,8 +261,8 @@ The project is structured as a monorepo with:
 - `apps/web` - Main Next.js application
 - `apps/realtime-gateway` - WebSocket gateway for chat notifications
 - `apps/cache-worker` - Cloudflare Worker for edge encryption
-- `packages/db` - Shared database package (`@virid/db`)
-- `packages/shared` - Shared isomorphic logic (`@virid/shared`)
+- `packages/db` - Shared database package (`@vero/db`)
+- `packages/shared` - Shared isomorphic logic (`@vero/shared`)
 
 The root `package.json` provides convenience scripts to run commands across packages.
 
@@ -373,7 +373,7 @@ Because this worker relies on authentication cookies (`guest_session` and `__ses
 1.  **Custom Domain:** Assign a subdomain to the worker (e.g., `cache.yourdomain.com`) that shares the same root as your app.
     - Deploy with the domain flag:
       ```bash
-      cd apps/virid-cache-worker
+      cd apps/cache-worker
       bunx wrangler deploy --domain cache.yourdomain.com
       ```
     - **Update Auth Config:**

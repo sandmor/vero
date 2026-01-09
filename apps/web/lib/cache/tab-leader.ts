@@ -20,8 +20,8 @@
 
 'use client';
 
-const TAB_LEADER_CHANNEL = 'virid-tab-leader';
-const LEASE_STORAGE_KEY = 'virid-cache-leader-lease';
+const TAB_LEADER_CHANNEL = 'vero-tab-leader';
+const LEASE_STORAGE_KEY = 'vero-cache-leader-lease';
 const LEADER_LEASE_DURATION_MS = 10_000; // 10 seconds
 const HEARTBEAT_INTERVAL_MS = 3_000; // 3 seconds
 const ELECTION_DELAY_MS = 100; // Small delay to allow other tabs to respond

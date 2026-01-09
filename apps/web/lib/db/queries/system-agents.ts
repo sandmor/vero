@@ -1,7 +1,7 @@
 import 'server-only';
 
-import { prisma } from '@virid/db';
-import type { Prisma } from '@virid/db';
+import { prisma } from '@vero/db';
+import type { Prisma } from '@vero/db';
 import type { SystemAgent } from '@/lib/db/schema';
 import {
   SYSTEM_AGENTS,

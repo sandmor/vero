@@ -13,7 +13,7 @@ import {
   notifyChatCreated,
   notifyChatUpdated,
   notifyChatDeleted,
-} from '@virid/db';
+} from '@vero/db';
 
 /**
  * Notify that a chat was created.

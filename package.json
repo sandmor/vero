@@ -1,5 +1,5 @@
 {
-  "name": "virid-monorepo",
+  "name": "vero-monorepo",
   "private": true,
   "scripts": {
     "dev": "concurrently -n \"web,gate,work\" -c \"cyan,magenta,yellow\" \"bun dev:web\" \"bun dev:gateway\" \"bun dev:worker\"",

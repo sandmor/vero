@@ -1,4 +1,4 @@
-name = "virid-cache-encryption-worker"
+name = "vero-cache-encryption-worker"
 main = "src/index.ts"
 compatibility_date = "2026-01-08"
 compatibility_flags = ["nodejs_compat"]

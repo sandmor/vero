@@ -1,6 +1,6 @@
 # Realtime Gateway
 
-A lightweight NestJS WebSocket gateway for realtime chat notifications in Virid.
+A lightweight NestJS WebSocket gateway for realtime chat notifications in Vero.
 
 ## Overview
 

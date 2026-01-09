@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import { type ChatModelOption } from './models';
 import { getModelCapabilities } from './model-capabilities';
 import { parseModelId, getModelName } from './model-id';

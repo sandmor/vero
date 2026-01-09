@@ -4,7 +4,7 @@ import {
   type GuestSessionPayload,
   signGuestSession,
   parseGuestSession,
-} from '@virid/shared/auth';
+} from '@vero/shared/auth';
 
 const COOKIE_NAME = 'guest_session';
 

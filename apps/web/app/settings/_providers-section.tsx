@@ -1,4 +1,4 @@
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import { getAllProviders } from '@/lib/ai/registry';
 import { ProvidersEditor } from '@/components/admin/providers-editor';
 

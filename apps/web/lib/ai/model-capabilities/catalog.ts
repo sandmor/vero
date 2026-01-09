@@ -2,8 +2,8 @@
  * Provider Catalog Operations (Sync Cache)
  */
 
-import { prisma } from '@virid/db';
-import { Prisma } from '@virid/db';
+import { prisma } from '@vero/db';
+import { Prisma } from '@vero/db';
 import type { CatalogEntry, ModelFormat, ModelPricing } from './types';
 import { upsertModel, upsertModelProvider } from './db';
 import { parseModelId } from '../model-id';

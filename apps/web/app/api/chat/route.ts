@@ -67,7 +67,7 @@ import { generateTitleFromChatHistory } from '@/app/actions/chat';
 import { updateChatTitleById } from '@/lib/db/queries';
 import { ZodError } from 'zod';
 import { type PostRequestBody, createPostRequestBodySchema } from './schema';
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import {
   getModelCapabilities,
   type ResolvedModelCapabilities,

@@ -2,7 +2,7 @@ import { hkdfSync } from 'node:crypto';
 
 export const KEY_LENGTH_BYTES = 32;
 export const HKDF_DIGEST = 'sha256';
-export const HKDF_INFO = Buffer.from('virid-cache-encryption', 'utf8');
+export const HKDF_INFO = Buffer.from('vero-cache-encryption', 'utf8');
 
 /**
  * Derives the production encryption key using HKDF.

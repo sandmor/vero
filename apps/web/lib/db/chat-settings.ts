@@ -1,6 +1,6 @@
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import type { ChatSettings } from './schema';
-import type { Prisma } from '@virid/db';
+import type { Prisma } from '@vero/db';
 import { ChatSDKError } from '../errors';
 import { normalizeChatToolIds } from '../ai/tool-ids';
 import { notifyOnChatUpdated } from '@/lib/realtime/notify';

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import { normalizeAgentSettingsPayload } from '@/lib/agent-settings';
-import type { Prisma } from '@virid/db';
+import type { Prisma } from '@vero/db';
 
 export async function GET() {
   const session = await getAppSession();

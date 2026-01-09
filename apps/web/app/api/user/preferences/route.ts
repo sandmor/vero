@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import { revalidatePath } from 'next/cache';
-import { Prisma } from '@virid/db';
+import { Prisma } from '@vero/db';
 
 export async function GET() {
   try {

@@ -12,10 +12,10 @@ import { QueryProvider } from '@/components/query-provider';
 export const metadata: Metadata = {
   // Update to your production domain when available
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://virid.local'
+    process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://vero.local'
   ),
-  title: 'Virid Chat',
-  description: 'Virid – multimodal AI chat with Clerk authentication.',
+  title: 'Vero Chat',
+  description: 'Vero – multimodal AI chat with Clerk authentication.',
 };
 
 export const viewport = {

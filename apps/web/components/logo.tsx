@@ -24,7 +24,7 @@ export function Logo({
     >
       <defs>
         <linearGradient
-          id="viridGradient"
+          id="veroGradient"
           x1="0"
           y1="0"
           x2="512"
@@ -39,13 +39,13 @@ export function Logo({
       {variant === 'default' && (
         <path
           d="M0 128C0 57.3 57.3 0 128 0H384C454.7 0 512 57.3 512 128V512H128C57.3 512 0 454.7 0 384V128Z"
-          fill="url(#viridGradient)"
+          fill="url(#veroGradient)"
         />
       )}
 
       <path
         d="M140 140 L256 380 L372 140"
-        stroke={variant === 'default' ? '#FDF6E3' : 'url(#viridGradient)'}
+        stroke={variant === 'default' ? '#FDF6E3' : 'url(#veroGradient)'}
         strokeWidth="80"
         strokeLinecap="round"
         strokeLinejoin="round"

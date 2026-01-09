@@ -189,7 +189,7 @@ ${userStatsCsv}`;
     link.setAttribute('href', url);
     link.setAttribute(
       'download',
-      `virid_usage_report_${dateRange.from.toISOString().split('T')[0]}_${dateRange.to.toISOString().split('T')[0]}.csv`
+      `vero_usage_report_${dateRange.from.toISOString().split('T')[0]}_${dateRange.to.toISOString().split('T')[0]}.csv`
     );
     link.style.visibility = 'hidden';
     document.body.appendChild(link);

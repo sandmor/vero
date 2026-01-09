@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import { requireAdmin } from '@/lib/auth/admin';
 import { revalidatePath } from 'next/cache';
 import { isValidProviderSlug, isValidBaseUrl } from '@/lib/ai/shared-provider';

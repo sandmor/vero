@@ -4,7 +4,7 @@ import Dexie from 'dexie';
 
 type SchemaVersion = 1;
 
-export const CACHE_DB_NAME = 'ViridEncryptedCache';
+export const CACHE_DB_NAME = 'VeroEncryptedCache';
 export const CACHE_DB_VERSION: SchemaVersion = 1;
 
 export interface EncryptedEnvelope {
@@ -46,7 +46,7 @@ export interface CacheMetadataRecord extends EncryptedEnvelope {
   schemaVersion: SchemaVersion;
 }
 
-class ViridCacheDatabase extends Dexie {
+class VeroCacheDatabase extends Dexie {
   chats!: Dexie.Table<ChatCacheRecord, string>;
   documents!: Dexie.Table<DocumentCacheRecord, string>;
   metadata!: Dexie.Table<CacheMetadataRecord, string>;
@@ -62,14 +62,14 @@ class ViridCacheDatabase extends Dexie {
   }
 }
 
-let dbInstance: ViridCacheDatabase | null = null;
+let dbInstance: VeroCacheDatabase | null = null;
 
-export function getCacheDB(): ViridCacheDatabase {
+export function getCacheDB(): VeroCacheDatabase {
   if (dbInstance) {
     return dbInstance;
   }
 
-  dbInstance = new ViridCacheDatabase();
+  dbInstance = new VeroCacheDatabase();
   return dbInstance;
 }
 

@@ -9,7 +9,7 @@ import {
   upsertModelProvider,
 } from '@/lib/ai/model-capabilities';
 import { getTierWithModels, invalidateTierCache } from '@/lib/ai/tiers';
-import { prisma, PrismaClient } from '@virid/db';
+import { prisma, PrismaClient } from '@vero/db';
 import { revalidatePath } from 'next/cache';
 import type {
   CatalogEntry,

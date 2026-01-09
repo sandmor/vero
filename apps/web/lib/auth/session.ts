@@ -1,5 +1,5 @@
 import { auth, clerkClient } from '@clerk/nextjs/server';
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import { readGuestSession, clearGuestSession } from './guest';
 import { migrateGuestData } from './migration';
 import type { AppSession } from './types';

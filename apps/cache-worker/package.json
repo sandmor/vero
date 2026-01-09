@@ -1,11 +1,11 @@
 {
-  "name": "virid-cache-worker",
+  "name": "vero-cache-worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "dependencies": {
     "@clerk/backend": "^2.29.1",
-    "@virid/shared": "workspace:*"
+    "@vero/shared": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260108.0",

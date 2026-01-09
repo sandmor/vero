@@ -70,7 +70,7 @@ export function AppSidebar() {
             >
               <Logo size={32} variant="glyph" />
               <span className="whitespace-nowrap font-semibold text-lg">
-                Virid Chat
+                Vero Chat
               </span>
             </Link>
             <div className="flex items-center gap-1">

@@ -1,7 +1,7 @@
 import 'server-only';
 
 const globalCacheRateLimiter = globalThis as unknown as {
-  __viridCacheRateLimiter?: Map<string, RateLimitEntry>;
+  __veroCacheRateLimiter?: Map<string, RateLimitEntry>;
 };
 
 type RateLimitEntry = {
@@ -22,10 +22,10 @@ export type CacheRateLimitConfig = {
 };
 
 function getStore(): Map<string, RateLimitEntry> {
-  if (!globalCacheRateLimiter.__viridCacheRateLimiter) {
-    globalCacheRateLimiter.__viridCacheRateLimiter = new Map();
+  if (!globalCacheRateLimiter.__veroCacheRateLimiter) {
+    globalCacheRateLimiter.__veroCacheRateLimiter = new Map();
   }
-  return globalCacheRateLimiter.__viridCacheRateLimiter;
+  return globalCacheRateLimiter.__veroCacheRateLimiter;
 }
 
 export function enforceCacheRateLimit(

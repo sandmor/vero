@@ -112,7 +112,7 @@ export function createWeatherBridge(deadlineMs: number): ApiBridgeConfig {
   };
 
   return {
-    functionName: '__virid_host_get_weather__',
+    functionName: '__vero_host_get_weather__',
     handler,
   };
 }
@@ -182,7 +182,7 @@ export function createFetchBridge(deadlineMs: number): ApiBridgeConfig {
   };
 
   return {
-    functionName: '__virid_host_fetch__',
+    functionName: '__vero_host_fetch__',
     handler,
   };
 }
@@ -237,7 +237,7 @@ export function createWebScrapeBridge(deadlineMs: number): ApiBridgeConfig {
   };
 
   return {
-    functionName: '__virid_host_web_scrape__',
+    functionName: '__vero_host_web_scrape__',
     handler,
   };
 }
@@ -288,7 +288,7 @@ export function createWebCrawlBridge(deadlineMs: number): ApiBridgeConfig {
   };
 
   return {
-    functionName: '__virid_host_web_crawl__',
+    functionName: '__vero_host_web_crawl__',
     handler,
   };
 }
@@ -338,7 +338,7 @@ export function createWebMapBridge(deadlineMs: number): ApiBridgeConfig {
   };
 
   return {
-    functionName: '__virid_host_web_map__',
+    functionName: '__vero_host_web_map__',
     handler,
   };
 }
@@ -388,7 +388,7 @@ export function createWebSearchBridge(deadlineMs: number): ApiBridgeConfig {
   };
 
   return {
-    functionName: '__virid_host_web_search__',
+    functionName: '__vero_host_web_search__',
     handler,
   };
 }
@@ -411,16 +411,16 @@ export function installApiBridges(
   // Ensure the VM has a map to track pending bridge promises
   const pendingMapInit = `
 (function() {
-  if (!globalThis.__virid_pending_bridges__) {
-    globalThis.__virid_pending_bridges__ = new Map();
+  if (!globalThis.__vero_pending_bridges__) {
+    globalThis.__vero_pending_bridges__ = new Map();
   }
 })();
 `;
 
   evaluateScript(vmContext, pendingMapInit, 'bridge-pending-init.js');
 
-  const pendingResultKey = '__virid_bridge_result__';
-  const pendingErrorKey = '__virid_bridge_error__';
+  const pendingResultKey = '__vero_bridge_result__';
+  const pendingErrorKey = '__vero_bridge_error__';
   let nextRequestId = 1;
 
   const resolveBridgePromise = (
@@ -440,7 +440,7 @@ export function installApiBridges(
       evaluateScript(
         vmContext,
         `(() => {
-          const pending = globalThis.__virid_pending_bridges__;
+          const pending = globalThis.__vero_pending_bridges__;
           if (!pending) {
             return;
           }
@@ -499,7 +499,7 @@ export function installApiBridges(
       evaluateScript(
         vmContext,
         `(() => {
-          const pending = globalThis.__virid_pending_bridges__;
+          const pending = globalThis.__vero_pending_bridges__;
           if (!pending) {
             return;
           }
@@ -591,18 +591,18 @@ export function installApiBridges(
   };
 
   // Set the bridge executor in the VM context
-  setContextValue(vmContext, '__virid_bridge_executor__', bridgeExecutor);
+  setContextValue(vmContext, '__vero_bridge_executor__', bridgeExecutor);
 
   // For each bridge, inject a VM-native wrapper that returns a VM Promise
   for (const bridge of bridges) {
     const wrapperSetupCode = `
   (function() {
-    const executor = globalThis.__virid_bridge_executor__;
+    const executor = globalThis.__vero_bridge_executor__;
     if (!executor || typeof executor.dispatch !== 'function') {
       throw new Error('Bridge executor is unavailable');
     }
 
-    const pending = globalThis.__virid_pending_bridges__;
+    const pending = globalThis.__vero_pending_bridges__;
     if (!pending) {
       throw new Error('Pending bridge map is unavailable');
     }

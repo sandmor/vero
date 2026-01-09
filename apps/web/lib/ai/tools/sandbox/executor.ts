@@ -194,9 +194,9 @@ export async function executeSandboxCode(
     });
 
     // Check what's in the context before collecting
-    const lastResult = getContextValue(vmContext, '__virid_last_result__');
-    const stdout = getContextValue(vmContext, '__virid_stdout__');
-    const stderr = getContextValue(vmContext, '__virid_stderr__');
+    const lastResult = getContextValue(vmContext, '__vero_last_result__');
+    const stdout = getContextValue(vmContext, '__vero_stdout__');
+    const stderr = getContextValue(vmContext, '__vero_stderr__');
     logger.debug('Context state before summary', {
       hasLastResult: !!lastResult,
       lastResult: JSON.stringify(lastResult),

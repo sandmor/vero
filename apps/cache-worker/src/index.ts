@@ -1,6 +1,6 @@
 import { createClerkClient } from '@clerk/backend';
-import { parseGuestSession } from '@virid/shared/auth';
-import { deriveEncryptionKey } from '@virid/shared/encryption';
+import { parseGuestSession } from '@vero/shared/auth';
+import { deriveEncryptionKey } from '@vero/shared/encryption';
 
 export interface Env {
   CACHE_ENCRYPTION_SECRET: string;

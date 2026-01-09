@@ -2,7 +2,7 @@
  * Database Operations for Model and ModelProvider tables
  */
 
-import { prisma, PrismaClient, Prisma } from '@virid/db';
+import { prisma, PrismaClient, Prisma } from '@vero/db';
 import type {
   ModelCapabilities,
   ModelFormat,

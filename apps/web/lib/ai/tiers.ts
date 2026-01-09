@@ -1,5 +1,5 @@
 import type { UserType } from '@/lib/auth/types';
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 import { DEFAULT_CHAT_MODEL } from './models';
 
 export type TierRecord = {

@@ -7,7 +7,7 @@ import {
   getArchiveEntriesByIds,
   searchArchiveEntries,
 } from '@/lib/db/queries';
-import { prisma } from '@virid/db';
+import { prisma } from '@vero/db';
 
 export const readArchive = ({ session }: { session: AppSession }) =>
   tool({
