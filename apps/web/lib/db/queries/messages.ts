@@ -1502,6 +1502,12 @@ export async function updateBranchSelectionByChatId({
         data: { selectedChildIndex: normalizedIndex },
       });
 
+      // Update Chat's updatedAt timestamp
+      await tx.chat.update({
+        where: { id: chatId },
+        data: { updatedAt: new Date() },
+      });
+
       return {
         kind: 'child',
         parentId: operation.parentId,
