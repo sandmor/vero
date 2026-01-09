@@ -2,10 +2,10 @@
   "name": "vero-monorepo",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n \"web,gate,work\" -c \"cyan,magenta,yellow\" \"bun dev:web\" \"bun dev:gateway\" \"bun dev:worker\"",
+    "dev": "concurrently -n \"web,gate,work\" -c \"cyan,magenta,yellow\" \"bun dev:web\" \"bun dev:realtime\" \"bun dev:edge\"",
     "dev:web": "bun run --cwd apps/web dev",
-    "dev:gateway": "bun run --cwd apps/realtime-gateway start:dev",
-    "dev:worker": "bun run --cwd apps/cache-worker wrangler dev",
+    "dev:realtime": "bun run --cwd apps/realtime-gateway start:dev",
+    "dev:edge": "bun run --cwd apps/edge-gateway wrangler dev",
     "build": "bun run build:db && bun run build:web && bun run build:gateway",
     "build:web": "bun run --cwd apps/web build",
     "build:db": "bun run --cwd packages/db build",
