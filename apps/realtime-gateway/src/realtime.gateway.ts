@@ -16,7 +16,12 @@ import { PrismaService } from './prisma.service.js';
 
 @WebSocketGateway({ path: '/ws' })
 export class RealtimeGateway
-  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, OnModuleDestroy {
+  implements
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnGatewayInit,
+    OnModuleDestroy
+{
   @WebSocketServer()
   server: ws_1.Server;
 
@@ -27,8 +32,8 @@ export class RealtimeGateway
 
   constructor(
     private configService: ConfigService,
-    private prismaService: PrismaService,
-  ) { }
+    private prismaService: PrismaService
+  ) {}
 
   async afterInit() {
     await this.connectToPostgres();
@@ -51,7 +56,7 @@ export class RealtimeGateway
     if (this.pgClient) {
       try {
         await this.pgClient.end();
-      } catch { }
+      } catch {}
     }
 
     this.pgClient = new Client({ connectionString });
@@ -75,7 +80,7 @@ export class RealtimeGateway
       await this.pgClient.connect();
       await this.pgClient.query(`LISTEN ${CHAT_NOTIFICATION_CHANNEL}`);
       this.logger.log(
-        `Listening to PostgreSQL notifications on "${CHAT_NOTIFICATION_CHANNEL}"`,
+        `Listening to PostgreSQL notifications on "${CHAT_NOTIFICATION_CHANNEL}"`
       );
       this.isConnecting = false;
     } catch (err) {
@@ -104,7 +109,10 @@ export class RealtimeGateway
 
       // Find clients for this user
       this.clients.forEach((userId, ws) => {
-        if (userId === payload.userId && ws.readyState === ws_1.WebSocket.OPEN) {
+        if (
+          userId === payload.userId &&
+          ws.readyState === ws_1.WebSocket.OPEN
+        ) {
           ws.send(message);
         }
       });
@@ -143,7 +151,7 @@ export class RealtimeGateway
         JSON.stringify({
           type: 'subscribed',
           payload: { userId },
-        }),
+        })
       );
 
       this.logger.log(`Client connected: ${userId}`);
@@ -156,10 +164,10 @@ export class RealtimeGateway
               JSON.stringify({
                 type: 'pong',
                 id: msg.id,
-              }),
+              })
             );
           }
-        } catch { }
+        } catch {}
       });
 
       client.on('error', (err) => {

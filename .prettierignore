@@ -1,0 +1,34 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build & Tooling outputs
+.next
+**/.next
+**/build
+**/dist
+**/out
+.vercel
+**/.vercel
+**/.wrangler
+**/.clerk
+**/coverage
+apps/web/playwright-report
+apps/web/test-results
+
+# Generated code
+**/generated/
+
+# Specific app exclusions (relative to root)
+apps/web/components/ui
+apps/web/lib/utils.ts
+apps/web/hooks/use-mobile.ts
+
+# Locks
+package-lock.json
+yarn.lock
+bun.lock
+
+# Assets
+*.min.js
+*.min.css

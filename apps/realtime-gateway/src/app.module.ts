@@ -11,13 +11,11 @@ import { HealthController, EnvHealthIndicator } from './health.controller.js';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: [
-        path.join(process.cwd(), '.env'),
-      ],
+      envFilePath: [path.join(process.cwd(), '.env')],
     }),
     TerminusModule,
   ],
   controllers: [AppController, HealthController],
   providers: [RealtimeGateway, PrismaService, EnvHealthIndicator],
 })
-export class AppModule { }
+export class AppModule {}

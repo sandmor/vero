@@ -22,7 +22,7 @@ export interface PrismaErrorContext {
  * Mapped error result with type classification
  */
 export interface MappedPrismaError {
-  type: "not_found" | "constraint_violation" | "validation" | "unknown";
+  type: 'not_found' | 'constraint_violation' | 'validation' | 'unknown';
   message: string;
   code?: string;
   originalError?: unknown;
@@ -40,34 +40,34 @@ export function mapPrismaError(
   const code = err?.code;
 
   switch (code) {
-    case "P2025": // Record not found
-    case "P2001": // Record does not exist
+    case 'P2025': // Record not found
+    case 'P2001': // Record does not exist
       return {
-        type: "not_found",
+        type: 'not_found',
         message: `Record not found during ${ctx.operation} on ${ctx.model}`,
         code,
         originalError: error,
       };
 
-    case "P2002": // Unique constraint violation
+    case 'P2002': // Unique constraint violation
       return {
-        type: "constraint_violation",
+        type: 'constraint_violation',
         message: `Unique constraint violation while attempting to ${ctx.operation} ${ctx.model}`,
         code,
         originalError: error,
       };
 
-    case "P2000": // Value too long
+    case 'P2000': // Value too long
       return {
-        type: "validation",
+        type: 'validation',
         message: `One of the provided field values is too long for ${ctx.model}`,
         code,
         originalError: error,
       };
 
-    case "P2003": // FK constraint
+    case 'P2003': // FK constraint
       return {
-        type: "constraint_violation",
+        type: 'constraint_violation',
         message: `Foreign key constraint failed while performing ${ctx.operation} on ${ctx.model}`,
         code,
         originalError: error,
@@ -75,9 +75,9 @@ export function mapPrismaError(
 
     default:
       // Fallback: generic unknown error; keep original message as cause snippet
-      const raw = (err?.message || "Unknown error").slice(0, 160);
+      const raw = (err?.message || 'Unknown error').slice(0, 160);
       return {
-        type: "unknown",
+        type: 'unknown',
         message: `Failed to ${ctx.operation} ${ctx.model}: ${raw}`,
         code,
         originalError: error,
@@ -90,7 +90,7 @@ export function mapPrismaError(
  */
 export function isPrismaNotFoundError(error: unknown): boolean {
   const err = error as PrismaKnownError | undefined;
-  return err?.code === "P2025" || err?.code === "P2001";
+  return err?.code === 'P2025' || err?.code === 'P2001';
 }
 
 /**
@@ -98,5 +98,5 @@ export function isPrismaNotFoundError(error: unknown): boolean {
  */
 export function isPrismaUniqueConstraintError(error: unknown): boolean {
   const err = error as PrismaKnownError | undefined;
-  return err?.code === "P2002";
+  return err?.code === 'P2002';
 }

@@ -3,33 +3,36 @@ import { PrismaClient, prisma } from '@virid/db';
 
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
-    private readonly clientInstance: PrismaClient;
-    private readonly databaseUrl: string;
+  private readonly clientInstance: PrismaClient;
+  private readonly databaseUrl: string;
 
-    constructor() {
-        const connectionString = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
+  constructor() {
+    const connectionString =
+      process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
 
-        if (!connectionString) {
-            throw new Error('Neither DATABASE_URL_UNPOOLED nor DATABASE_URL is defined');
-        }
-
-        this.databaseUrl = connectionString;
-        this.clientInstance = prisma;
+    if (!connectionString) {
+      throw new Error(
+        'Neither DATABASE_URL_UNPOOLED nor DATABASE_URL is defined'
+      );
     }
 
-    async onModuleInit() {
-        await this.clientInstance.$connect();
-    }
+    this.databaseUrl = connectionString;
+    this.clientInstance = prisma;
+  }
 
-    async onModuleDestroy() {
-        await this.clientInstance.$disconnect();
-    }
+  async onModuleInit() {
+    await this.clientInstance.$connect();
+  }
 
-    get client() {
-        return this.clientInstance;
-    }
+  async onModuleDestroy() {
+    await this.clientInstance.$disconnect();
+  }
 
-    get connectionString() {
-        return this.databaseUrl;
-    }
+  get client() {
+    return this.clientInstance;
+  }
+
+  get connectionString() {
+    return this.databaseUrl;
+  }
 }

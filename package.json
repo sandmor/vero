@@ -11,7 +11,7 @@
     "build:db": "bun run --cwd packages/db build",
     "build:gateway": "bun run --cwd apps/realtime-gateway build",
     "test": "bun run --cwd apps/web test",
-    "format": "bun run --cwd apps/web format",
+    "format": "prettier --write .",
     "db:generate": "bun run --cwd packages/db db:generate",
     "db:migrate": "bun run --cwd packages/db db:migrate",
     "db:push": "bun run --cwd packages/db db:push",
@@ -22,6 +22,7 @@
     "packages/*"
   ],
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "prettier": "^3.7.4"
   }
 }

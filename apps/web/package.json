@@ -149,7 +149,6 @@
     "identity-obj-proxy": "^3.0.0",
     "jsdom": "^27.3.0",
     "postcss": "^8.5.6",
-    "prettier": "^3.7.4",
     "tailwindcss": "^4.1.18",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

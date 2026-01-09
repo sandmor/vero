@@ -20,7 +20,11 @@ export function signGuestSession(json: string, secret: string): string {
 /**
  * Verifies the HMAC signature of a guest session.
  */
-export function verifyGuestSignature(json: string, signature: string, secret: string): boolean {
+export function verifyGuestSignature(
+  json: string,
+  signature: string,
+  secret: string
+): boolean {
   const expected = createHmac(GUEST_ALGO, secret).update(json).digest('hex');
   return expected === signature;
 }
@@ -29,7 +33,7 @@ export function verifyGuestSignature(json: string, signature: string, secret: st
  * Parses and validates a guest session cookie string.
  */
 export function parseGuestSession(
-  cookieValue: string | undefined, 
+  cookieValue: string | undefined,
   secret: string
 ): GuestSessionPayload | null {
   if (!cookieValue) return null;

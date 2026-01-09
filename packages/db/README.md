@@ -45,13 +45,13 @@ cd packages/db && bun run db:generate
 Import the Prisma client and types in your application:
 
 ```typescript
-import { prisma, Prisma } from "@virid/db";
+import { prisma, Prisma } from '@virid/db';
 
 // Use the Prisma client
 const users = await prisma.user.findMany();
 
 // Use Prisma types
-const query: Prisma.UserWhereInput = { email: "test@example.com" };
+const query: Prisma.UserWhereInput = { email: 'test@example.com' };
 ```
 
 ## Available Scripts

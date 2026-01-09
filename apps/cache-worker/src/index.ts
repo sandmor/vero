@@ -37,7 +37,10 @@ export default {
     }
 
     if (request.method !== 'POST') {
-      return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
+      return new Response('Method Not Allowed', {
+        status: 405,
+        headers: corsHeaders,
+      });
     }
 
     // Resolve Session ID
@@ -54,7 +57,7 @@ export default {
     if (!stableId && env.CLERK_SECRET_KEY) {
       const clerk = createClerkClient({
         secretKey: env.CLERK_SECRET_KEY,
-        publishableKey: env.CLERK_PUBLISHABLE_KEY
+        publishableKey: env.CLERK_PUBLISHABLE_KEY,
       });
 
       try {
@@ -72,8 +75,8 @@ export default {
         status: 401,
         headers: {
           'Content-Type': 'application/json',
-          ...corsHeaders
-        }
+          ...corsHeaders,
+        },
       });
     }
 
@@ -92,8 +95,8 @@ export default {
         status: 500,
         headers: {
           'Content-Type': 'application/json',
-          ...corsHeaders
-        }
+          ...corsHeaders,
+        },
       });
     }
   },

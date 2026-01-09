@@ -1,5 +1,5 @@
-import { PrismaClient } from "../generated/client/client.js";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from '../generated/client/client.js';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 // Ensure a single PrismaClient instance across hot reloads in dev
 const globalForPrisma = globalThis as unknown as {
@@ -11,7 +11,7 @@ const connectionString =
 
 if (!connectionString) {
   throw new Error(
-    "Neither DATABASE_URL nor DATABASE_URL_UNPOOLED is defined in environment variables"
+    'Neither DATABASE_URL nor DATABASE_URL_UNPOOLED is defined in environment variables'
   );
 }
 
@@ -24,13 +24,10 @@ export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     adapter,
-    log:
-      process.env.NODE_ENV === "development"
-        ? ["error", "warn"]
-        : ["error"],
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 // Re-export PrismaClient for type usage
 export { PrismaClient };

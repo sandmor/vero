@@ -188,6 +188,7 @@ Administrative interface for system management:
 ### Access & Configuration
 
 The admin dashboard is accessible at `/admin`. Access is restricted to users who match the configured admin credentials:
+
 - `ADMIN_USER_ID`: The specific User ID (e.g. from Clerk or database) granted admin privileges. Recommended for production.
 - `ADMIN_EMAIL`: Fallback email address for admin access (useful for bootstrapping).
 
@@ -368,20 +369,21 @@ Create `apps/web/.env.local` (or `.env`) for the Next app and ensure `DATABASE_U
 Because this worker relies on authentication cookies (`guest_session` and `__session`) which are set with `SameSite=Lax`, **you cannot use the default `*.workers.dev` domain** in production if your app is hosted elsewhere (e.g., Vercel). Browsers will block the cookies, resulting in `401 Unauthorized` errors.
 
 **Required Production Setup:**
+
 1.  **Custom Domain:** Assign a subdomain to the worker (e.g., `cache.yourdomain.com`) that shares the same root as your app.
-    *   Deploy with the domain flag:
-        ```bash
-        cd apps/virid-cache-worker
-        bunx wrangler deploy --domain cache.yourdomain.com
-        ```
-    *   **Update Auth Config:**
-        *   **Guest:** Set `COOKIE_DOMAIN=.yourdomain.com` in your Vercel env vars.
-        *   **Clerk:** Go to Clerk Dashboard > Configure > Paths & Domains and set **Cookie Domain** to `.yourdomain.com`.
+    - Deploy with the domain flag:
+      ```bash
+      cd apps/virid-cache-worker
+      bunx wrangler deploy --domain cache.yourdomain.com
+      ```
+    - **Update Auth Config:**
+      - **Guest:** Set `COOKIE_DOMAIN=.yourdomain.com` in your Vercel env vars.
+      - **Clerk:** Go to Clerk Dashboard > Configure > Paths & Domains and set **Cookie Domain** to `.yourdomain.com`.
 
 2.  **Cloudflare Routes (Same-Origin):** If your main domain is proxied by Cloudflare (Orange Cloud), use a Route. This avoids all CORS/Cookie configuration.
-    *   **Dashboard:** Go to Cloudflare Dashboard > Workers Routes.
-    *   Add route: `yourdomain.com/api/cache/encryption-key`
-    *   **Web App:** Unset `NEXT_PUBLIC_CACHE_ENCRYPTION_URL` so it defaults to the relative path.
+    - **Dashboard:** Go to Cloudflare Dashboard > Workers Routes.
+    - Add route: `yourdomain.com/api/cache/encryption-key`
+    - **Web App:** Unset `NEXT_PUBLIC_CACHE_ENCRYPTION_URL` so it defaults to the relative path.
 
 ### Database Setup
 
