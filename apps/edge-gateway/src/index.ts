@@ -20,7 +20,7 @@ api.use('*', async (c, next) => {
   const corsMiddleware = cors({
     origin: (origin) => {
       if (!c.env.ALLOWED_ORIGINS) return origin; // Allow all if not configured
-      
+
       const allowedList = c.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
       return allowedList.includes(origin) ? origin : 'null';
     },
@@ -28,22 +28,22 @@ api.use('*', async (c, next) => {
     allowHeaders: ['Content-Type', 'Cookie', 'Authorization'],
     credentials: true,
   });
-  
+
   return corsMiddleware(c, next);
 });
 
 api.get('/health', (c) => {
-  return c.json({ 
-    status: 'ok', 
+  return c.json({
+    status: 'ok',
     service: 'vero-edge-gateway',
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString(),
   });
 });
 
 api.post('/v1/keys', async (c) => {
   try {
     const cookieHeader = c.req.header('Cookie') ?? '';
-    
+
     // Resolve Session ID
     const guestCookie = cookieHeader
       .split('; ')
@@ -86,12 +86,15 @@ api.post('/v1/keys', async (c) => {
 
     // Derive and Return Key
     const key = deriveEncryptionKey(stableId, c.env.CACHE_ENCRYPTION_SECRET);
-    
-    return c.json({ key }, {
-      headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+
+    return c.json(
+      { key },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        },
       }
-    });
+    );
   } catch (error) {
     console.error('Edge Gateway Error:', error);
     return c.json({ error: 'Internal Server Error' }, 500);
@@ -103,7 +106,7 @@ api.post('/v1/keys', async (c) => {
 export default {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) => {
     const app = new Hono<{ Bindings: Env }>();
-    
+
     if (env.BASE_PATH) {
       // If deployed behind a path (e.g. via Cloudflare Rules), mount the API there
       app.route(env.BASE_PATH, api);
@@ -113,5 +116,5 @@ export default {
     }
 
     return app.fetch(request, env, ctx);
-  }
+  },
 };

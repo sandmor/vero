@@ -294,9 +294,9 @@ cd apps/realtime-gateway
 bun install
 bun run start:dev
 
-# 6. (Optional) Start Cache Worker
-# Runs the edge worker locally on port 8787
-cd apps/cache-worker
+# 6. (Optional) Start Edge Gateway
+# Runs the edge gateway locally on port 8787
+cd apps/edge-gateway
 bunx wrangler dev
 ```
 

@@ -1,5 +1,32 @@
 'use client';
 
+import { SessionFetchError, useAppSession } from '@/hooks/use-app-session';
+import { isModelIdAllowed } from '@/lib/ai/models';
+import {
+  getEncryptedCacheManager,
+  type CachedChatPayload,
+} from '@/lib/cache/cache-manager';
+import { fetchEncryptionKey } from '@/lib/cache/encryption';
+import {
+  destroySyncManager,
+  getSyncManager,
+  initializeSyncManager,
+} from '@/lib/cache/sync-manager';
+import type {
+  CacheMetadataPayload,
+  CachedChatRecord,
+  SyncRequest,
+  SyncResponse,
+} from '@/lib/cache/types';
+import { deserializeChat } from '@/lib/chat/serialization';
+import { searchIndexService } from '@/lib/search/search-index-service';
+import { generateUUID } from '@/lib/utils';
+import type {
+  ChatBootstrapResponse,
+  NewChatBootstrap,
+} from '@/types/chat-bootstrap';
+import type { ChatHistory } from '@/types/chat-history';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import {
   createContext,
   useCallback,
@@ -10,37 +37,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { fetchEncryptionKey } from '@/lib/cache/encryption';
-import {
-  getEncryptedCacheManager,
-  type CachedChatPayload,
-} from '@/lib/cache/cache-manager';
-import type {
-  CacheMetadataPayload,
-  CachedChatRecord,
-  SyncRequest,
-  SyncResponse,
-} from '@/lib/cache/types';
-import {
-  initializeSyncManager,
-  destroySyncManager,
-  getSyncManager,
-} from '@/lib/cache/sync-manager';
-import {
-  getSettingsSyncManager,
-  type SettingsChangeEvent,
-} from '@/lib/cache/settings-sync';
-import { searchIndexService } from '@/lib/search/search-index-service';
-import { useAppSession, SessionFetchError } from '@/hooks/use-app-session';
-import type {
-  ChatBootstrapResponse,
-  NewChatBootstrap,
-} from '@/types/chat-bootstrap';
-import type { ChatHistory } from '@/types/chat-history';
-import { deserializeChat } from '@/lib/chat/serialization';
-import { generateUUID } from '@/lib/utils';
-import { isModelIdAllowed } from '@/lib/ai/models';
 
 const CACHE_METADATA_KEY = 'cache-metadata';
 const CACHE_METADATA_VERSION = 1;
@@ -957,6 +953,10 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   const isLoggedInRef = useRef(isLoggedIn);
   isLoggedInRef.current = isLoggedIn;
 
+  // Track the current user ID to detect user changes (e.g., login on new device)
+  const currentUserIdRef = useRef<string | null>(sessionUserId);
+  const previousUserIdRef = useRef<string | null>(sessionUserId);
+
   // Optimistic state for immediate UI feedback
   const [optimisticState, setOptimisticState] = useState<OptimisticState>({
     pendingChats: [],
@@ -1456,6 +1456,32 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Detect user ID change (e.g., login on new device, switch accounts)
+    const userIdChanged =
+      previousUserIdRef.current !== sessionUserId &&
+      sessionUserId !== null &&
+      isInitializedRef.current;
+
+    if (userIdChanged) {
+      cacheDebug('CacheProvider effect: user ID changed, resetting cache', {
+        from: previousUserIdRef.current,
+        to: sessionUserId,
+      });
+      // Reset everything for the new user
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      syncPromiseRef.current = null;
+      isInitializedRef.current = false;
+      manager.deactivate();
+      void manager.reset();
+      setState(initialState);
+      queryClientRef.current.removeQueries({ queryKey: ['chat', 'history'] });
+      queryClientRef.current.removeQueries({ queryKey: ['chat', 'bootstrap'] });
+      encryptionKeyRef.current = null;
+      previousUserIdRef.current = sessionUserId;
+      // Continue to initialize with new user
+    }
+
     if (!isLoggedIn) {
       cacheDebug('CacheProvider effect: user logged out, clearing cache');
       abortControllerRef.current?.abort();
@@ -1468,11 +1494,12 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       queryClientRef.current.removeQueries({ queryKey: ['chat', 'history'] });
       queryClientRef.current.removeQueries({ queryKey: ['chat', 'bootstrap'] });
       encryptionKeyRef.current = null;
+      previousUserIdRef.current = null;
       return;
     }
 
-    // Prevent re-initialization if already initialized
-    if (isInitializedRef.current) {
+    // Prevent re-initialization if already initialized for the same user
+    if (isInitializedRef.current && !userIdChanged) {
       cacheDebug('CacheProvider effect: already initialized, skipping');
       return;
     }
@@ -1506,6 +1533,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
 
         isInitializedRef.current = true;
+        previousUserIdRef.current = sessionUserId;
 
         cacheDebug('CacheProvider effect: loading cache from storage');
         const metadata = await loadFromCache();
@@ -1541,7 +1569,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       abortController.abort();
       abortControllerRef.current = null;
     };
-  }, [isLoggedIn, sessionStatus]); // Only re-run on login state changes
+  }, [isLoggedIn, sessionStatus, sessionUserId]); // Re-run on login state or user ID changes
 
   // Store refreshCache in a ref for stable SyncManager callback
   const refreshCacheRef = useRef(refreshCache);

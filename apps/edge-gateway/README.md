@@ -53,6 +53,7 @@ This ensures cookies set by the app are visible to `worker.mydomain.com` or `ver
 You can deploy the gateway in two ways. Choose the one that fits your infrastructure.
 
 #### Option A: Subdomain Deployment (Recommended)
+
 Deploy the worker to a dedicated subdomain, e.g., `edge.mydomain.com`.
 
 1. **Cloudflare:** Map the worker to `edge.mydomain.com`.
@@ -63,11 +64,12 @@ Deploy the worker to a dedicated subdomain, e.g., `edge.mydomain.com`.
    ```
 
 #### Option B: Worker Routes (Path-based)
+
 Deploy the worker "behind" your main domain using Cloudflare Worker Routes, e.g., `vero.mydomain.com/edge/*`. This avoids some CORS complexities and DNS lookups.
 
 1. **Cloudflare:** Add a Route Rule: `vero.mydomain.com/edge/*` -> `vero-edge-gateway`.
 2. **Worker Env:** Set `BASE_PATH=/edge` in your worker configuration.
-   * This tells the internal router to expect requests like `/edge/v1/keys` and handle them correctly.
+   - This tells the internal router to expect requests like `/edge/v1/keys` and handle them correctly.
 3. **App Env (`apps/web`):**
    ```ini
    NEXT_PUBLIC_CACHE_ENCRYPTION_URL=https://vero.mydomain.com/edge
@@ -87,6 +89,7 @@ The server will start at `http://localhost:8787`.
 ## API Reference
 
 ### `POST /v1/keys`
+
 (Or `{BASE_PATH}/v1/keys`)
 
 Derives an encryption key from the request's authentication cookies.
@@ -103,6 +106,7 @@ Derives an encryption key from the request's authentication cookies.
   ```
 
 ### `GET /health`
+
 (Or `{BASE_PATH}/health`)
 
 Health check endpoint.

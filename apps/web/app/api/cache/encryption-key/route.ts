@@ -1,10 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { readGuestSession } from '@/lib/auth/guest';
-import {
-  deriveEncryptionKey,
-  deriveTestingKey,
-} from '@vero/shared/encryption';
+import { auth } from '@clerk/nextjs/server';
+import { deriveEncryptionKey, deriveTestingKey } from '@vero/shared/encryption';
+import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
