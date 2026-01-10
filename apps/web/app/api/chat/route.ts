@@ -70,6 +70,7 @@ import {
   stepCountIs,
   streamText,
 } from 'ai';
+import { createHash } from 'crypto';
 import { unstable_cache as nextCache } from 'next/cache';
 import { after } from 'next/server';
 import {
@@ -175,6 +176,38 @@ function comparableUserContentEqual(
   }
 
   return true;
+}
+
+function buildPromptCacheKey(input: {
+  chatId: string;
+  modelId: string;
+  systemPrompt: string;
+  injectedMessages: Array<{ role: string; depth?: number; content: string }>;
+}): string {
+  const payload = JSON.stringify({
+    v: 1,
+    chatId: input.chatId,
+    modelId: input.modelId,
+    system: input.systemPrompt,
+    injected: input.injectedMessages.map((message) => ({
+      role: message.role,
+      depth: message.depth ?? 0,
+      content: message.content,
+    })),
+  });
+
+  return createHash('sha256').update(payload).digest('hex').slice(0, 32);
+}
+
+function shouldEnablePromptCaching(
+  systemPrompt: string,
+  injectedMessages: Array<{ content: string }>
+): boolean {
+  const totalLength =
+    systemPrompt.length +
+    injectedMessages.reduce((sum, message) => sum + message.content.length, 0);
+
+  return totalLength >= 500;
 }
 
 let globalStreamContext: ResumableStreamContext | null = null;
@@ -474,21 +507,25 @@ export async function POST(request: Request) {
       providedSlugs: normalizedPinnedSlugs,
       createdNewChat,
     });
-    const settingsPromise: Promise<ChatSettings> = getChatSettings(id).catch(
-      (error) => {
-        console.warn('Failed to load chat settings for prompt preparation', {
-          chatId: id,
-          error,
-        });
-        return {};
-      }
-    );
+      const settingsPromise: Promise<ChatSettings> = getChatSettings(id).catch(
+        (error) => {
+          console.warn('Failed to load chat settings for prompt preparation', {
+            chatId: id,
+            error,
+          });
+          return {};
+        }
+      );
 
-    // Resolve capabilities - for BYOK models, use the resolution info; for platform models, query DB
-    let modelCapabilities:
-      | ResolvedModelCapabilities
-      | { supportsTools: boolean; provider: string; pricing: null }
-      | null;
+      let modelCapabilities:
+        | ResolvedModelCapabilities
+        | {
+            supportsTools: boolean;
+            provider: string;
+            pricing: null;
+            maxOutputTokens?: number;
+          }
+        | null = null;
 
     if (isUserByokModel && byokResolution) {
       // BYOK model - use resolution info for capabilities
@@ -665,17 +702,27 @@ export async function POST(request: Request) {
         const effectiveReasoningEffort =
           reasoningEffort ?? settings.reasoningEffort ?? 'medium';
 
+        const resolvedProviderId =
+          (modelCapabilities && 'provider' in modelCapabilities
+            ? (modelCapabilities as { provider?: string }).provider
+            : null) ??
+          (isUserByokModel &&
+          parsedByokModel?.sourceType === 'platform' &&
+          parsedByokModel.providerId
+            ? parsedByokModel.providerId
+            : selectedChatModel.split(':')[0]);
+
         // Build provider-specific options for reasoning effort
-        const [provider] = selectedChatModel.split(':');
         const providerOptions: SharedV2ProviderOptions = {};
 
-        if (provider === 'openai') {
+        if (resolvedProviderId === 'openai') {
           // OpenAI uses reasoningEffort: 'minimal' | 'low' | 'medium' | 'high'
           providerOptions.openai = {
+            ...(providerOptions.openai ?? {}),
             reasoningEffort: effectiveReasoningEffort,
             reasoningSummary: 'detailed',
           };
-        } else if (provider === 'google') {
+        } else if (resolvedProviderId === 'google') {
           // Google uses thinkingConfig with thinkingBudget (number of tokens)
           // Map effort levels to token budgets
           const budgetMap: Record<'low' | 'medium' | 'high', number> = {
@@ -683,24 +730,31 @@ export async function POST(request: Request) {
             medium: 4096,
             high: 8192,
           };
-          const thinkingBudget = budgetMap[effectiveReasoningEffort];
+          const effort = (effectiveReasoningEffort ?? 'medium') as
+            | 'low'
+            | 'medium'
+            | 'high';
+          const thinkingBudget = budgetMap[effort];
           providerOptions.google = {
+            ...(providerOptions.google ?? {}),
             thinkingConfig: {
               thinkingBudget,
               includeThoughts: true,
             },
           };
-        } else if (provider === 'openrouter') {
+        } else if (resolvedProviderId === 'openrouter') {
           // OpenRouter uses reasoning.effort: 'low' | 'medium' | 'high'
           providerOptions.openrouter = {
+            ...(providerOptions.openrouter ?? {}),
             reasoning: {
               effort: effectiveReasoningEffort,
               enabled: true,
               exclude: false,
             },
           };
-        } else if (provider === 'xai') {
+        } else if (resolvedProviderId === 'xai') {
           providerOptions.xai = {
+            ...(providerOptions.xai ?? {}),
             reasoningEffort:
               effectiveReasoningEffort === 'low' ? 'low' : 'high',
           };
@@ -820,6 +874,39 @@ export async function POST(request: Request) {
           }
 
           mergedModelMessages = merged;
+        }
+
+        const promptCacheKey = buildPromptCacheKey({
+          chatId: id,
+          modelId: selectedChatModel,
+          systemPrompt: composedSystemPrompt,
+          injectedMessages: promptComposition.messages.map(
+            ({ role, depth, content }) => ({ role, depth, content })
+          ),
+        });
+
+        if (
+          shouldEnablePromptCaching(
+            composedSystemPrompt,
+            promptComposition.messages.map(({ content }) => ({ content }))
+          )
+        ) {
+          if (resolvedProviderId === 'openai') {
+            providerOptions.openai = {
+              ...(providerOptions.openai ?? {}),
+              promptCacheKey,
+            };
+          } else if (resolvedProviderId === 'openrouter') {
+            const cacheControl = { type: 'ephemeral' as const, ttl: '1h' as const };
+            providerOptions.openrouter = {
+              ...(providerOptions.openrouter ?? {}),
+              cacheControl,
+            };
+            providerOptions.anthropic = {
+              ...(providerOptions.anthropic ?? {}),
+              cacheControl,
+            };
+          }
         }
 
         const activeTools: Record<string, any> = {};
