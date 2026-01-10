@@ -1,11 +1,3 @@
-import { Prisma as PrismaRuntime } from '@vero/db';
-import { randomUUID } from 'crypto';
-import type { Prisma } from '@vero/db';
-import { prisma } from '@vero/db';
-import { ChatSDKError } from '../../errors';
-import type { DBMessage, MessageTreeNode, MessageTreeResult } from '../schema';
-import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
-import type { MessageDeletionMode } from '../../message-deletion';
 import {
   PATH_PATTERN,
   PATH_SEGMENT_PATTERN,
@@ -16,6 +8,14 @@ import {
   parsePathSegments,
   toBase36Label,
 } from '@/lib/chat/message-path';
+import { notifyOnChatDeleted } from '@/lib/realtime/notify';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
+import type { Prisma } from '@vero/db';
+import { Prisma as PrismaRuntime, prisma } from '@vero/db';
+import { randomUUID } from 'crypto';
+import { ChatSDKError } from '../../errors';
+import type { MessageDeletionMode } from '../../message-deletion';
+import type { DBMessage, MessageTreeNode, MessageTreeResult } from '../schema';
 
 function buildLtreeArraySql(
   paths: string[]
@@ -836,7 +836,8 @@ export async function deleteMessageById({
   mode: MessageDeletionMode;
 }) {
   try {
-    return await prisma.$transaction(async (tx) => {
+    let deletedChat = null;
+    const tx = await prisma.$transaction(async (tx) => {
       const message = await tx.message.findUnique({
         where: { id: messageId },
         select: {
@@ -991,6 +992,10 @@ export async function deleteMessageById({
       if (remainingMessages === 0) {
         await tx.stream.deleteMany({ where: { chatId } });
         await tx.chat.delete({ where: { id: chatId } });
+        await tx.chatDeletion.create({
+          data: { id: chatId, userId: userId, deletedAt: new Date() },
+        });
+        deletedChat = chatId;
 
         return { messageId, chatId, chatDeleted: true } as const;
       }
@@ -1049,6 +1054,10 @@ export async function deleteMessageById({
 
       return { messageId, chatId, chatDeleted: false } as const;
     });
+
+    if (deletedChat)
+      await notifyOnChatDeleted(userId, deletedChat).catch(() => {});
+    return tx;
   } catch (error) {
     if (error instanceof ChatSDKError) {
       throw error;
@@ -1075,7 +1084,9 @@ export async function deleteMessagesByIds({
   const uniqueMessageIds = Array.from(new Set(messageIds));
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    let deletedChat = null;
+
+    const tx = await prisma.$transaction(async (tx) => {
       const messages = await tx.message.findMany({
         where: { id: { in: uniqueMessageIds } },
         select: {
@@ -1282,6 +1293,11 @@ export async function deleteMessagesByIds({
       if (remainingMessages === 0) {
         await tx.stream.deleteMany({ where: { chatId } });
         await tx.chat.delete({ where: { id: chatId } });
+        await tx.chatDeletion.create({
+          data: { id: chatId, userId: userId, deletedAt: new Date() },
+        });
+        deletedChat = chatId;
+
         return { deleted: messages.length, chatDeleted: true };
       }
 
@@ -1338,6 +1354,9 @@ export async function deleteMessagesByIds({
 
       return { deleted: deletedCount, chatDeleted: false };
     });
+    if (deletedChat)
+      await notifyOnChatDeleted(userId, deletedChat).catch(() => {});
+    return tx;
   } catch (error) {
     if (error instanceof ChatSDKError) {
       throw error;
