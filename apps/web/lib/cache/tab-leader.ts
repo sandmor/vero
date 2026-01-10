@@ -26,7 +26,7 @@ const LEADER_LEASE_DURATION_MS = 10_000; // 10 seconds
 const HEARTBEAT_INTERVAL_MS = 3_000; // 3 seconds
 const ELECTION_DELAY_MS = 100; // Small delay to allow other tabs to respond
 
-type LeaderState = 'leader' | 'follower' | 'electing' | 'disabled';
+export type LeaderState = 'leader' | 'follower' | 'electing' | 'disabled';
 
 type LeaseRecord = {
   tabId: string;
@@ -73,6 +73,8 @@ type TabLeaderOptions = {
   onMessagesUpdated?: (chatId: string, updatedAt: number) => void;
   /** Callback when a new follower tab joins (leader should sync to help it) */
   onFollowerJoined?: () => void;
+  /** Callback whenever the leader state changes */
+  onStateChange?: (state: LeaderState) => void;
   /** Enable debug logging */
   debug?: boolean;
 };
@@ -82,6 +84,7 @@ const TAG = '[TabLeader]';
 export class TabLeaderElection {
   private tabId: string;
   private state: LeaderState = 'follower';
+  private stateListeners = new Set<(state: LeaderState) => void>();
   private channel: BroadcastChannel | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private leaseCheckInterval: ReturnType<typeof setInterval> | null = null;
@@ -100,10 +103,10 @@ export class TabLeaderElection {
       } catch (error) {
         this.log('BroadcastChannel not available:', error);
         // Fallback: single-tab mode, always leader
-        this.state = 'disabled';
+        this.setState('disabled');
       }
     } else {
-      this.state = 'disabled';
+      this.setState('disabled');
     }
   }
 
@@ -111,6 +114,33 @@ export class TabLeaderElection {
     if (!this.options.debug) return;
     // eslint-disable-next-line no-console
     console.info(TAG, `[${this.tabId.slice(0, 8)}]`, ...args);
+  }
+
+  addStateListener(listener: (state: LeaderState) => void): () => void {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  }
+
+  private setState(state: LeaderState): void {
+    if (this.state === state) return;
+
+    this.state = state;
+
+    try {
+      this.options.onStateChange?.(state);
+    } catch (error) {
+      this.log('State change callback failed', error);
+    }
+
+    for (const listener of this.stateListeners) {
+      try {
+        listener(state);
+      } catch (error) {
+        this.log('State listener error', error);
+      }
+    }
   }
 
   /**
@@ -154,7 +184,7 @@ export class TabLeaderElection {
           'Another tab holds the lease:',
           existingLease.tabId.slice(0, 8)
         );
-        this.state = 'follower';
+        this.setState('follower');
         this.startLeaseCheck();
         // Notify leader that a new follower has joined so it can sync
         this.broadcast({ type: 'follower-joined', tabId: this.tabId });
@@ -174,7 +204,7 @@ export class TabLeaderElection {
   private async startElection(): Promise<void> {
     if (this.destroyed || this.state === 'leader') return;
 
-    this.state = 'electing';
+    this.setState('electing');
     this.log('Starting election');
 
     // Broadcast election intent
@@ -192,7 +222,7 @@ export class TabLeaderElection {
     if (currentLease && currentLease.expiresAt > now) {
       // Someone else acquired the lease during our election delay
       this.log('Lost election to:', currentLease.tabId.slice(0, 8));
-      this.state = 'follower';
+      this.setState('follower');
       this.startLeaseCheck();
       return;
     }
@@ -202,7 +232,7 @@ export class TabLeaderElection {
     if (acquired) {
       this.becomeLeader();
     } else {
-      this.state = 'follower';
+      this.setState('follower');
       this.startLeaseCheck();
     }
   }
@@ -244,7 +274,7 @@ export class TabLeaderElection {
     if (this.state === 'leader') return;
 
     this.log('Became leader');
-    this.state = 'leader';
+    this.setState('leader');
 
     // Start heartbeat to maintain lease
     this.startHeartbeat();
@@ -268,7 +298,7 @@ export class TabLeaderElection {
     // Clear the lease
     this.clearLease();
 
-    this.state = 'follower';
+    this.setState('follower');
     this.stopHeartbeat();
     this.startLeaseCheck();
 
@@ -362,7 +392,7 @@ export class TabLeaderElection {
       case 'leader-heartbeat':
         if (this.state === 'electing' || this.state === 'follower') {
           // Another tab is the leader
-          this.state = 'follower';
+          this.setState('follower');
         }
         break;
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { getSyncManager } from '@/lib/cache/sync-manager';
+import { getTabLeader, type LeaderState } from '@/lib/cache/tab-leader';
 import {
   ChatAction,
   RealtimeClient,
@@ -16,6 +17,8 @@ type ConnectionState =
   | 'connecting'
   | 'connected'
   | 'reconnecting';
+
+type LeadershipState = LeaderState | 'unknown';
 
 const GATEWAY_URL = process.env.NEXT_PUBLIC_REALTIME_GATEWAY_URL;
 const IS_ENABLED = !!GATEWAY_URL;
@@ -61,6 +64,9 @@ export function useRealtimeConnection() {
     IS_ENABLED ? 'disconnected' : 'disabled'
   );
   const [lastError, setLastError] = useState<Error | null>(null);
+  const [leadershipState, setLeadershipState] = useState<LeadershipState>(
+    'unknown'
+  );
 
   const clientRef = useRef<RealtimeClient | null>(null);
 
@@ -101,9 +107,73 @@ export function useRealtimeConnection() {
     [queryClient]
   );
 
+  // Only the tab leader should maintain the realtime socket to avoid N connections.
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let isCancelled = false;
+    let pollHandle: ReturnType<typeof setInterval> | undefined;
+
+    const attachToLeader = () => {
+      const tabLeader = getTabLeader();
+      if (!tabLeader) return false;
+
+      const updateState = (state: LeaderState) => {
+        if (!isCancelled) {
+          setLeadershipState(state);
+        }
+      };
+
+      updateState(tabLeader.getState());
+      unsubscribe = tabLeader.addStateListener(updateState);
+      return true;
+    };
+
+    const startPolling = () => {
+      pollHandle = setInterval(() => {
+        if (attachToLeader() && pollHandle) {
+          clearInterval(pollHandle);
+          pollHandle = undefined;
+        }
+      }, 300);
+    };
+
+    // Reset to unknown on auth changes to avoid stale leadership
+    setLeadershipState('unknown');
+
+    if (!isSignedIn) {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const syncManager = getSyncManager();
+
+    if (syncManager?.waitForElection) {
+      void syncManager.waitForElection().finally(() => {
+        if (isCancelled) return;
+        if (!attachToLeader()) {
+          startPolling();
+        }
+      });
+    } else if (!attachToLeader()) {
+      startPolling();
+    }
+
+    return () => {
+      isCancelled = true;
+      unsubscribe?.();
+      if (pollHandle) {
+        clearInterval(pollHandle);
+      }
+    };
+  }, [isSignedIn]);
+
+  const hasLeadership =
+    leadershipState === 'leader' || leadershipState === 'disabled';
+
   useEffect(() => {
     // Don't connect if realtime is disabled or user not signed in
-    if (!IS_ENABLED || !isSignedIn) {
+    if (!IS_ENABLED || !isSignedIn || !hasLeadership) {
       if (clientRef.current) {
         clientRef.current.disconnect();
         clientRef.current = null;
@@ -144,7 +214,7 @@ export function useRealtimeConnection() {
         clientRef.current = null;
       }
     };
-  }, [isSignedIn, getToken, handleChatChanged]);
+  }, [isSignedIn, getToken, handleChatChanged, hasLeadership]);
 
   return {
     /** Whether realtime is enabled via environment variable */
