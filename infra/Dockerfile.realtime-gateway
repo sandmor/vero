@@ -44,6 +44,7 @@ WORKDIR /usr/src/app
 # Only manifests for a clean production-only install
 COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/realtime-gateway/package.json ./apps/realtime-gateway/package.json
+COPY apps/edge-gateway/package.json ./apps/edge-gateway/package.json
 COPY packages/db/package.json ./packages/db/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/db/prisma.config.ts ./packages/db/prisma.config.ts
