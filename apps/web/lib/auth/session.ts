@@ -65,8 +65,13 @@ export async function getAppSession(): Promise<AppSession | null> {
             // Cleanup guest session immediately after migration
             await clearGuestSession();
           }
-        } catch (e) {
-          console.warn('Failed to migrate guest session', e);
+        } catch (e: any) {
+          // If the guest user is not found (already deleted), we should still clear the cookie
+          if (e?.code === 'P2025') {
+            await clearGuestSession();
+          } else {
+            console.warn('Failed to migrate guest session', e);
+          }
         }
 
         return {
