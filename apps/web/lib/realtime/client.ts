@@ -2,13 +2,13 @@
 
 import {
   WsMessageType,
-  type WsMessage,
   type ChatChangedPayload,
   type SubscribedPayload,
+  type WsMessage,
 } from './types';
 
-export type { ChatChangedPayload } from './types';
 export { ChatAction } from './types';
+export type { ChatChangedPayload } from './types';
 
 type ConnectionState =
   | 'disconnected'
@@ -175,10 +175,21 @@ export class RealtimeClient {
           );
           break;
 
-        case WsMessageType.CHAT_CHANGED:
-          this.log('Chat changed', message.payload);
-          this.options.onChatChanged(message.payload as ChatChangedPayload);
+        case WsMessageType.CHAT_CHANGED: {
+          const payload = message.payload as ChatChangedPayload;
+          if (
+            payload &&
+            typeof payload === 'object' &&
+            typeof (payload as { chatId?: unknown }).chatId === 'string' &&
+            typeof (payload as { action?: unknown }).action === 'string'
+          ) {
+            this.log('Chat changed', payload);
+            this.options.onChatChanged(payload);
+          } else {
+            this.log('Chat changed payload invalid', payload);
+          }
           break;
+        }
 
         case WsMessageType.PONG:
           this.pendingPong = false;

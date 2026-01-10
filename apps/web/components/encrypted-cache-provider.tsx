@@ -68,6 +68,14 @@ type MetadataRepairResult = {
   reason?: string;
 };
 
+type SyncSource =
+  | 'realtime'
+  | 'periodic'
+  | 'manual'
+  | 'cache-miss'
+  | 'settings-change'
+  | 'tab-request';
+
 type ChatRepairResult = {
   sanitizedChats: CachedChatPayload<CachedChatRecord>[];
   updates: CachedChatPayload<CachedChatRecord>[];
@@ -634,7 +642,8 @@ type CacheContextValue = {
   refreshCache: (options?: {
     force?: boolean;
     excludeChatIds?: Set<string>;
-    settingsOnly?: boolean;
+    lastSyncedAtHint?: string | null;
+    source?: SyncSource;
   }) => Promise<void>;
   upsertChatRecord: (
     record: CachedChatRecord,
@@ -1296,9 +1305,19 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     (options?: {
       force?: boolean;
       excludeChatIds?: Set<string>;
+      lastSyncedAtHint?: string | null;
+      source?: SyncSource;
     }): Promise<void> => {
       const currentState = stateRef.current;
       const currentIsLoggedIn = isLoggedInRef.current;
+
+      const hintedLastSyncedAt = options?.force
+        ? null
+        : options?.lastSyncedAtHint ?? null;
+      const effectiveLastSyncedAt =
+        hintedLastSyncedAt ?? currentState.metadata?.lastSyncedAt ?? null;
+      const isInitialSync = options?.force ? true : !effectiveLastSyncedAt;
+      const lastSyncedAt = isInitialSync ? null : effectiveLastSyncedAt;
 
       const syncManager = getSyncManager();
       if (syncManager && !syncManager.isLeader()) {
@@ -1315,7 +1334,13 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         cacheDebug('refreshCache: skipped (user not logged in)');
         return Promise.resolve();
       }
-      if (!options?.force && currentState.isIntegrityValid) {
+      const shouldSkipForIntegrity =
+        !options?.force &&
+        currentState.isIntegrityValid &&
+        options?.source !== 'realtime' &&
+        options?.source !== 'periodic';
+
+      if (shouldSkipForIntegrity) {
         cacheDebug('refreshCache: skipped (cache integrity still valid)');
         return Promise.resolve();
       }
@@ -1351,15 +1376,10 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
           await ensureManagerActivated();
 
-          // Determine if this is an initial sync or incremental
-          const isInitialSync = !state.metadata?.lastSyncedAt || options?.force;
-          const lastSyncedAt = isInitialSync
-            ? null
-            : (state.metadata?.lastSyncedAt ?? null);
-
           cacheDebug('refreshCache: performing sync', {
             isInitialSync,
             lastSyncedAt,
+            source: options?.source ?? 'manual',
           });
 
           const syncResult = await performIncrementalSync(
@@ -1435,13 +1455,21 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
           cacheDebug('refreshCache: updating in-memory state incrementally');
 
+          // Use the freshest in-memory snapshot to avoid wiping history when
+          // a no-op incremental sync (0 upserts/deletions) runs before the
+          // previous setState has propagated.
+          const baselineState = stateRef.current;
+          const baselineChats =
+            baselineState.cachedChats.length > 0
+              ? baselineState.cachedChats
+              : state.cachedChats;
+
           const nextChatsMap = new Map<
             string,
             CachedChatPayload<CachedChatRecord>
           >();
 
-          // Start with existing chats
-          for (const chat of state.cachedChats) {
+          for (const chat of baselineChats) {
             nextChatsMap.set(chat.chatId, chat);
           }
 
@@ -1620,7 +1648,9 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
           cacheDebug(
             'CacheProvider effect: metadata stale, triggering refresh'
           );
-          await refreshCache();
+          await refreshCache({
+            lastSyncedAtHint: metadata?.lastSyncedAt ?? null,
+          });
         }
       } catch (error) {
         if (cancelled) return;
@@ -1664,8 +1694,8 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
     }
 
     const syncManager = initializeSyncManager({
-      onSync: async ({ force, excludeChatIds }) => {
-        await refreshCacheRef.current({ force, excludeChatIds });
+      onSync: async ({ force, excludeChatIds, source }) => {
+        await refreshCacheRef.current({ force, excludeChatIds, source });
       },
       onCacheReload: async () => {
         // This is called when another tab completes a sync

@@ -1,20 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getAppSession } from '@/lib/auth/session';
-import { getTierForUserType } from '@/lib/ai/tiers';
-import { resolveChatModelOptions } from '@/lib/ai/models.server';
-import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import {
   normalizeModelId,
   normalizeReasoningEffort,
 } from '@/lib/agent-settings';
-import { prisma } from '@vero/db';
-import type { ChatSettings, Chat, DBMessage } from '@/lib/db/schema';
-import type {
-  BranchSelectionSnapshot,
-  ChatBootstrapResponse,
-} from '@/types/chat-bootstrap';
+import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
+import { resolveChatModelOptions } from '@/lib/ai/models.server';
+import { displayProviderName } from '@/lib/ai/registry';
+import { getTierForUserType } from '@/lib/ai/tiers';
+import { getAppSession } from '@/lib/auth/session';
+import { enforceCacheRateLimit } from '@/lib/cache/rate-limit';
 import type { CacheMetadataPayload, CachedChatRecord } from '@/lib/cache/types';
-import { ChatSDKError } from '@/lib/errors';
 import {
   buildInitialSettings,
   mapAgentToPreset,
@@ -22,9 +16,15 @@ import {
   resolveInitialReasoningEffort,
 } from '@/lib/chat/bootstrap-helpers';
 import { serializeChat } from '@/lib/chat/serialization';
+import type { Chat, ChatSettings, DBMessage } from '@/lib/db/schema';
+import { ChatSDKError } from '@/lib/errors';
 import { getUserByokModels } from '@/lib/queries/byok';
-import { enforceCacheRateLimit } from '@/lib/cache/rate-limit';
-import { displayProviderName } from '@/lib/ai/registry';
+import type {
+  BranchSelectionSnapshot,
+  ChatBootstrapResponse,
+} from '@/types/chat-bootstrap';
+import { prisma } from '@vero/db';
+import { NextRequest, NextResponse } from 'next/server';
 
 // Sync request payload
 export type SyncRequest = {

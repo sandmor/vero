@@ -47,6 +47,7 @@ import {
 type SyncCallback = (options: {
   force: boolean;
   excludeChatIds?: Set<string>;
+  source: SyncRequest['source'];
 }) => Promise<void>;
 
 type SyncRequest = {
@@ -498,9 +499,17 @@ export class SyncManager {
       return;
     }
 
+    const sources = requests.map((r) => r.source);
+    const primarySource = sources.includes('realtime')
+      ? 'realtime'
+      : sources.includes('periodic')
+        ? 'periodic'
+        : sources[0] ?? 'manual';
+
     this.log('Executing sync:', {
       requestCount: requests.length,
       force: requestedForce,
+      primarySource,
     });
 
     // Determine which chats to exclude from sync (protected chats)
@@ -536,6 +545,7 @@ export class SyncManager {
     this.syncPromise = this.onSync({
       force: requestedForce,
       excludeChatIds: excludeChatIds.size > 0 ? excludeChatIds : undefined,
+      source: primarySource,
     })
       .then(() => {
         // Notify other tabs about the completed sync
