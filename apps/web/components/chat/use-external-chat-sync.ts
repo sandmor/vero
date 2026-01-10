@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useEncryptedCache } from '@/components/encrypted-cache-provider';
+import { getSyncManager } from '@/lib/cache/sync-manager';
 import type { ChatMessage } from '@/lib/types';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef } from 'react';
 
 type UseExternalChatSyncArgs = {
   chatId: string;
@@ -29,7 +30,7 @@ export function useExternalChatSync({
   isStreaming,
 }: UseExternalChatSyncArgs) {
   const queryClient = useQueryClient();
-  const { subscribeToMessageUpdates, refreshCache } = useEncryptedCache();
+  const { subscribeToMessageUpdates } = useEncryptedCache();
   const lastLocalUpdateRef = useRef(Date.now());
   const isStreamingRef = useRef(isStreaming);
   const chatIdRef = useRef(chatId);
@@ -75,14 +76,18 @@ export function useExternalChatSync({
         queryKey: ['chat', 'bootstrap', updatedChatId],
       });
 
-      // Also trigger a cache refresh to ensure IndexedDB is updated
-      await refreshCache({ force: true });
+      // Request an incremental sync through the SyncManager.
+      // This ensures IndexedDB gets updated and follows the proper sync flow
+      // (debouncing, echo filtering, protection). The sync will update
+      // lastSyncedAt only after successful completion.
+      const syncManager = getSyncManager();
+      syncManager?.requestSync('tab-request', updatedChatId);
     };
 
     const unsubscribe = subscribeToMessageUpdates(handleMessagesUpdated);
 
     return unsubscribe;
-  }, [chatId, queryClient, refreshCache, subscribeToMessageUpdates]);
+  }, [chatId, queryClient, subscribeToMessageUpdates]);
 
   // Mark local updates to filter out echo events
   const markLocalUpdate = useCallback(() => {

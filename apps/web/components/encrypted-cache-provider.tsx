@@ -817,8 +817,11 @@ async function performIncrementalSync(
 function shouldRefreshFromServer(
   metadata: CacheMetadataPayload | null
 ): boolean {
-  if (!metadata) return true;
-  return metadata.version !== CACHE_METADATA_VERSION;
+  // Always refresh from server on load to catch any changes from other clients.
+  // The incremental sync is lightweight if there are no changes since lastSyncedAt.
+  // Previously this only checked version mismatch, but that meant stale caches
+  // with valid metadata would never sync until the periodic interval (5 min).
+  return true;
 }
 
 function primeChatHistoryQuery(
@@ -1201,7 +1204,10 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
           metadata: metadataValidation.metadata,
           cachedChats: repairOutcome.cachedChats,
           error: undefined,
-          isIntegrityValid: true,
+          // Note: isIntegrityValid stays false until server sync completes.
+          // This ensures we always do an incremental sync on load to catch
+          // changes from other clients, even if local IndexedDB data is valid.
+          isIntegrityValid: false,
         }));
 
         const qc = queryClientRef.current;
@@ -1255,12 +1261,36 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
   /**
    * Refresh the cache by syncing with the server.
    *
-   * Note: Settings data (allowedModels, newChatDefaults) are automatically
-   * included in the metadata field of /api/cache/sync responses, so there's
-   * no need for a separate settings sync endpoint call.
+   * ## Sync Timestamp Architecture
    *
-   * @param options.force - Force a full sync even if cache is valid
-   * @param options.excludeChatIds - Chat IDs to exclude from sync (for active chat protection)
+   * This function is the ONLY place that modifies `lastSyncedAt`. The timestamp
+   * is set to `serverTimestamp` returned by `/api/cache/sync` after a successful
+   * sync. This ensures:
+   *
+   * 1. **Incremental sync correctness**: Each sync fetches changes since the
+   *    last successful sync, so no changes are missed.
+   *
+   * 2. **Realtime independence**: The realtime gateway triggers syncs but never
+   *    directly modifies the cache or timestamp. This prevents race conditions
+   *    where realtime might cause gaps in sync coverage.
+   *
+   * 3. **Cross-tab consistency**: Only the leader tab performs syncs; followers
+   *    reload from IndexedDB when notified of sync completion.
+   *
+   * ## Parameters
+   *
+   * @param options.force - If true, performs a FULL sync (ignores lastSyncedAt).
+   *   Use sparingly as this fetches all chats. Typically only needed for:
+   *   - Initial load when no cache exists
+   *   - Cache corruption recovery
+   *   - Manual "refresh all" action
+   *
+   * @param options.excludeChatIds - Chat IDs to exclude from sync results.
+   *   Used to protect active chats during message generation from being
+   *   overwritten by sync data.
+   *
+   * @see SyncManager for sync coordination and protection logic
+   * @see useRealtimeConnection for realtime trigger integration
    */
   const refreshCache = useCallback(
     (options?: {

@@ -1,21 +1,47 @@
 /**
  * SyncManager - Coordinates all cache synchronization operations
  *
- * Design principles:
- * - Single point of coordination for all sync operations
- * - Active chat protection: prevents external syncs from overwriting
+ * ## Design Principles
+ *
+ * - **Single point of coordination**: All sync operations flow through here
+ * - **Active chat protection**: Prevents external syncs from overwriting
  *   in-flight changes during message generation
- * - Debouncing and coalescing: multiple sync requests within a window
+ * - **Debouncing and coalescing**: Multiple sync requests within a window
  *   are coalesced into a single operation
- * - Sovereignty: the active chat's local state is authoritative during generation
- * - Tab coordination: only leader tabs perform sync, followers listen
+ * - **Sovereignty**: The active chat's local state is authoritative during generation
+ * - **Tab coordination**: Only leader tabs perform sync, followers listen
+ *
+ * ## Sync Timestamp Architecture
+ *
+ * The `lastSyncedAt` timestamp is managed ONLY by the sync system:
+ *
+ * 1. **Who sets it**: Only `refreshCache()` in EncryptedCacheProvider updates
+ *    `lastSyncedAt` after a successful sync from `/api/cache/sync`.
+ *
+ * 2. **Who reads it**: The sync endpoint uses it to return only changes since
+ *    that timestamp (with a 5-second skew window for safety).
+ *
+ * 3. **Realtime does NOT modify it**: The realtime gateway only triggers syncs
+ *    and React Query invalidations. It never directly modifies the cache or
+ *    timestamp. This ensures incremental sync always catches all changes.
+ *
+ * ## Race Condition Prevention
+ *
+ * - **Echo filtering**: Own changes are tracked for 5 seconds to ignore
+ *   realtime notifications that echo back our own changes.
+ * - **Generation protection**: Active chats being edited are excluded from
+ *   sync updates during generation and for 2 seconds after.
+ * - **Debouncing**: Multiple rapid events are coalesced into single sync.
+ * - **Sync serialization**: Only one sync runs at a time; new requests queue.
+ *
+ * @see useRealtimeConnection for realtime integration
+ * @see EncryptedCacheProvider for cache and timestamp management
  */
 
 import {
   TabLeaderElection,
-  initializeTabLeader,
   destroyTabLeader,
-  getTabLeader,
+  initializeTabLeader
 } from './tab-leader';
 
 type SyncCallback = (options: {
@@ -160,6 +186,12 @@ export class SyncManager {
         this.log('Messages updated by another tab for chat:', chatId);
         // Forward to the registered callback
         this.onMessagesUpdated?.(chatId, updatedAt);
+      },
+      onFollowerJoined: () => {
+        this.log('New follower tab joined, triggering sync to share latest data');
+        // When a new tab joins as a follower, sync so it gets fresh data
+        // This ensures new clients see changes made by other clients
+        this.requestSync('tab-request');
       },
       debug: this.debug,
     });

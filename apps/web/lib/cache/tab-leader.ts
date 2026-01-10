@@ -41,6 +41,7 @@ type BroadcastMessage =
   | { type: 'settings-updated'; tabId: string; timestamp: string }
   | { type: 'request-sync'; tabId: string; reason: string }
   | { type: 'election-started'; tabId: string }
+  | { type: 'follower-joined'; tabId: string }
   | {
       type: 'messages-updated';
       tabId: string;
@@ -61,6 +62,8 @@ type TabLeaderOptions = {
   onSyncRequested?: (reason: string) => void;
   /** Callback when messages are updated in another tab */
   onMessagesUpdated?: (chatId: string, updatedAt: number) => void;
+  /** Callback when a new follower tab joins (leader should sync to help it) */
+  onFollowerJoined?: () => void;
   /** Enable debug logging */
   debug?: boolean;
 };
@@ -144,6 +147,8 @@ export class TabLeaderElection {
         );
         this.state = 'follower';
         this.startLeaseCheck();
+        // Notify leader that a new follower has joined so it can sync
+        this.broadcast({ type: 'follower-joined', tabId: this.tabId });
       }
     } else {
       // No valid lease, start election
@@ -394,6 +399,15 @@ export class TabLeaderElection {
       case 'messages-updated':
         if (message.tabId !== this.tabId) {
           this.options.onMessagesUpdated?.(message.chatId, message.updatedAt);
+        }
+        break;
+
+      case 'follower-joined':
+        // A new follower tab joined - if we're the leader, trigger a sync
+        // so the new follower gets fresh data
+        if (message.tabId !== this.tabId && this.state === 'leader') {
+          this.log('New follower joined, triggering sync');
+          this.options.onFollowerJoined?.();
         }
         break;
     }

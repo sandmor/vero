@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { useAuth } from '@clerk/nextjs';
-import { useQueryClient } from '@tanstack/react-query';
+import { getSyncManager } from '@/lib/cache/sync-manager';
 import {
-  RealtimeClient,
   ChatAction,
+  RealtimeClient,
   type ChatChangedPayload,
 } from '@/lib/realtime';
-import { getSyncManager } from '@/lib/cache/sync-manager';
+import { useAuth } from '@clerk/nextjs';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type ConnectionState =
   | 'disabled'
@@ -23,8 +23,35 @@ const IS_ENABLED = !!GATEWAY_URL;
 /**
  * Hook to manage the realtime WebSocket connection for chat notifications.
  *
- * Automatically connects when authenticated and disconnects on sign out.
- * Integrates with the SyncManager to coordinate cache updates and avoid race conditions.
+ * ## Architecture Overview
+ *
+ * The realtime system works alongside the incremental sync system to provide
+ * fast updates while maintaining data consistency:
+ *
+ * 1. **Realtime Gateway**: WebSocket connection that receives push notifications
+ *    when chats are created, updated, or deleted by ANY client (including other
+ *    tabs/devices).
+ *
+ * 2. **Incremental Sync**: Periodic or triggered HTTP calls to `/api/cache/sync`
+ *    that fetch all changes since `lastSyncedAt` and update IndexedDB.
+ *
+ * ## How They Work Together
+ *
+ * - Realtime events trigger IMMEDIATE React Query invalidation for fast UI updates
+ * - Realtime events ALSO request an incremental sync through SyncManager
+ * - The sync is debounced (500ms) to coalesce multiple rapid events
+ * - Only the sync updates `lastSyncedAt` - realtime never modifies this timestamp
+ * - This ensures no changes are missed even if realtime is temporarily unavailable
+ *
+ * ## Race Condition Prevention
+ *
+ * - Realtime events for own changes are filtered out (echo filtering via SyncManager)
+ * - Active chats being edited are protected from sync updates during generation
+ * - React Query invalidation is safe because it just triggers refetch from server
+ * - The sync is the single source of truth for cache timestamp progression
+ *
+ * @see SyncManager for coordination logic
+ * @see EncryptedCacheProvider for cache management
  */
 export function useRealtimeConnection() {
   const { getToken, isSignedIn } = useAuth();
@@ -45,21 +72,28 @@ export function useRealtimeConnection() {
       switch (action) {
         case ChatAction.CREATED:
         case ChatAction.UPDATED:
-          // Invalidate the specific chat's queries to force refetch
-          // Note: The SyncManager will filter this if it's an echo of own change
+          // Step 1: Invalidate React Query for immediate UI update.
+          // This triggers a refetch of this specific chat's data from the server,
+          // providing instant visual feedback to the user.
+          // NOTE: This does NOT update IndexedDB or lastSyncedAt.
           queryClient.invalidateQueries({
             queryKey: ['chat', 'bootstrap', chatId],
           });
-          // Request sync through the SyncManager (handles debouncing, echo filtering, protection)
+
+          // Step 2: Request incremental sync through SyncManager.
+          // This will (after debouncing) fetch all changes since lastSyncedAt,
+          // update IndexedDB, and advance the sync timestamp.
+          // The SyncManager handles echo filtering (ignoring own changes)
+          // and active chat protection (not overwriting during generation).
           syncManager?.requestSync('realtime', chatId);
           break;
 
         case ChatAction.DELETED:
-          // Remove from React Query cache immediately
+          // For deletions, remove from React Query immediately for fast UI update
           queryClient.removeQueries({
             queryKey: ['chat', 'bootstrap', chatId],
           });
-          // Request sync through the SyncManager
+          // Then request sync to update IndexedDB and process the deletion properly
           syncManager?.requestSync('realtime', chatId);
           break;
       }
