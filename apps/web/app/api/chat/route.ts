@@ -1,4 +1,67 @@
+import { generateTitleFromChatHistory } from '@/app/actions/chat';
+import type { VisibilityType } from '@/components/visibility-selector';
+import {
+  buildPromptPartsFromConfig,
+  getAgentPromptVariableMap,
+} from '@/lib/agent-prompt';
+import { agentSettingsToChatSettings } from '@/lib/agent-settings';
+import {
+  getModelCapabilities,
+  type ResolvedModelCapabilities,
+} from '@/lib/ai/model-capabilities';
+import type { ChatModel } from '@/lib/ai/models';
+import { isModelIdAllowed } from '@/lib/ai/models';
+import { getModelCost } from '@/lib/ai/pricing';
+import { composePromptFromParts, type RequestHints } from '@/lib/ai/prompts';
+import {
+  getByokLanguageModel,
+  getLanguageModel,
+  isByokModelId,
+  parseByokModelId,
+} from '@/lib/ai/providers';
+import {
+  DEFAULT_CHAT_SYSTEM_AGENT_SETTINGS,
+  DEFAULT_CHAT_SYSTEM_AGENT_SLUG,
+  systemAgentSettingsToAgentSettings,
+  type SystemAgentSettings,
+} from '@/lib/ai/system-agents';
+import { getTierForUserType } from '@/lib/ai/tiers';
+import { CHAT_TOOL_IDS, normalizeChatToolIds } from '@/lib/ai/tool-ids';
+import { getWeather } from '@/lib/ai/tools/get-weather';
+import { manageChatPins } from '@/lib/ai/tools/manageChatPins';
+import { readArchive } from '@/lib/ai/tools/readArchive';
+import { runCode } from '@/lib/ai/tools/run-code';
+import { writeArchive } from '@/lib/ai/tools/writeArchive';
+import { getAppSession } from '@/lib/auth/session';
+import type { UserType } from '@/lib/auth/types';
+import { isProductionEnvironment } from '@/lib/constants';
+import { getChatSettings } from '@/lib/db/chat-settings';
+import {
+  createStreamId,
+  deleteChatById,
+  getActiveMessagesByChatId,
+  getChatById,
+  getMessagesByChatId,
+  getPinnedArchiveEntriesForChat,
+  getSystemAgentBySlug,
+  saveAssistantMessage,
+  saveChat,
+  saveMessages,
+  updateChatLastContextById,
+  updateChatTitleById,
+} from '@/lib/db/queries';
+import type { ChatSettings, MessageTreeNode, UserPreferences } from '@/lib/db/schema';
+import { ChatSDKError } from '@/lib/errors';
+import { resolveByokModel } from '@/lib/queries/byok';
+import { consumeTokens } from '@/lib/rate-limit/token-bucket';
+import { getSettings } from '@/lib/settings';
+import type { ChatMessage } from '@/lib/types';
+import type { AppUsage } from '@/lib/usage';
+import { convertToUIMessages, generateUUID } from '@/lib/utils';
+import type { SharedV2ProviderOptions } from '@ai-sdk/provider';
 import { geolocation } from '@vercel/functions';
+import { prisma } from '@vero/db';
+import type { ModelMessage } from 'ai';
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -7,75 +70,14 @@ import {
   stepCountIs,
   streamText,
 } from 'ai';
-import type { ModelMessage } from 'ai';
-import type { SharedV2ProviderOptions } from '@ai-sdk/provider';
 import { unstable_cache as nextCache } from 'next/cache';
 import { after } from 'next/server';
-import { getAppSession } from '@/lib/auth/session';
-import type { UserType } from '@/lib/auth/types';
-import type { VisibilityType } from '@/components/visibility-selector';
-import { getTierForUserType } from '@/lib/ai/tiers';
-import type { ChatModel } from '@/lib/ai/models';
-import { isModelIdAllowed } from '@/lib/ai/models';
-import {
-  getDefaultSystemPromptParts,
-  type RequestHints,
-  type SystemPromptOptions,
-  systemPrompt,
-} from '@/lib/ai/prompts';
-import {
-  agentPromptConfigIsDefault,
-  buildPromptPartsFromConfig,
-  getAgentPromptVariableMap,
-} from '@/lib/agent-prompt';
 import {
   createResumableStreamContext,
   type ResumableStreamContext,
 } from 'resumable-stream';
-import { getModelCost } from '@/lib/ai/pricing';
-import {
-  getLanguageModel,
-  getByokLanguageModel,
-  isByokModelId,
-  parseByokModelId,
-} from '@/lib/ai/providers';
-import { getChatSettings } from '@/lib/db/chat-settings';
-import { readArchive } from '@/lib/ai/tools/readArchive';
-import { writeArchive } from '@/lib/ai/tools/writeArchive';
-import { manageChatPins } from '@/lib/ai/tools/manageChatPins';
-import { getWeather } from '@/lib/ai/tools/get-weather';
-import { runCode } from '@/lib/ai/tools/run-code';
-import { isProductionEnvironment } from '@/lib/constants';
-import {
-  createStreamId,
-  deleteChatById,
-  getChatById,
-  getActiveMessagesByChatId,
-  getMessagesByChatId,
-  saveChat,
-  saveMessages,
-  updateChatLastContextById,
-  saveAssistantMessage,
-  getPinnedArchiveEntriesForChat,
-} from '@/lib/db/queries';
-import { consumeTokens } from '@/lib/rate-limit/token-bucket';
-import { ChatSDKError } from '@/lib/errors';
-import type { ChatMessage } from '@/lib/types';
-import type { AppUsage } from '@/lib/usage';
-import { convertToUIMessages, generateUUID } from '@/lib/utils';
-import { generateTitleFromChatHistory } from '@/app/actions/chat';
-import { updateChatTitleById } from '@/lib/db/queries';
 import { ZodError } from 'zod';
-import { type PostRequestBody, createPostRequestBodySchema } from './schema';
-import { prisma } from '@vero/db';
-import {
-  getModelCapabilities,
-  type ResolvedModelCapabilities,
-} from '@/lib/ai/model-capabilities';
-import { getSettings } from '@/lib/settings';
-import { CHAT_TOOL_IDS, normalizeChatToolIds } from '@/lib/ai/tool-ids';
-import type { ChatSettings, MessageTreeNode } from '@/lib/db/schema';
-import { getUserByokConfig, resolveByokModel } from '@/lib/queries/byok';
+import { createPostRequestBodySchema, type PostRequestBody } from './schema';
 
 export const maxDuration = 300;
 
@@ -199,6 +201,16 @@ export function getStreamContext() {
 
 export async function POST(request: Request) {
   const appSettingsPromise = getSettings();
+  const defaultChatAgentSettingsPromise: Promise<SystemAgentSettings> =
+    getSystemAgentBySlug(DEFAULT_CHAT_SYSTEM_AGENT_SLUG)
+      .then((agent) => {
+        const settings = agent?.settings as SystemAgentSettings | null;
+        return settings ?? DEFAULT_CHAT_SYSTEM_AGENT_SETTINGS;
+      })
+      .catch((error) => {
+        console.warn('Failed to load default chat system agent', error);
+        return DEFAULT_CHAT_SYSTEM_AGENT_SETTINGS;
+      });
   let requestBody: PostRequestBody;
 
   try {
@@ -309,6 +321,16 @@ export async function POST(request: Request) {
             base = agent?.settings || null;
           } catch (e) {
             console.warn('Agent fetch failed during initialization', e);
+          }
+        } else {
+          try {
+            const defaultAgentSettings = await defaultChatAgentSettingsPromise;
+            const defaultAgent = systemAgentSettingsToAgentSettings(
+              defaultAgentSettings
+            );
+            base = agentSettingsToChatSettings(defaultAgent);
+          } catch (e) {
+            console.warn('Default agent preset failed during initialization', e);
           }
         }
         await applyInitialSettingsPreset({
@@ -570,7 +592,19 @@ export async function POST(request: Request) {
               if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) {
                 return null;
               }
-              return prefs as Record<string, unknown>;
+              const normalized: UserPreferences = {};
+              if (typeof (prefs as any).name === 'string') {
+                normalized.name = String((prefs as any).name);
+              }
+              if (typeof (prefs as any).occupation === 'string') {
+                normalized.occupation = String((prefs as any).occupation);
+              }
+              if (typeof (prefs as any).customInstructions === 'string') {
+                normalized.customInstructions = String(
+                  (prefs as any).customInstructions
+                );
+              }
+              return normalized;
             })
             .catch(() => null),
         ]);
@@ -688,41 +722,47 @@ export async function POST(request: Request) {
             : normalizedAllowedTools.filter((toolId) =>
                 allToolIdsSet.has(toolId)
               );
-
-        const basePromptParts = getDefaultSystemPromptParts();
+        const defaultChatAgentSettings = await defaultChatAgentSettingsPromise;
+        const defaultPromptResolution = buildPromptPartsFromConfig(
+          defaultChatAgentSettings.prompt,
+          [],
+          { blockPriorityStart: 0 }
+        );
         const promptResolution = buildPromptPartsFromConfig(
           settings.prompt,
-          basePromptParts
+          defaultPromptResolution.parts,
+          { blockPriorityStart: 200 }
         );
-        // Convert user preferences to prompt variables
+
         const userPrefVariables: Record<string, string> = {};
-        if (userPreferences) {
-          const prefs = userPreferences as any;
-          if (prefs.name) userPrefVariables.userName = String(prefs.name);
-          if (prefs.occupation)
-            userPrefVariables.userOccupation = String(prefs.occupation);
-          if (prefs.customInstructions)
-            userPrefVariables.userCustomInstructions = String(
-              prefs.customInstructions
-            );
+        if (userPreferences?.name) {
+          userPrefVariables.userName = String(userPreferences.name);
+        }
+        if (userPreferences?.occupation) {
+          userPrefVariables.userOccupation = String(userPreferences.occupation);
+        }
+        if (userPreferences?.customInstructions) {
+          userPrefVariables.userCustomInstructions = String(
+            userPreferences.customInstructions
+          );
         }
 
-        const promptOptions: SystemPromptOptions = {
+        const promptComposition = composePromptFromParts({
           requestHints,
           pinnedEntries: pinnedForPrompt,
           allowedTools: allowedToolIds,
           variables: {
+            ...getAgentPromptVariableMap(defaultPromptResolution.normalized),
             ...getAgentPromptVariableMap(promptResolution.normalized),
             ...userPrefVariables,
           },
-        };
+          user: userPreferences,
+          parts: promptResolution.parts.length
+            ? promptResolution.parts
+            : defaultPromptResolution.parts,
+          joiner: promptResolution.joiner || defaultPromptResolution.joiner,
+        });
 
-        if (!agentPromptConfigIsDefault(promptResolution.normalized)) {
-          promptOptions.parts = promptResolution.parts;
-          promptOptions.joiner = promptResolution.joiner;
-        }
-
-        const promptComposition = systemPrompt(promptOptions);
         const composedSystemPrompt = promptComposition.system;
 
         let mergedModelMessages: ModelMessage[] = [...modelMessages];

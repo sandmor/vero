@@ -1,5 +1,5 @@
-import { nanoid } from 'nanoid';
 import type { PromptPart, PromptRole } from '@/lib/ai/prompt-engine';
+import { nanoid } from 'nanoid';
 
 type Primitive = string | number | boolean | null;
 
@@ -243,16 +243,21 @@ export function getAgentPromptVariableMap(
 
 export function buildPromptPartsFromConfig<Context>(
   config: AgentPromptConfig | undefined | null,
-  baseParts: PromptPart<Context>[]
+  baseParts: PromptPart<Context>[],
+  options: { blockPriorityStart?: number } = {}
 ): {
   parts: PromptPart<Context>[];
-  joiner?: string;
+  joiner: string;
   normalized: AgentPromptConfig;
 } {
   const normalized = normalizeAgentPromptConfig(config);
   const blocks = normalized.blocks.filter(
     (block) => block.enabled && block.template.trim().length > 0
   );
+  const blockPriorityStart =
+    typeof options.blockPriorityStart === 'number'
+      ? options.blockPriorityStart
+      : 200;
 
   if (normalized.mode === 'replace') {
     if (blocks.length === 0) {
@@ -266,7 +271,7 @@ export function buildPromptPartsFromConfig<Context>(
     const blockParts = blocks.map((block, index) => ({
       id: `agent-block-${block.id}`,
       template: block.template,
-      priority: 200 + index,
+      priority: blockPriorityStart + index,
       separator: block.separator,
       role: block.role,
       depth: block.depth,
@@ -290,7 +295,7 @@ export function buildPromptPartsFromConfig<Context>(
   const blockParts = blocks.map((block, index) => ({
     id: `agent-block-${block.id}`,
     template: block.template,
-    priority: 200 + index,
+    priority: blockPriorityStart + index,
     separator: block.separator,
     role: block.role,
     depth: block.depth,

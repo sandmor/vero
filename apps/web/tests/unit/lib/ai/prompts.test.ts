@@ -1,15 +1,12 @@
-import { describe, expect, it } from 'bun:test';
-import {
-  systemPrompt,
-  getRequestPromptFromHints,
-  getDefaultSystemPromptParts,
-} from '@/lib/ai/prompts';
-import { renderTemplate } from '@/lib/ai/prompt-engine';
-import type { RequestHints } from '@/lib/ai/prompts';
 import {
   buildPromptPartsFromConfig,
   getAgentPromptVariableMap,
 } from '@/lib/agent-prompt';
+import { renderTemplate } from '@/lib/ai/prompt-engine';
+import type { RequestHints } from '@/lib/ai/prompts';
+import { composePromptFromParts, getRequestPromptFromHints } from '@/lib/ai/prompts';
+import { DEFAULT_CHAT_SYSTEM_AGENT_PROMPT } from '@/lib/ai/system-agents';
+import { describe, expect, it } from 'bun:test';
 
 const baseRequestHints: RequestHints = {
   latitude: '48.8566',
@@ -18,16 +15,30 @@ const baseRequestHints: RequestHints = {
   country: 'France',
 };
 
-describe('systemPrompt', () => {
+describe('composePromptFromParts', () => {
   it('includes archive guidance only when archive tools are allowed', () => {
-    const withoutArchiveComposition = systemPrompt({
+    const baseResolution = buildPromptPartsFromConfig(
+      DEFAULT_CHAT_SYSTEM_AGENT_PROMPT,
+      [],
+      { blockPriorityStart: 0 }
+    );
+
+    const withoutArchiveComposition = composePromptFromParts({
       requestHints: baseRequestHints,
       allowedTools: [],
+      pinnedEntries: [],
+      variables: {},
+      parts: baseResolution.parts,
+      joiner: baseResolution.joiner,
     });
 
-    const withArchiveComposition = systemPrompt({
+    const withArchiveComposition = composePromptFromParts({
       requestHints: baseRequestHints,
       allowedTools: ['readArchive'],
+      pinnedEntries: [],
+      variables: {},
+      parts: baseResolution.parts,
+      joiner: baseResolution.joiner,
     });
 
     expect(withoutArchiveComposition.system).not.toContain(
@@ -39,9 +50,19 @@ describe('systemPrompt', () => {
   });
 
   it('always includes formatting guidance', () => {
-    const composition = systemPrompt({
+    const baseResolution = buildPromptPartsFromConfig(
+      DEFAULT_CHAT_SYSTEM_AGENT_PROMPT,
+      [],
+      { blockPriorityStart: 0 }
+    );
+
+    const composition = composePromptFromParts({
       requestHints: baseRequestHints,
       allowedTools: [],
+      pinnedEntries: [],
+      variables: {},
+      parts: baseResolution.parts,
+      joiner: baseResolution.joiner,
     });
 
     const prompt = composition.system;
@@ -51,8 +72,13 @@ describe('systemPrompt', () => {
   });
 
   it('adds pinned entries respecting size guard', () => {
+    const baseResolution = buildPromptPartsFromConfig(
+      DEFAULT_CHAT_SYSTEM_AGENT_PROMPT,
+      [],
+      { blockPriorityStart: 0 }
+    );
     const longBody = 'a'.repeat(21_000);
-    const composition = systemPrompt({
+    const composition = composePromptFromParts({
       requestHints: baseRequestHints,
       allowedTools: [],
       pinnedEntries: [
@@ -62,6 +88,9 @@ describe('systemPrompt', () => {
           body: longBody,
         },
       ],
+      variables: {},
+      parts: baseResolution.parts,
+      joiner: baseResolution.joiner,
     });
 
     const prompt = composition.system;
@@ -72,7 +101,11 @@ describe('systemPrompt', () => {
   });
 
   it('appends custom agent blocks and resolves variables', () => {
-    const baseParts = getDefaultSystemPromptParts();
+    const baseResolution = buildPromptPartsFromConfig(
+      DEFAULT_CHAT_SYSTEM_AGENT_PROMPT,
+      [],
+      { blockPriorityStart: 0 }
+    );
     const { parts, joiner, normalized } = buildPromptPartsFromConfig(
       {
         mode: 'append',
@@ -95,13 +128,18 @@ describe('systemPrompt', () => {
           },
         ],
       },
-      baseParts
+      baseResolution.parts,
+      { blockPriorityStart: 200 }
     );
 
-    const composition = systemPrompt({
+    const composition = composePromptFromParts({
       requestHints: baseRequestHints,
       allowedTools: ['createDocument', 'updateDocument'],
-      variables: getAgentPromptVariableMap(normalized),
+      pinnedEntries: [],
+      variables: {
+        ...getAgentPromptVariableMap(baseResolution.normalized),
+        ...getAgentPromptVariableMap(normalized),
+      },
       parts,
       joiner,
     });
@@ -113,6 +151,11 @@ describe('systemPrompt', () => {
   });
 
   it('replaces default prompt when agent mode is replace', () => {
+    const baseResolution = buildPromptPartsFromConfig(
+      DEFAULT_CHAT_SYSTEM_AGENT_PROMPT,
+      [],
+      { blockPriorityStart: 0 }
+    );
     const { parts, joiner, normalized } = buildPromptPartsFromConfig(
       {
         mode: 'replace',
@@ -135,13 +178,18 @@ describe('systemPrompt', () => {
           },
         ],
       },
-      getDefaultSystemPromptParts()
+      baseResolution.parts,
+      { blockPriorityStart: 200 }
     );
 
-    const composition = systemPrompt({
+    const composition = composePromptFromParts({
       requestHints: baseRequestHints,
       allowedTools: [],
-      variables: getAgentPromptVariableMap(normalized),
+      pinnedEntries: [],
+      variables: {
+        ...getAgentPromptVariableMap(baseResolution.normalized),
+        ...getAgentPromptVariableMap(normalized),
+      },
       parts,
       joiner,
     });
@@ -154,7 +202,11 @@ describe('systemPrompt', () => {
   });
 
   it('produces additional messages when blocks target non-system roles', () => {
-    const baseParts = getDefaultSystemPromptParts();
+    const baseResolution = buildPromptPartsFromConfig(
+      DEFAULT_CHAT_SYSTEM_AGENT_PROMPT,
+      [],
+      { blockPriorityStart: 0 }
+    );
     const { parts, joiner, normalized } = buildPromptPartsFromConfig(
       {
         mode: 'append',
@@ -172,13 +224,18 @@ describe('systemPrompt', () => {
         ],
         variables: [],
       },
-      baseParts
+      baseResolution.parts,
+      { blockPriorityStart: 200 }
     );
 
-    const composition = systemPrompt({
+    const composition = composePromptFromParts({
       requestHints: baseRequestHints,
       allowedTools: [],
-      variables: getAgentPromptVariableMap(normalized),
+      pinnedEntries: [],
+      variables: {
+        ...getAgentPromptVariableMap(baseResolution.normalized),
+        ...getAgentPromptVariableMap(normalized),
+      },
       parts,
       joiner,
     });

@@ -1,15 +1,17 @@
 import type { Geo } from '@vercel/functions';
 
+import type { UserPreferences } from '@/lib/db/schema';
 import {
-  PromptTemplateEngine,
-  type PromptPart,
-  type PromptCompositionResult,
-  type RenderedPromptSegment,
-  type PromptRole,
   joinSegments,
+  PromptTemplateEngine,
+  renderTemplate,
+  type PromptCompositionResult,
+  type PromptPart,
+  type PromptRole,
+  type RenderedPromptSegment,
 } from './prompt-engine';
-import { RUN_CODE_TOOL_PROMPT } from './tool-prompts/run-code';
 import type { ChatToolId } from './tool-ids';
+import { RUN_CODE_TOOL_PROMPT } from './tool-prompts/run-code';
 
 export type RequestHints = {
   latitude: Geo['latitude'];
@@ -24,21 +26,26 @@ export type PinnedEntry = {
   body: string;
 };
 
-export type SystemPromptContext = {
+export type PromptRuntimeContext = {
   requestHints: RequestHints;
   allowedTools?: ChatToolId[];
   pinnedEntries?: PinnedEntry[];
   variables?: Record<string, string>;
-  userPreferences?: {
-    name?: string;
-    occupation?: string;
-    customInstructions?: string;
-  };
+  user?: UserPreferences | null;
 };
 
-export type SystemPromptOptions = SystemPromptContext & {
-  parts?: PromptPart<SystemPromptContext>[];
-  joiner?: string;
+export type PromptEngineContext = PromptRuntimeContext & {
+  tools: {
+    runCode: boolean;
+    archive: boolean;
+  };
+  requestOrigin: {
+    latitude: string;
+    longitude: string;
+    city: string;
+    country: string;
+  };
+  pinnedEntriesBlock: string;
 };
 
 export interface PromptMessage {
@@ -64,29 +71,30 @@ const ARCHIVE_TOOL_IDS = [
   'manageChatPins',
 ] as const;
 
-export const regularPrompt =
+export const BASE_BEHAVIOR_PROMPT =
   'You are a friendly, high-signal assistant. Keep replies focused, verify instructions, ask when context is missing, and overall follow user instructions over all else. The user may ask to override these guidelines at any time.';
 
-const formattingPrompt = `
+export const FORMATTING_PROMPT = `
 Formatting expectations
 - Render math with KaTeX syntax: inline $...$, block $$...$$
 - Never write formulas or math outside the appropriate KaTeX delimiters; every mathematical expression must be wrapped in inline $...$ or block $$...$$
+- If using tables, use Markdown syntax or CSV format wrapped in \`\`\`csv code fences
 - If using diagrams, use Markdown code fences labelled \`\`\`mermaid
 - Prefer clear headings, tight prose, and cite tools when you use them
 - Use markdown lists to present items.
 - Always wrap code in markdown's fenced code blocks with a language label (even short snippets or shell commands); never place code inline in prose.
 `;
 
-const runCodePrompt = RUN_CODE_TOOL_PROMPT;
+export const RUN_CODE_PROMPT = RUN_CODE_TOOL_PROMPT;
 
-const requestOriginTemplate = `About the origin of user's request:
-- lat: {{latitude}}
-- lon: {{longitude}}
-- city: {{city}}
-- country: {{country}}
+export const REQUEST_ORIGIN_TEMPLATE = `About the origin of user's request:
+- lat: {{requestOrigin.latitude}}
+- lon: {{requestOrigin.longitude}}
+- city: {{requestOrigin.city}}
+- country: {{requestOrigin.country}}
 `;
 
-const archivePrompt = `
+export const ARCHIVE_PROMPT = `
 Archive tools (long-form knowledge base)
 - Search/read before creating; one entry per entity with a stable lowercase-hyphen slug
 - Keep each body as a cohesive essay: weave new facts into place and revise outdated text
@@ -95,101 +103,88 @@ Archive tools (long-form knowledge base)
 - Pin only high-signal dossiers needed every chat, and unpin when relevance fades
 `;
 
-const pinnedMemoryTemplate = `Pinned Memory Files (Authoritative context – treat as already read; update only via tools when user indicates changes)
+export const PINNED_MEMORY_TEMPLATE = `Pinned Memory Files (Authoritative context – treat as already read; update only via tools when user indicates changes)
 {{pinnedEntriesBlock}}
 `;
 
-const baseBehaviorPart: PromptPart<SystemPromptContext> = {
-  id: 'base-behavior',
-  template: regularPrompt,
-  priority: 10,
-};
+export const codePrompt = `
+You are a Python code generator that creates self-contained, executable code snippets. When writing code:
 
-const formattingPart: PromptPart<SystemPromptContext> = {
-  id: 'formatting',
-  template: formattingPrompt,
-  priority: 15,
-};
+1. Each snippet should be complete and runnable on its own
+2. Prefer using print() statements to display outputs
+3. Include helpful comments explaining the code
+4. Keep snippets concise (generally under 15 lines)
+5. Avoid external dependencies - use Python standard library
+6. Handle potential errors gracefully
+7. Return meaningful output that demonstrates the code's functionality
+8. Don't use input() or other interactive functions
+9. Don't access files or network resources
+10. Don't use infinite loops
 
-const runCodePart: PromptPart<SystemPromptContext> = {
-  id: 'run-code',
-  template: runCodePrompt,
-  priority: 18,
-  isEnabled: ({ allowedTools }) =>
-    isToolGroupEnabled(allowedTools, ['runCode']),
-};
+Examples of good snippets:
 
-const requestOriginPart: PromptPart<SystemPromptContext> = {
-  id: 'request-origin',
-  template: requestOriginTemplate,
-  priority: 20,
-  prepare: ({ requestHints }) => ({
+# Calculate factorial iteratively
+def factorial(n):
+    result = 1
+    for i in range(1, n + 1):
+        result *= i
+    return result
+
+print(f"Factorial of 5 is: {factorial(5)}")
+`;
+
+function formatGeoValue(value: unknown): string {
+  return value === undefined || value === null ? 'undefined' : String(value);
+}
+
+function formatRequestHints(requestHints: RequestHints): {
+  latitude: string;
+  longitude: string;
+  city: string;
+  country: string;
+} {
+  return {
     latitude: formatGeoValue(requestHints.latitude),
     longitude: formatGeoValue(requestHints.longitude),
     city: formatGeoValue(requestHints.city),
     country: formatGeoValue(requestHints.country),
-  }),
-};
+  };
+}
 
-const archivePart: PromptPart<SystemPromptContext> = {
-  id: 'archive',
-  template: archivePrompt,
-  priority: 40,
-  isEnabled: ({ allowedTools }) =>
-    isToolGroupEnabled(allowedTools, ARCHIVE_TOOL_IDS),
-};
+function isToolGroupEnabled(
+  allowedTools: string[] | undefined,
+  toolIds: readonly string[]
+) {
+  if (!toolIds.length) return true;
+  if (allowedTools === undefined) return true;
+  if (allowedTools.length === 0) return false;
 
-const userPreferencesPart: PromptPart<SystemPromptContext> = {
-  id: 'user-preferences',
-  template: `User Context:
-{{#if userName}}You are speaking with {{userName}}. {{/if}}{{#if userOccupation}}Their occupation is {{userOccupation}}. {{/if}}{{#if userCustomInstructions}}
-IMPORTANT: Follow these custom instructions from the user:
-{{userCustomInstructions}}{{/if}}`,
-  priority: 12,
-  isEnabled: ({ variables }) =>
-    Boolean(
-      variables?.userName ||
-      variables?.userOccupation ||
-      variables?.userCustomInstructions
-    ),
-  prepare: ({ variables }) => ({
-    userName: variables?.userName || '',
-    userOccupation: variables?.userOccupation || '',
-    userCustomInstructions: variables?.userCustomInstructions || '',
-  }),
-};
+  const allowedSet = new Set(allowedTools);
+  return toolIds.some((tool) => allowedSet.has(tool));
+}
 
-const pinnedMemoryPart: PromptPart<SystemPromptContext> = {
-  id: 'pinned-memory',
-  template: pinnedMemoryTemplate,
-  priority: 50,
-  isEnabled: ({ pinnedEntries }) => Boolean(pinnedEntries?.length),
-  prepare: ({ pinnedEntries }) => ({
-    pinnedEntriesBlock: buildPinnedEntriesBlock(pinnedEntries),
-  }),
-};
+function buildPinnedEntriesBlock(pinnedEntries?: PinnedEntry[]): string {
+  if (!pinnedEntries || pinnedEntries.length === 0) {
+    return '';
+  }
 
-const defaultSystemPromptParts: PromptPart<SystemPromptContext>[] = [
-  baseBehaviorPart,
-  userPreferencesPart,
-  formattingPart,
-  runCodePart,
-  requestOriginPart,
+  let remaining = PINNED_MEMORY_CHAR_LIMIT;
+  const segments: string[] = [];
 
-  archivePart,
-  pinnedMemoryPart,
-];
+  for (const entry of pinnedEntries) {
+    if (remaining <= 0) break;
 
-const defaultSystemPromptEngine = new PromptTemplateEngine<SystemPromptContext>(
-  defaultSystemPromptParts
-);
+    const slug = entry.slug || 'unknown';
+    const entity = entry.entity || 'unknown';
+    const body = entry.body ?? '';
+    const textBody = body.length > remaining ? body.slice(0, remaining) : body;
 
-const requestPromptEngine = new PromptTemplateEngine<SystemPromptContext>([
-  requestOriginPart,
-]);
+    segments.push(`\n=== ${slug} — ${entity} ===\n${textBody}`);
 
-export function getDefaultSystemPromptParts() {
-  return defaultSystemPromptParts.map((part) => ({ ...part }));
+    remaining -= textBody.length;
+  }
+
+  return segments.join('');
 }
 
 function segregateSegments(composition: PromptCompositionResult): {
@@ -253,47 +248,60 @@ function groupSegmentsIntoMessages(
     .filter((message) => message.content.length > 0);
 }
 
-export const systemPrompt = ({
+function buildPromptContext(
+  runtime: PromptRuntimeContext
+): PromptEngineContext {
+  const requestOrigin = formatRequestHints(runtime.requestHints);
+  const pinnedEntriesBlock = buildPinnedEntriesBlock(runtime.pinnedEntries);
+
+  return {
+    ...runtime,
+    variables: runtime.variables ?? {},
+    user: runtime.user ?? undefined,
+    requestOrigin,
+    pinnedEntriesBlock,
+    tools: {
+      runCode: isToolGroupEnabled(runtime.allowedTools, ['runCode']),
+      archive: isToolGroupEnabled(runtime.allowedTools, ARCHIVE_TOOL_IDS),
+    },
+  };
+}
+
+export function composePromptFromParts({
   requestHints,
   pinnedEntries,
   allowedTools,
   variables,
+  user,
   parts,
   joiner,
-}: SystemPromptOptions): SystemPromptComposition => {
-  const context: SystemPromptContext = {
+}: {
+  parts: PromptPart<PromptEngineContext>[];
+  joiner: string;
+} & PromptRuntimeContext): SystemPromptComposition {
+  const resolvedJoiner = joiner || '\n\n';
+
+  if (!parts.length) {
+    return {
+      system: '',
+      messages: [],
+      segments: [],
+      joiner: resolvedJoiner,
+    };
+  }
+
+  const context = buildPromptContext({
     requestHints,
     pinnedEntries,
     allowedTools,
     variables,
-  };
+    user,
+  });
 
-  // Add user preferences to variables if available
-  if (context.userPreferences) {
-    context.variables = {
-      ...context.variables,
-      userName: context.userPreferences.name || '',
-      userOccupation: context.userPreferences.occupation || '',
-      userCustomInstructions: context.userPreferences.customInstructions || '',
-    };
-  }
-
-  let composition: PromptCompositionResult;
-
-  if (parts) {
-    const customEngine = new PromptTemplateEngine<SystemPromptContext>(parts, {
-      joiner,
-    });
-    composition = customEngine.compose(context);
-  } else if (joiner) {
-    const customEngine = new PromptTemplateEngine<SystemPromptContext>(
-      defaultSystemPromptParts,
-      { joiner }
-    );
-    composition = customEngine.compose(context);
-  } else {
-    composition = defaultSystemPromptEngine.compose(context);
-  }
+  const engine = new PromptTemplateEngine<PromptEngineContext>(parts, {
+    joiner: resolvedJoiner,
+  });
+  const composition = engine.compose(context);
 
   const { primarySystemSegments, auxiliarySegments } =
     segregateSegments(composition);
@@ -310,80 +318,10 @@ export const systemPrompt = ({
     segments: composition.segments,
     joiner: composition.joiner,
   };
-};
+}
 
 export const getRequestPromptFromHints = (requestHints: RequestHints) => {
-  const composition = requestPromptEngine.compose({
-    requestHints,
-    allowedTools: undefined,
-    pinnedEntries: undefined,
-  });
-
-  return joinSegments(composition.segments, composition.joiner);
+  const requestOrigin = formatRequestHints(requestHints);
+  return renderTemplate(REQUEST_ORIGIN_TEMPLATE, { requestOrigin }).trim();
 };
 
-export const codePrompt = `
-You are a Python code generator that creates self-contained, executable code snippets. When writing code:
-
-1. Each snippet should be complete and runnable on its own
-2. Prefer using print() statements to display outputs
-3. Include helpful comments explaining the code
-4. Keep snippets concise (generally under 15 lines)
-5. Avoid external dependencies - use Python standard library
-6. Handle potential errors gracefully
-7. Return meaningful output that demonstrates the code's functionality
-8. Don't use input() or other interactive functions
-9. Don't access files or network resources
-10. Don't use infinite loops
-
-Examples of good snippets:
-
-# Calculate factorial iteratively
-def factorial(n):
-    result = 1
-    for i in range(1, n + 1):
-        result *= i
-    return result
-
-print(f"Factorial of 5 is: {factorial(5)}")
-`;
-
-function formatGeoValue(value: unknown): string {
-  return value === undefined || value === null ? 'undefined' : String(value);
-}
-
-function isToolGroupEnabled(
-  allowedTools: string[] | undefined,
-  toolIds: readonly string[]
-) {
-  if (!toolIds.length) return true;
-  if (allowedTools === undefined) return true;
-  if (allowedTools.length === 0) return false;
-
-  const allowedSet = new Set(allowedTools);
-  return toolIds.some((tool) => allowedSet.has(tool));
-}
-
-function buildPinnedEntriesBlock(pinnedEntries?: PinnedEntry[]): string {
-  if (!pinnedEntries || pinnedEntries.length === 0) {
-    return '';
-  }
-
-  let remaining = PINNED_MEMORY_CHAR_LIMIT;
-  const segments: string[] = [];
-
-  for (const entry of pinnedEntries) {
-    if (remaining <= 0) break;
-
-    const slug = entry.slug || 'unknown';
-    const entity = entry.entity || 'unknown';
-    const body = entry.body ?? '';
-    const textBody = body.length > remaining ? body.slice(0, remaining) : body;
-
-    segments.push(`\n=== ${slug} — ${entity} ===\n${textBody}`);
-
-    remaining -= textBody.length;
-  }
-
-  return segments.join('');
-}

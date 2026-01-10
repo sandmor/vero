@@ -9,8 +9,16 @@
  * - Don't have associated chats
  */
 
-import type { AgentSettingsValue } from '@/lib/agent-settings';
 import type { AgentPromptConfig } from '@/lib/agent-prompt';
+import type { AgentSettingsValue } from '@/lib/agent-settings';
+import {
+  ARCHIVE_PROMPT,
+  BASE_BEHAVIOR_PROMPT,
+  FORMATTING_PROMPT,
+  PINNED_MEMORY_TEMPLATE,
+  REQUEST_ORIGIN_TEMPLATE,
+  RUN_CODE_PROMPT,
+} from '@/lib/ai/prompts';
 import { DEFAULT_CHAT_MODEL } from './models';
 
 /**
@@ -67,6 +75,88 @@ export function agentSettingsToSystemAgentSettings(
 // System Agent Definitions
 // ============================================================================
 
+export const DEFAULT_CHAT_SYSTEM_AGENT_SLUG = 'default-chat';
+
+export const DEFAULT_CHAT_SYSTEM_AGENT_PROMPT: AgentPromptConfig = {
+  mode: 'replace',
+  joiner: '\n\n',
+  blocks: [
+    {
+      id: 'behavior',
+      title: 'Behavior',
+      template: BASE_BEHAVIOR_PROMPT,
+      enabled: true,
+      order: 0,
+      role: 'system',
+    },
+    {
+      id: 'user-context',
+      title: 'User context',
+      template: `User Context:
+{{#if user.name}}You are speaking with {{user.name}}. {{/if}}{{#if user.occupation}}Their occupation is {{user.occupation}}. {{/if}}{{#if user.customInstructions}}
+IMPORTANT: Follow these custom instructions from the user:
+{{user.customInstructions}}{{/if}}`,
+      enabled: true,
+      order: 1,
+      role: 'system',
+    },
+    {
+      id: 'formatting',
+      title: 'Formatting expectations',
+      template: FORMATTING_PROMPT,
+      enabled: true,
+      order: 2,
+      role: 'system',
+    },
+    {
+      id: 'run-code',
+      title: 'Run code tool',
+      template: `{{#if tools.runCode}}${RUN_CODE_PROMPT}{{/if}}`,
+      enabled: true,
+      order: 3,
+      role: 'system',
+    },
+    {
+      id: 'request-origin',
+      title: 'Request origin',
+      template: REQUEST_ORIGIN_TEMPLATE,
+      enabled: true,
+      order: 4,
+      role: 'system',
+    },
+    {
+      id: 'archive',
+      title: 'Archive guidance',
+      template: `{{#if tools.archive}}${ARCHIVE_PROMPT}{{/if}}`,
+      enabled: true,
+      order: 5,
+      role: 'system',
+    },
+    {
+      id: 'pinned-memory',
+      title: 'Pinned memory',
+      template: `{{#if pinnedEntriesBlock}}${PINNED_MEMORY_TEMPLATE}{{/if}}`,
+      enabled: true,
+      order: 6,
+      role: 'system',
+    },
+  ],
+  variables: [],
+};
+
+export const DEFAULT_CHAT_SYSTEM_AGENT_SETTINGS: SystemAgentSettings = {
+  modelId: DEFAULT_CHAT_MODEL,
+  prompt: DEFAULT_CHAT_SYSTEM_AGENT_PROMPT,
+};
+
+const DEFAULT_CHAT_SYSTEM_AGENT_DEFINITION: SystemAgentDefinition = {
+  slug: DEFAULT_CHAT_SYSTEM_AGENT_SLUG,
+  name: 'Default Chat Agent',
+  description:
+    'Workspace default agent used for interactive chats. Admins can tune its prompt and default model.',
+  defaultSettings: DEFAULT_CHAT_SYSTEM_AGENT_SETTINGS,
+};
+
 const TITLE_GENERATION_PROMPT: AgentPromptConfig = {
   mode: 'replace',
   joiner: '\n',
@@ -94,6 +184,7 @@ const TITLE_GENERATION_PROMPT: AgentPromptConfig = {
  * Add new system agents here as the platform grows.
  */
 export const SYSTEM_AGENTS: Record<string, SystemAgentDefinition> = {
+  [DEFAULT_CHAT_SYSTEM_AGENT_SLUG]: DEFAULT_CHAT_SYSTEM_AGENT_DEFINITION,
   'title-generation': {
     slug: 'title-generation',
     name: 'Title Generation',
@@ -107,11 +198,12 @@ export const SYSTEM_AGENTS: Record<string, SystemAgentDefinition> = {
 };
 
 /**
- * List of all system agent slugs for iteration.
+ * List of system agent slugs for iteration.
  */
-export const SYSTEM_AGENT_SLUGS = Object.keys(SYSTEM_AGENTS) as Array<
-  keyof typeof SYSTEM_AGENTS
->;
+export const SYSTEM_AGENT_SLUGS = [
+  DEFAULT_CHAT_SYSTEM_AGENT_SLUG,
+  'title-generation',
+] as const;
 
 /**
  * Get a system agent definition by slug.

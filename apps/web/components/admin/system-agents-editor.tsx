@@ -1,24 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { AnimatePresence, motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import {
-  Bot,
-  CheckCircle2,
-  ChevronDown,
-  CircleAlert,
-  Loader2,
-  RotateCcw,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import AgentPromptEditor from '@/components/agent-prompt-editor';
+import { CreatorLogo } from '@/components/creator-logo';
+import { toast } from '@/components/toast';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,28 +13,45 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import {
   Tooltip,
   TooltipContent,
-  TooltipTrigger,
   TooltipProvider,
+  TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { toast } from '@/components/toast';
-import { CreatorLogo } from '@/components/creator-logo';
-import { displayCreatorName } from '@/lib/ai/creators';
-import { cn } from '@/lib/utils';
-import { normalizeAgentPromptConfig } from '@/lib/agent-prompt';
-import type { SystemAgent } from '@/lib/db/schema';
+import { useAllowedModels } from '@/hooks/use-agents';
 import {
+  useResetSystemAgent,
+  useUpdateSystemAgent,
+} from '@/hooks/use-system-agents';
+import { normalizeAgentPromptConfig } from '@/lib/agent-prompt';
+import { displayCreatorName } from '@/lib/ai/creators';
+import {
+  DEFAULT_CHAT_SYSTEM_AGENT_SLUG,
   SYSTEM_AGENTS,
   type SystemAgentSettings,
 } from '@/lib/ai/system-agents';
+import type { SystemAgent } from '@/lib/db/schema';
+import { cn } from '@/lib/utils';
+import { formatDistanceToNow } from 'date-fns';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  useUpdateSystemAgent,
-  useResetSystemAgent,
-} from '@/hooks/use-system-agents';
-import { useAllowedModels } from '@/hooks/use-agents';
-import AgentPromptEditor from '@/components/agent-prompt-editor';
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  CircleAlert,
+  Loader2,
+  RotateCcw,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type FeedbackState = 'idle' | 'saved' | 'error';
 
@@ -83,6 +84,7 @@ function SystemAgentRow({ agent }: SystemAgentRowProps) {
   const { data: modelsData, isLoading: isModelsLoading } = useAllowedModels();
 
   const definition = SYSTEM_AGENTS[agent.slug];
+  const isDefaultChatAgent = agent.slug === DEFAULT_CHAT_SYSTEM_AGENT_SLUG;
   const allowedModels = modelsData?.models ?? [];
 
   const modelOptions = useMemo(() => {
@@ -329,6 +331,18 @@ function SystemAgentRow({ agent }: SystemAgentRowProps) {
                     setForm((prev) => ({ ...prev, prompt }))
                   }
                 />
+                {isDefaultChatAgent ? (
+                  <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+                    <p className="font-semibold text-foreground">Available special variables</p>
+                    <p className="mt-1">
+                      User preferences: <code>{'{{user.name}}'}</code>,{' '}
+                      <code>{'{{user.occupation}}'}</code>,{' '}
+                      <code>{'{{user.customInstructions}}'}</code>.
+                      Tool availability: <code>{'{{tools.runCode}}'}</code>,{' '}
+                      <code>{'{{tools.archive}}'}</code>. Pinned memory: <code>{'{{pinnedEntriesBlock}}'}</code>.
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               {/* Actions */}

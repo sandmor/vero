@@ -75,17 +75,17 @@ System agents are platform-level AI agents that perform special automated tasks.
 
 #### Available System Agents
 
-| Agent            | Slug               | Purpose                                                           |
-| ---------------- | ------------------ | ----------------------------------------------------------------- |
-| Title Generation | `title-generation` | Automatically generates concise titles for new chat conversations |
+| Agent         | Slug            | Purpose                                                                                  |
+| ------------ | ---------------- | ---------------------------------------------------------------------------------------- |
+| Default Chat | `default-chat`   | Workspace default chat behavior/model used when no user agent is selected                |
+| Title Generation | `title-generation` | Automatically generates concise titles for new chat conversations                         |
 
 #### Configuring System Agents
 
 Access system agents via **Settings → Admin → System Agents**. For each agent you can:
 
-- **Enable/Disable**: Toggle whether the agent is active
-- **Change Model**: Select which AI model the agent uses
-- **Customize Prompt**: Modify the system prompt blocks to change behavior
+- **Change Model**: Select which AI model the agent uses (e.g., set the platform default for chats)
+- **Customize Prompt**: Modify the system prompt blocks to change behavior and defaults
 - **Reset to Defaults**: Restore the original configuration
 
 ## Client-Side Caching & Edge Security

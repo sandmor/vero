@@ -1,13 +1,13 @@
 import 'server-only';
 
-import { prisma } from '@vero/db';
-import type { Prisma } from '@vero/db';
-import type { SystemAgent } from '@/lib/db/schema';
 import {
-  SYSTEM_AGENTS,
-  SYSTEM_AGENT_SLUGS,
-  type SystemAgentSettings,
+    SYSTEM_AGENTS,
+    SYSTEM_AGENT_SLUGS,
+    type SystemAgentSettings,
 } from '@/lib/ai/system-agents';
+import type { SystemAgent } from '@/lib/db/schema';
+import type { Prisma } from '@vero/db';
+import { prisma } from '@vero/db';
 
 /**
  * Ensure all system agents exist in the database.
