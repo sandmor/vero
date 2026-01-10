@@ -22,6 +22,7 @@ import {
 import type { SessionUser } from '@/lib/auth/types';
 import { getEncryptedCacheManager } from '@/lib/cache/cache-manager';
 import { getSyncManager } from '@/lib/cache/sync-manager';
+import { handleChatActionFailure } from '@/lib/chat/chat-resync';
 import { deserializeChat } from '@/lib/chat/serialization';
 import type { Chat } from '@/lib/db/schema';
 import { useQueryClient } from '@tanstack/react-query';
@@ -212,35 +213,49 @@ export function SidebarHistory({
     const chatIdToDelete = deleteId;
 
     const deletePromise = (async () => {
-      const response = await fetch(`/api/chat?id=${chatIdToDelete}`, {
-        method: 'DELETE',
-      });
+      try {
+        const response = await fetch(`/api/chat?id=${chatIdToDelete}`, {
+          method: 'DELETE',
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete chat');
-      }
-
-      await response.json();
-
-      // Remove from local cache and add to optimistic deleted set
-      const cacheManager = getEncryptedCacheManager();
-      await cacheManager.removeChat(chatIdToDelete);
-      removeOptimisticChat(chatIdToDelete);
-
-      queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
-
-      // Trigger cache refresh to update state
-      await refreshCache({ force: true });
-
-      if (selectedSet.has(chatIdToDelete)) {
-        const remainingIds = Array.from(selectedSet).filter(
-          (chatId) => chatId !== chatIdToDelete
-        );
-        if (remainingIds.length === 0) {
-          clearSelectionMode();
-        } else {
-          setSelection(remainingIds);
+        if (!response.ok) {
+          await handleChatActionFailure({
+            chatId: chatIdToDelete,
+            action: 'delete',
+            response,
+          });
+          throw new Error('Failed to delete chat');
         }
+
+        await response.json();
+
+        // Remove from local cache and add to optimistic deleted set
+        const cacheManager = getEncryptedCacheManager();
+        await cacheManager.removeChat(chatIdToDelete);
+        removeOptimisticChat(chatIdToDelete);
+
+        queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
+
+        // Trigger cache refresh to update state
+        await refreshCache({ force: true });
+
+        if (selectedSet.has(chatIdToDelete)) {
+          const remainingIds = Array.from(selectedSet).filter(
+            (chatId) => chatId !== chatIdToDelete
+          );
+          if (remainingIds.length === 0) {
+            clearSelectionMode();
+          } else {
+            setSelection(remainingIds);
+          }
+        }
+      } catch (error) {
+        await handleChatActionFailure({
+          chatId: chatIdToDelete,
+          action: 'delete',
+          error,
+        });
+        throw error;
       }
     })();
 
@@ -277,37 +292,53 @@ export function SidebarHistory({
     setIsBulkDeleting(true);
 
     const deletePromise = (async () => {
-      const response = await fetch('/api/chat/bulk-delete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ids: idsToDelete }),
-      });
+      try {
+        const response = await fetch('/api/chat/bulk-delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ids: idsToDelete }),
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete chats');
+        if (!response.ok) {
+          await handleChatActionFailure({
+            chatId: idsToDelete[0] ?? '',
+            action: 'bulk-delete',
+            response,
+          });
+          throw new Error('Failed to delete chats');
+        }
+
+        await response.json();
+
+        // Remove from local cache and add to optimistic deleted set
+        const cacheManager = getEncryptedCacheManager();
+        for (const chatId of idsToDelete) {
+          await cacheManager.removeChat(chatId);
+          removeOptimisticChat(chatId);
+        }
+
+        queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
+
+        // Trigger cache refresh to update state
+        await refreshCache({ force: true });
+
+        if (currentChatId && idsSet.has(currentChatId)) {
+          router.push('/chat');
+        }
+
+        clearSelectionMode();
+      } catch (error) {
+        if (idsToDelete[0]) {
+          await handleChatActionFailure({
+            chatId: idsToDelete[0],
+            action: 'bulk-delete',
+            error,
+          });
+        }
+        throw error;
       }
-
-      await response.json();
-
-      // Remove from local cache and add to optimistic deleted set
-      const cacheManager = getEncryptedCacheManager();
-      for (const chatId of idsToDelete) {
-        await cacheManager.removeChat(chatId);
-        removeOptimisticChat(chatId);
-      }
-
-      queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
-
-      // Trigger cache refresh to update state
-      await refreshCache({ force: true });
-
-      if (currentChatId && idsSet.has(currentChatId)) {
-        router.push('/chat');
-      }
-
-      clearSelectionMode();
     })();
 
     toast.promise(deletePromise, {

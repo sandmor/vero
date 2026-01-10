@@ -1,14 +1,14 @@
-import { z } from 'zod';
 import { getAppSession } from '@/lib/auth/session';
-import { getChatById } from '@/lib/db/queries';
 import {
   getChatSettings,
   setAllowedTools,
-  setReasoningEffort,
   setModelId,
+  setReasoningEffort,
   updateChatAgent,
 } from '@/lib/db/chat-settings';
+import { getChatById } from '@/lib/db/queries';
 import { ChatSDKError } from '@/lib/errors';
+import { z } from 'zod';
 
 const patchSchema = z.object({
   chatId: z.string().uuid(),
@@ -30,7 +30,10 @@ export async function GET(request: Request) {
   if (!session?.user) return new ChatSDKError('unauthorized:chat').toResponse();
   const chat = await getChatById({ id: chatId });
   if (!chat || chat.userId !== session.user.id)
-    return new ChatSDKError('forbidden:chat').toResponse();
+    return new ChatSDKError(
+      'unauthorized:chat',
+      'Chat not found or access revoked'
+    ).toResponse();
   const settings = await getChatSettings(chatId);
   return Response.json({ settings }, { status: 200 });
 }
@@ -46,7 +49,10 @@ export async function PATCH(request: Request) {
   if (!session?.user) return new ChatSDKError('unauthorized:chat').toResponse();
   const chat = await getChatById({ id: body.chatId });
   if (!chat || chat.userId !== session.user.id)
-    return new ChatSDKError('forbidden:chat').toResponse();
+    return new ChatSDKError(
+      'unauthorized:chat',
+      'Chat not found or access revoked'
+    ).toResponse();
   if (body.allowedTools !== undefined) {
     await setAllowedTools(body.chatId, body.allowedTools ?? undefined);
   } // else undefined means no change

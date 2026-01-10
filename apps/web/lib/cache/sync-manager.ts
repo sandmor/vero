@@ -58,6 +58,7 @@ type SyncRequest = {
     | 'settings-change' // Legacy: kept for backwards compatibility, treated as regular sync
     | 'tab-request';
   chatId?: string;
+  force?: boolean;
   timestamp: number;
 };
 
@@ -177,10 +178,12 @@ export class SyncManager {
         // Reload cache to pick up settings changes
         this.onCacheReload?.();
       },
-      onSyncRequested: (reason) => {
+      onSyncRequested: (reason, options) => {
         this.log('Sync requested by another tab:', reason);
         // Handle the sync request
-        this.requestSync('tab-request');
+        this.requestSync('tab-request', options?.chatId, {
+          force: options?.force,
+        });
       },
       onMessagesUpdated: (chatId, updatedAt) => {
         this.log('Messages updated by another tab for chat:', chatId);
@@ -387,7 +390,11 @@ export class SyncManager {
    * @param source - What triggered the sync request
    * @param chatId - Optional chat ID that triggered the sync (for realtime)
    */
-  requestSync(source: SyncRequest['source'], chatId?: string): void {
+  requestSync(
+    source: SyncRequest['source'],
+    chatId?: string,
+    options?: { force?: boolean }
+  ): void {
     this.log('Sync requested:', { source, chatId });
 
     // Filter out realtime echoes for own changes
@@ -398,17 +405,29 @@ export class SyncManager {
     // If not the leader, request the leader to sync
     if (!this.isLeader()) {
       this.log('Not leader, delegating sync request to leader tab');
-      this.tabLeader?.requestSync(source);
+      this.tabLeader?.requestSync(source, {
+        force: options?.force,
+        chatId,
+      });
       return;
     }
 
     this.pendingRequests.push({
       source,
       chatId,
+      force: options?.force,
       timestamp: Date.now(),
     });
 
     this.scheduleSync();
+  }
+
+  /**
+   * Request a full, forced resync (used for cache recovery scenarios).
+   * Non-leader tabs will delegate to the current leader.
+   */
+  requestFullResync(chatId?: string): void {
+    this.requestSync('manual', chatId, { force: true });
   }
 
   /**
@@ -472,12 +491,17 @@ export class SyncManager {
     const requests = [...this.pendingRequests];
     this.pendingRequests = [];
 
+    const requestedForce = force || requests.some((request) => request.force);
+
     if (requests.length === 0 && !force) {
       this.log('No pending requests, skipping sync');
       return;
     }
 
-    this.log('Executing sync:', { requestCount: requests.length, force });
+    this.log('Executing sync:', {
+      requestCount: requests.length,
+      force: requestedForce,
+    });
 
     // Determine which chats to exclude from sync (protected chats)
     const excludeChatIds = new Set<string>();
@@ -510,7 +534,7 @@ export class SyncManager {
     }
 
     this.syncPromise = this.onSync({
-      force,
+      force: requestedForce,
       excludeChatIds: excludeChatIds.size > 0 ? excludeChatIds : undefined,
     })
       .then(() => {

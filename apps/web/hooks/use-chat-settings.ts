@@ -1,7 +1,8 @@
 'use client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { ChatSettings } from '@/lib/db/schema';
 import type { ChatToolId } from '@/lib/ai/tool-ids';
+import { handleChatActionFailure } from '@/lib/chat/chat-resync';
+import type { ChatSettings } from '@/lib/db/schema';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export function useChatSettings(chatId: string | undefined) {
   return useQuery<{ settings: ChatSettings }>({
@@ -9,11 +10,34 @@ export function useChatSettings(chatId: string | undefined) {
     enabled: !!chatId,
     queryFn: async () => {
       if (!chatId) return { settings: {} };
-      const res = await fetch(
-        `/api/chat/settings?chatId=${encodeURIComponent(chatId)}`
-      );
-      if (!res.ok) throw new Error('Failed to load chat settings');
-      return res.json();
+
+      let handled = false;
+      try {
+        const res = await fetch(
+          `/api/chat/settings?chatId=${encodeURIComponent(chatId)}`
+        );
+
+        if (!res.ok) {
+          handled = true;
+          await handleChatActionFailure({
+            chatId,
+            action: 'fetch-settings',
+            response: res,
+          });
+          throw new Error('Failed to load chat settings');
+        }
+
+        return res.json();
+      } catch (error) {
+        if (!handled) {
+          await handleChatActionFailure({
+            chatId,
+            action: 'fetch-settings',
+            error,
+          });
+        }
+        throw error;
+      }
     },
     staleTime: 30_000,
   });
@@ -25,13 +49,33 @@ export function useUpdateAllowedTools(chatId: string | undefined) {
     mutationFn: async (tools: ChatToolId[] | null) => {
       if (!chatId) throw new Error('Missing chatId');
       const body = { chatId, allowedTools: tools };
-      const res = await fetch('/api/chat/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Failed to update tools');
-      return res.json() as Promise<{ settings: ChatSettings }>;
+      let handled = false;
+      try {
+        const res = await fetch('/api/chat/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          handled = true;
+          await handleChatActionFailure({
+            chatId,
+            action: 'update-tools',
+            response: res,
+          });
+          throw new Error('Failed to update tools');
+        }
+        return res.json() as Promise<{ settings: ChatSettings }>;
+      } catch (error) {
+        if (!handled) {
+          await handleChatActionFailure({
+            chatId,
+            action: 'update-tools',
+            error,
+          });
+        }
+        throw error;
+      }
     },
     onMutate: async (tools) => {
       if (!chatId) return;
@@ -66,13 +110,33 @@ export function useUpdateReasoningEffort(chatId: string | undefined) {
     mutationFn: async (effort: 'low' | 'medium' | 'high' | null) => {
       if (!chatId) throw new Error('Missing chatId');
       const body = { chatId, reasoningEffort: effort };
-      const res = await fetch('/api/chat/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Failed to update reasoning effort');
-      return res.json() as Promise<{ settings: ChatSettings }>;
+      let handled = false;
+      try {
+        const res = await fetch('/api/chat/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          handled = true;
+          await handleChatActionFailure({
+            chatId,
+            action: 'update-reasoning',
+            response: res,
+          });
+          throw new Error('Failed to update reasoning effort');
+        }
+        return res.json() as Promise<{ settings: ChatSettings }>;
+      } catch (error) {
+        if (!handled) {
+          await handleChatActionFailure({
+            chatId,
+            action: 'update-reasoning',
+            error,
+          });
+        }
+        throw error;
+      }
     },
     onMutate: async (effort) => {
       if (!chatId) return;
@@ -107,13 +171,33 @@ export function useUpdateModelId(chatId: string | undefined) {
     mutationFn: async (modelId: string | null) => {
       if (!chatId) throw new Error('Missing chatId');
       const body = { chatId, modelId };
-      const res = await fetch('/api/chat/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Failed to update model');
-      return res.json() as Promise<{ settings: ChatSettings }>;
+      let handled = false;
+      try {
+        const res = await fetch('/api/chat/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          handled = true;
+          await handleChatActionFailure({
+            chatId,
+            action: 'update-model',
+            response: res,
+          });
+          throw new Error('Failed to update model');
+        }
+        return res.json() as Promise<{ settings: ChatSettings }>;
+      } catch (error) {
+        if (!handled) {
+          await handleChatActionFailure({
+            chatId,
+            action: 'update-model',
+            error,
+          });
+        }
+        throw error;
+      }
     },
     onMutate: async (modelId) => {
       if (!chatId) return;

@@ -1266,11 +1266,26 @@ export async function DELETE(request: Request) {
 
   const chat = await getChatById({ id });
 
-  if (chat?.userId !== session.user.id) {
-    return new ChatSDKError('forbidden:chat').toResponse();
+  if (!chat || chat.userId !== session.user.id) {
+    return new ChatSDKError(
+      'unauthorized:chat',
+      'Chat not found or access revoked'
+    ).toResponse();
   }
 
-  const deletedChat = await deleteChatById({ id });
-
-  return Response.json(deletedChat, { status: 200 });
+  try {
+    const deletedChat = await deleteChatById({ id, userId: session.user.id });
+    return Response.json(deletedChat, { status: 200 });
+  } catch (error) {
+    if (error instanceof ChatSDKError) {
+      if (error.type === 'not_found') {
+        return new ChatSDKError(
+          'unauthorized:chat',
+          'Chat not found or access revoked'
+        ).toResponse();
+      }
+      return error.toResponse();
+    }
+    return new ChatSDKError('bad_request:api').toResponse();
+  }
 }

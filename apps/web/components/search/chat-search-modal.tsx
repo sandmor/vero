@@ -1,17 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Search, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { useQueryClient } from '@tanstack/react-query';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,22 +11,34 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from '@/components/ui/input-group';
-import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
-import { useEncryptedCache } from '@/components/encrypted-cache-provider';
 import { useClientSearch } from '@/hooks/use-client-search';
-import { useSearchStore } from '@/lib/stores/search-store';
 import { getEncryptedCacheManager } from '@/lib/cache/cache-manager';
+import { handleChatActionFailure } from '@/lib/chat/chat-resync';
+import { useSearchStore } from '@/lib/stores/search-store';
+import { useQueryClient } from '@tanstack/react-query';
+import { Loader2, Search, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { ChatItem } from '../sidebar-history-item';
+import { Badge } from '../ui/badge';
 import { SearchActiveFilters } from './search-active-filters';
 import { SearchFilterActions } from './search-filter-actions';
 import { SearchResultItem } from './search-result-item';
-import { Badge } from '../ui/badge';
 
 interface ChatSearchModalProps {
   currentChatId?: string;
@@ -123,25 +124,39 @@ export function ChatSearchModal({
     const chatIdToDelete = deleteId;
 
     const deletePromise = (async () => {
-      const response = await fetch(`/api/chat?id=${chatIdToDelete}`, {
-        method: 'DELETE',
-      });
+      try {
+        const response = await fetch(`/api/chat?id=${chatIdToDelete}`, {
+          method: 'DELETE',
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete chat');
+        if (!response.ok) {
+          await handleChatActionFailure({
+            chatId: chatIdToDelete,
+            action: 'delete',
+            response,
+          });
+          throw new Error('Failed to delete chat');
+        }
+
+        await response.json();
+
+        // Remove from local cache and add to optimistic deleted set
+        const cacheManager = getEncryptedCacheManager();
+        await cacheManager.removeChat(chatIdToDelete);
+        removeOptimisticChat(chatIdToDelete);
+
+        queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
+
+        // Trigger cache refresh to update state
+        await refreshCache({ force: true });
+      } catch (error) {
+        await handleChatActionFailure({
+          chatId: chatIdToDelete,
+          action: 'delete',
+          error: error instanceof Error ? error : new Error('Failed to delete chat'),
+        });
+        throw error;
       }
-
-      await response.json();
-
-      // Remove from local cache and add to optimistic deleted set
-      const cacheManager = getEncryptedCacheManager();
-      await cacheManager.removeChat(chatIdToDelete);
-      removeOptimisticChat(chatIdToDelete);
-
-      queryClient.invalidateQueries({ queryKey: ['chat', 'search'] });
-
-      // Trigger cache refresh to update state
-      await refreshCache({ force: true });
     })();
 
     toast.promise(deletePromise, {

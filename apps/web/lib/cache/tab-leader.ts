@@ -39,7 +39,13 @@ type BroadcastMessage =
   | { type: 'leader-resigning'; tabId: string }
   | { type: 'sync-complete'; tabId: string; timestamp: string }
   | { type: 'settings-updated'; tabId: string; timestamp: string }
-  | { type: 'request-sync'; tabId: string; reason: string }
+  | {
+      type: 'request-sync';
+      tabId: string;
+      reason: string;
+      force?: boolean;
+      chatId?: string;
+    }
   | { type: 'election-started'; tabId: string }
   | { type: 'follower-joined'; tabId: string }
   | {
@@ -59,7 +65,10 @@ type TabLeaderOptions = {
   /** Callback when settings are updated in another tab */
   onSettingsUpdated?: (timestamp: string) => void;
   /** Callback when another tab requests a sync */
-  onSyncRequested?: (reason: string) => void;
+  onSyncRequested?: (
+    reason: string,
+    options?: { force?: boolean; chatId?: string }
+  ) => void;
   /** Callback when messages are updated in another tab */
   onMessagesUpdated?: (chatId: string, updatedAt: number) => void;
   /** Callback when a new follower tab joins (leader should sync to help it) */
@@ -379,7 +388,10 @@ export class TabLeaderElection {
 
       case 'request-sync':
         if (message.tabId !== this.tabId && this.state === 'leader') {
-          this.options.onSyncRequested?.(message.reason);
+          this.options.onSyncRequested?.(message.reason, {
+            force: message.force,
+            chatId: message.chatId,
+          });
         }
         break;
 
@@ -443,13 +455,19 @@ export class TabLeaderElection {
   /**
    * Request the leader tab to perform a sync.
    */
-  requestSync(reason: string): void {
+  requestSync(reason: string, options?: { force?: boolean; chatId?: string }): void {
     if (this.state === 'leader') {
       // We're the leader, handle it locally
-      this.options.onSyncRequested?.(reason);
+      this.options.onSyncRequested?.(reason, options);
     } else {
       // Request the leader to sync
-      this.broadcast({ type: 'request-sync', tabId: this.tabId, reason });
+      this.broadcast({
+        type: 'request-sync',
+        tabId: this.tabId,
+        reason,
+        force: options?.force,
+        chatId: options?.chatId,
+      });
     }
   }
 

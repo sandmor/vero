@@ -1300,6 +1300,17 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
       const currentState = stateRef.current;
       const currentIsLoggedIn = isLoggedInRef.current;
 
+      const syncManager = getSyncManager();
+      if (syncManager && !syncManager.isLeader()) {
+        cacheDebug('refreshCache: delegating to leader tab', {
+          forced: Boolean(options?.force),
+        });
+        syncManager.requestSync('manual', undefined, {
+          force: options?.force,
+        });
+        return Promise.resolve();
+      }
+
       if (!currentIsLoggedIn) {
         cacheDebug('refreshCache: skipped (user not logged in)');
         return Promise.resolve();

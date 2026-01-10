@@ -1,16 +1,8 @@
-import Link from 'next/link';
-import {
-  memo,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-  type TouchEvent as ReactTouchEvent,
-} from 'react';
-import { motion } from 'framer-motion';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
+import { handleChatActionFailure } from '@/lib/chat/chat-resync';
 import type { Chat } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 import {
   CheckCircle,
   CheckSquare,
@@ -22,6 +14,16 @@ import {
   Square,
   Trash2,
 } from 'lucide-react';
+import Link from 'next/link';
+import {
+  memo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type TouchEvent as ReactTouchEvent,
+} from 'react';
+import { toast } from 'sonner';
+import { ChatRenameDialog } from './chat-rename-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,7 +39,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from './ui/sidebar';
-import { ChatRenameDialog } from './chat-rename-dialog';
 
 export type ChatItemSelectionProps = {
   isSelectionMode: boolean;
@@ -90,6 +91,11 @@ const PureChatItem = ({
       });
 
       if (!response.ok) {
+        await handleChatActionFailure({
+          chatId: chat.id,
+          action: 'rename',
+          response,
+        });
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = errorData.error || 'Failed to rename chat';
         toast.error(errorMessage);
@@ -99,6 +105,11 @@ const PureChatItem = ({
       onRename(chat.id, newTitle);
     } catch (error) {
       console.error('Failed to rename chat', error);
+      await handleChatActionFailure({
+        chatId: chat.id,
+        action: 'rename',
+        error,
+      });
       toast.error('Failed to rename chat. Please try again.');
     }
   };
