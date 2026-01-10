@@ -1,23 +1,23 @@
-import type { Prisma } from '@vero/db';
-import { prisma } from '@vero/db';
-import { ChatSDKError } from '../../errors';
-import type { Chat, ChatSettings, DBMessage, MessageTreeNode } from '../schema';
-import type { AppUsage } from '../../usage';
 import type { VisibilityType } from '@/components/visibility-selector';
-import { generateUUID } from '../../utils';
-import { generateTitleFromChatHistory } from '../../../app/actions/chat';
-import {
-  saveMessages,
-  getMessagesByChatId,
-  type SaveMessageInput,
-} from './messages';
-import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 import {
   notifyOnChatCreated,
-  notifyOnChatUpdated,
   notifyOnChatDeleted,
   notifyOnChatsDeleted,
+  notifyOnChatUpdated,
 } from '@/lib/realtime/notify';
+import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
+import type { Prisma } from '@vero/db';
+import { prisma } from '@vero/db';
+import { generateTitleFromChatHistory } from '../../../app/actions/chat';
+import { ChatSDKError } from '../../errors';
+import type { AppUsage } from '../../usage';
+import { generateUUID } from '../../utils';
+import type { Chat, ChatSettings, DBMessage, MessageTreeNode } from '../schema';
+import {
+  getMessagesByChatId,
+  saveMessages,
+  type SaveMessageInput,
+} from './messages';
 
 export async function saveChat({
   id,
@@ -44,8 +44,8 @@ export async function saveChat({
         agentId,
       },
     });
-    // Notify realtime gateway (best-effort, non-blocking)
-    notifyOnChatCreated(userId, id).catch(() => {});
+    // Notify realtime gateway
+    await notifyOnChatCreated(userId, id).catch(() => {});
     return;
   } catch (_error) {
     throw new ChatSDKError('bad_request:database', 'Failed to save chat');
@@ -86,8 +86,7 @@ export async function deleteChatById({
     const { lastContext, visibility, ...rest } = deleted as typeof deleted & {
       visibility: string;
     };
-    // Notify realtime gateway (best-effort, non-blocking)
-    notifyOnChatDeleted(chat.userId, id).catch(() => {});
+    await notifyOnChatDeleted(chat.userId, id).catch(() => {});
     return {
       ...rest,
       visibility: visibility as Chat['visibility'],
@@ -146,8 +145,7 @@ export async function deleteChatsByIds({
       }),
     ]);
 
-    // Notify realtime gateway (best-effort, non-blocking)
-    notifyOnChatsDeleted(userId, targetIds).catch(() => {});
+    await notifyOnChatsDeleted(userId, targetIds).catch(() => {});
 
     return { deletedIds: targetIds };
   } catch (_error) {
@@ -316,9 +314,9 @@ export async function updateChatVisiblityById({
       data: { visibility, updatedAt: new Date() },
       select: { userId: true },
     });
-    // Notify realtime gateway (best-effort, non-blocking)
+    // Notify realtime gateway
     if (userId || updated.userId) {
-      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
+      await notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
     }
     return;
   } catch (_error) {
@@ -359,9 +357,9 @@ export async function updateChatTitleById({
       data: { title, updatedAt: new Date() },
       select: { userId: true },
     });
-    // Notify realtime gateway (best-effort, non-blocking)
+    // Notify realtime gateway
     if (userId || updated.userId) {
-      notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
+      await notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
     }
     return;
   } catch (_error) {
@@ -467,8 +465,8 @@ export async function forkChat({
           : {}),
       } as any,
     });
-    // Notify realtime gateway about the new forked chat (best-effort, non-blocking)
-    notifyOnChatCreated(userId, newChatId).catch(() => {});
+    // Notify realtime gateway about the new forked chat
+    await notifyOnChatCreated(userId, newChatId).catch(() => {});
 
     let lastReplayedId: string | undefined;
 
@@ -563,7 +561,7 @@ export async function forkChat({
               data: { title: realTitle, updatedAt: new Date() },
             });
             // Notify realtime gateway about title update (best-effort)
-            notifyOnChatUpdated(userId, newChatId).catch(() => {});
+            await notifyOnChatUpdated(userId, newChatId).catch(() => {});
           }
         }
       } catch (e) {
