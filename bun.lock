@@ -9,12 +9,12 @@
       },
     },
     "apps/edge-gateway": {
-      "name": "vero-cache-worker",
+      "name": "vero-edge-gateway",
       "version": "0.1.0",
       "dependencies": {
         "@clerk/backend": "^2.29.1",
         "@vero/shared": "workspace:*",
-        "hono": "",
+        "hono": "^4.11.3",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260108.0",
@@ -3390,7 +3390,7 @@
 
     "vary": ["vary@1.1.2", "", {}, "sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg=="],
 
-    "vero-cache-worker": ["vero-cache-worker@workspace:apps/edge-gateway"],
+    "vero-edge-gateway": ["vero-edge-gateway@workspace:apps/edge-gateway"],
 
     "vero-realtime-gateway": ["vero-realtime-gateway@workspace:apps/realtime-gateway"],
 
