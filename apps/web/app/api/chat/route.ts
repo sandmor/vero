@@ -5,6 +5,7 @@ import {
   getAgentPromptVariableMap,
 } from '@/lib/agent-prompt';
 import { agentSettingsToChatSettings } from '@/lib/agent-settings';
+import { applyCacheCheckpoint } from '@/lib/ai/cache-checkpoints';
 import {
   getModelCapabilities,
   type ResolvedModelCapabilities,
@@ -50,7 +51,11 @@ import {
   updateChatLastContextById,
   updateChatTitleById,
 } from '@/lib/db/queries';
-import type { ChatSettings, MessageTreeNode, UserPreferences } from '@/lib/db/schema';
+import type {
+  ChatSettings,
+  MessageTreeNode,
+  UserPreferences,
+} from '@/lib/db/schema';
 import { ChatSDKError } from '@/lib/errors';
 import { resolveByokModel } from '@/lib/queries/byok';
 import { consumeTokens } from '@/lib/rate-limit/token-bucket';
@@ -358,12 +363,14 @@ export async function POST(request: Request) {
         } else {
           try {
             const defaultAgentSettings = await defaultChatAgentSettingsPromise;
-            const defaultAgent = systemAgentSettingsToAgentSettings(
-              defaultAgentSettings
-            );
+            const defaultAgent =
+              systemAgentSettingsToAgentSettings(defaultAgentSettings);
             base = agentSettingsToChatSettings(defaultAgent);
           } catch (e) {
-            console.warn('Default agent preset failed during initialization', e);
+            console.warn(
+              'Default agent preset failed during initialization',
+              e
+            );
           }
         }
         await applyInitialSettingsPreset({
@@ -507,25 +514,25 @@ export async function POST(request: Request) {
       providedSlugs: normalizedPinnedSlugs,
       createdNewChat,
     });
-      const settingsPromise: Promise<ChatSettings> = getChatSettings(id).catch(
-        (error) => {
-          console.warn('Failed to load chat settings for prompt preparation', {
-            chatId: id,
-            error,
-          });
-          return {};
-        }
-      );
+    const settingsPromise: Promise<ChatSettings> = getChatSettings(id).catch(
+      (error) => {
+        console.warn('Failed to load chat settings for prompt preparation', {
+          chatId: id,
+          error,
+        });
+        return {};
+      }
+    );
 
-      let modelCapabilities:
-        | ResolvedModelCapabilities
-        | {
-            supportsTools: boolean;
-            provider: string;
-            pricing: null;
-            maxOutputTokens?: number;
-          }
-        | null = null;
+    let modelCapabilities:
+      | ResolvedModelCapabilities
+      | {
+          supportsTools: boolean;
+          provider: string;
+          pricing: null;
+          maxOutputTokens?: number;
+        }
+      | null = null;
 
     if (isUserByokModel && byokResolution) {
       // BYOK model - use resolution info for capabilities
@@ -876,7 +883,18 @@ export async function POST(request: Request) {
           mergedModelMessages = merged;
         }
 
-        const promptCacheKey = buildPromptCacheKey({
+        // Apply checkpoint-based caching for long conversations.
+        // This finds a stable breakpoint in the conversation history.
+        // For OpenRouter: marks the checkpoint message with cacheControl.
+        // For OpenAI: generates a promptCacheKey from messages up to checkpoint.
+        // If no checkpoint (conversation too short), falls back to system prompt caching.
+        const checkpointResult = applyCacheCheckpoint(
+          mergedModelMessages,
+          resolvedProviderId
+        );
+
+        // Build cache key for system prompt / agent configuration
+        const systemPromptCacheKey = buildPromptCacheKey({
           chatId: id,
           modelId: selectedChatModel,
           systemPrompt: composedSystemPrompt,
@@ -885,26 +903,52 @@ export async function POST(request: Request) {
           ),
         });
 
-        if (
-          shouldEnablePromptCaching(
-            composedSystemPrompt,
-            promptComposition.messages.map(({ content }) => ({ content }))
-          )
-        ) {
-          if (resolvedProviderId === 'openai') {
-            providerOptions.openai = {
-              ...(providerOptions.openai ?? {}),
-              promptCacheKey,
+        // Apply caching based on provider
+        if (resolvedProviderId === 'openai') {
+          // Use checkpoint-derived key if available, otherwise system prompt key
+          const effectiveCacheKey =
+            checkpointResult.promptCacheKey ?? systemPromptCacheKey;
+          providerOptions.openai = {
+            ...(providerOptions.openai ?? {}),
+            promptCacheKey: effectiveCacheKey,
+          };
+        } else if (resolvedProviderId === 'openrouter') {
+          const effectiveCacheKey =
+            checkpointResult.promptCacheKey ?? systemPromptCacheKey;
+
+          // OpenRouter routes to multiple upstreams (including OpenAI-compatible),
+          // so keep the promptCacheKey aligned with OpenAI semantics.
+          providerOptions.openai = {
+            ...(providerOptions.openai ?? {}),
+            promptCacheKey: effectiveCacheKey,
+          };
+
+          // For OpenRouter, always set request-level cacheControl for system prompt
+          // The checkpoint cacheControl is already added to the message by applyCacheCheckpoint
+          if (
+            shouldEnablePromptCaching(
+              composedSystemPrompt,
+              promptComposition.messages.map(({ content }) => ({ content }))
+            )
+          ) {
+            const cacheControl = {
+              type: 'ephemeral' as const,
+              ttl: '1h' as const,
             };
-          } else if (resolvedProviderId === 'openrouter') {
-            const cacheControl = { type: 'ephemeral' as const, ttl: '1h' as const };
             providerOptions.openrouter = {
               ...(providerOptions.openrouter ?? {}),
               cacheControl,
+              promptCacheKey: effectiveCacheKey,
             };
             providerOptions.anthropic = {
               ...(providerOptions.anthropic ?? {}),
               cacheControl,
+            };
+          } else {
+            // Even if we skip cacheControl, still attach promptCacheKey for OpenAI-compatible routing.
+            providerOptions.openrouter = {
+              ...(providerOptions.openrouter ?? {}),
+              promptCacheKey: effectiveCacheKey,
             };
           }
         }
@@ -955,7 +999,7 @@ export async function POST(request: Request) {
         const result = streamText({
           model,
           system: composedSystemPrompt,
-          messages: mergedModelMessages,
+          messages: checkpointResult.messages,
           stopWhen: stepCountIs(20),
           experimental_transform: smoothStream({ chunking: 'word' }),
           tools: activeTools,
