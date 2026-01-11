@@ -8,7 +8,10 @@ import {
   parsePathSegments,
   toBase36Label,
 } from '@/lib/chat/message-path';
-import { notifyOnChatDeleted } from '@/lib/realtime/notify';
+import {
+  notifyOnChatDeleted,
+  notifyOnChatUpdated,
+} from '@/lib/realtime/notify';
 import type { BranchSelectionSnapshot } from '@/types/chat-bootstrap';
 import type { Prisma } from '@vero/db';
 import { Prisma as PrismaRuntime, prisma } from '@vero/db';
@@ -188,6 +191,9 @@ export type SaveMessageInput = {
   path?: string | null;
 };
 
+/**
+ * Note: saveMessages doesn't send notifications. Caller is responsible for that.
+ */
 export async function saveMessages({
   messages,
 }: {
@@ -396,7 +402,7 @@ export async function branchMessageWithEdit({
   }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const tx = await prisma.$transaction(async (tx) => {
       const [chat, pivot] = await Promise.all([
         tx.chat.findUnique({
           where: { id: chatId },
@@ -512,6 +518,9 @@ export async function branchMessageWithEdit({
         newMessageId,
       } as const;
     });
+
+    await notifyOnChatUpdated(userId, chatId).catch(() => {});
+    return tx;
   } catch (error) {
     if (error instanceof ChatSDKError) {
       throw error;
@@ -544,7 +553,7 @@ export async function updateMessageText({
   }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const tx = await prisma.$transaction(async (tx) => {
       const [chat, message] = await Promise.all([
         tx.chat.findUnique({
           where: { id: chatId },
@@ -606,6 +615,9 @@ export async function updateMessageText({
 
       return { messageId } as const;
     });
+
+    await notifyOnChatUpdated(userId, chatId).catch(() => {});
+    return tx;
   } catch (error) {
     if (error instanceof ChatSDKError) {
       throw error;
@@ -617,6 +629,9 @@ export async function updateMessageText({
   }
 }
 
+/**
+ * Note: saveAssistantMessage doesn't send notifications. Caller is responsible for that.
+ */
 export async function saveAssistantMessage({
   id,
   chatId,
@@ -1057,6 +1072,7 @@ export async function deleteMessageById({
 
     if (deletedChat)
       await notifyOnChatDeleted(userId, deletedChat).catch(() => {});
+    else await notifyOnChatUpdated(userId, chatId).catch(() => {});
     return tx;
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -1356,6 +1372,7 @@ export async function deleteMessagesByIds({
     });
     if (deletedChat)
       await notifyOnChatDeleted(userId, deletedChat).catch(() => {});
+    else await notifyOnChatUpdated(userId, chatId).catch(() => {});
     return tx;
   } catch (error) {
     if (error instanceof ChatSDKError) {
@@ -1384,7 +1401,7 @@ export async function updateBranchSelectionByChatId({
   expectedSnapshot?: BranchSelectionSnapshot;
 }) {
   try {
-    return await prisma.$transaction(async (tx) => {
+    const tx = await prisma.$transaction(async (tx) => {
       const chat = await tx.chat.findUnique({
         where: { id: chatId },
         select: { userId: true, rootMessageIndex: true },
@@ -1545,6 +1562,9 @@ export async function updateBranchSelectionByChatId({
         selectedChildIndex: normalizedIndex,
       } as const;
     });
+
+    await notifyOnChatUpdated(userId, chatId).catch(() => {});
+    return tx;
   } catch (error) {
     if (error instanceof ChatSDKError) {
       throw error;
