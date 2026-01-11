@@ -748,13 +748,11 @@ function sortChatResults(
   switch (options.sortBy) {
     case 'newest':
       return sorted.sort(
-        (a, b) =>
-          toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt)
+        (a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt)
       );
     case 'oldest':
       return sorted.sort(
-        (a, b) =>
-          toTimestamp(a.updatedAt) - toTimestamp(b.updatedAt)
+        (a, b) => toTimestamp(a.updatedAt) - toTimestamp(b.updatedAt)
       );
     case 'title':
       return sorted.sort((a, b) =>

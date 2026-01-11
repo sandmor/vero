@@ -1,9 +1,9 @@
 import 'server-only';
 
 import {
-    SYSTEM_AGENTS,
-    SYSTEM_AGENT_SLUGS,
-    type SystemAgentSettings,
+  SYSTEM_AGENTS,
+  SYSTEM_AGENT_SLUGS,
+  type SystemAgentSettings,
 } from '@/lib/ai/system-agents';
 import type { SystemAgent } from '@/lib/db/schema';
 import type { Prisma } from '@vero/db';

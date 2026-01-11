@@ -25,6 +25,7 @@ const LEASE_STORAGE_KEY = 'vero-cache-leader-lease';
 const LEADER_LEASE_DURATION_MS = 10_000; // 10 seconds
 const HEARTBEAT_INTERVAL_MS = 3_000; // 3 seconds
 const ELECTION_DELAY_MS = 100; // Small delay to allow other tabs to respond
+const HEARTBEAT_SILENCE_FALLBACK_MS = 9_000; // Time to keep trusting a remote leader
 
 export type LeaderState = 'leader' | 'follower' | 'electing' | 'disabled';
 
@@ -90,6 +91,7 @@ export class TabLeaderElection {
   private leaseCheckInterval: ReturnType<typeof setInterval> | null = null;
   private options: TabLeaderOptions;
   private destroyed = false;
+  private lastExternalHeartbeatAt: number | null = null;
 
   constructor(options: TabLeaderOptions = {}) {
     this.tabId = crypto.randomUUID();
@@ -228,7 +230,7 @@ export class TabLeaderElection {
     }
 
     // Try to acquire the lease
-    const acquired = this.tryAcquireLease();
+    const acquired = await this.tryAcquireLease();
     if (acquired) {
       this.becomeLeader();
     } else {
@@ -240,31 +242,34 @@ export class TabLeaderElection {
   /**
    * Attempt to acquire the lease using localStorage as a lock.
    */
-  private tryAcquireLease(): boolean {
-    const now = Date.now();
-    const currentLease = this.readLease();
+  private async tryAcquireLease(): Promise<boolean> {
+    const acquire = async (): Promise<boolean> => {
+      const now = Date.now();
+      const currentLease = this.readLease();
 
-    // If there's a valid lease from another tab, we can't acquire
-    if (
-      currentLease &&
-      currentLease.tabId !== this.tabId &&
-      currentLease.expiresAt > now
-    ) {
-      return false;
-    }
+      if (
+        currentLease &&
+        currentLease.tabId !== this.tabId &&
+        currentLease.expiresAt > now
+      ) {
+        return false;
+      }
 
-    // Write our lease
-    const newLease: LeaseRecord = {
-      tabId: this.tabId,
-      expiresAt: now + LEADER_LEASE_DURATION_MS,
-      acquiredAt: now,
+      const newLease: LeaseRecord = {
+        tabId: this.tabId,
+        expiresAt: now + LEADER_LEASE_DURATION_MS,
+        acquiredAt: now,
+      };
+
+      this.writeLease(newLease);
+
+      // Re-check after a short jitter to detect overlapping writers
+      await this.sleep(ELECTION_DELAY_MS + Math.floor(Math.random() * 50));
+      const verifyLease = this.readLease();
+      return verifyLease?.tabId === this.tabId;
     };
 
-    this.writeLease(newLease);
-
-    // Verify we got the lease (check for race conditions)
-    const verifyLease = this.readLease();
-    return verifyLease?.tabId === this.tabId;
+    return this.withLeaseLock(acquire);
   }
 
   /**
@@ -359,7 +364,11 @@ export class TabLeaderElection {
       const lease = this.readLease();
       const now = Date.now();
 
-      if (!lease || lease.expiresAt <= now) {
+      const heartbeatFresh = this.hasRecentExternalHeartbeat(
+        HEARTBEAT_SILENCE_FALLBACK_MS
+      );
+
+      if (!lease || lease.expiresAt <= now || !heartbeatFresh) {
         // Lease expired, try to become leader
         this.log('Lease expired, attempting to acquire');
         void this.startElection();
@@ -389,12 +398,31 @@ export class TabLeaderElection {
     );
 
     switch (message.type) {
-      case 'leader-heartbeat':
+      case 'leader-heartbeat': {
+        if (message.tabId !== this.tabId) {
+          this.lastExternalHeartbeatAt = Date.now();
+        }
+
+        if (message.tabId !== this.tabId && this.state === 'leader') {
+          const lease = this.readLease();
+          const leaseOwnedByOther =
+            lease && lease.tabId !== this.tabId && lease.expiresAt > Date.now();
+
+          if (leaseOwnedByOther) {
+            this.log('Conflicting leader heartbeat detected, demoting');
+            this.setState('follower');
+            this.stopHeartbeat();
+            this.startLeaseCheck();
+            this.options.onLoseLeadership?.();
+            break;
+          }
+        }
+
         if (this.state === 'electing' || this.state === 'follower') {
-          // Another tab is the leader
           this.setState('follower');
         }
         break;
+      }
 
       case 'leader-resigning':
         if (message.tabId !== this.tabId) {
@@ -485,7 +513,10 @@ export class TabLeaderElection {
   /**
    * Request the leader tab to perform a sync.
    */
-  requestSync(reason: string, options?: { force?: boolean; chatId?: string }): void {
+  requestSync(
+    reason: string,
+    options?: { force?: boolean; chatId?: string }
+  ): void {
     if (this.state === 'leader') {
       // We're the leader, handle it locally
       this.options.onSyncRequested?.(reason, options);
@@ -549,6 +580,16 @@ export class TabLeaderElection {
   }
 
   /**
+   * Whether a heartbeat from another tab was observed recently.
+   */
+  hasRecentExternalHeartbeat(
+    windowMs = HEARTBEAT_SILENCE_FALLBACK_MS
+  ): boolean {
+    if (!this.lastExternalHeartbeatAt) return false;
+    return Date.now() - this.lastExternalHeartbeatAt < windowMs;
+  }
+
+  /**
    * Get the current state.
    */
   getState(): LeaderState {
@@ -584,6 +625,41 @@ export class TabLeaderElection {
       this.channel.close();
       this.channel = null;
     }
+  }
+
+  private async withLeaseLock<T>(fn: () => Promise<T> | T): Promise<T> {
+    try {
+      const navLocks =
+        typeof navigator !== 'undefined'
+          ? (
+              navigator as unknown as {
+                locks?: {
+                  request?: (
+                    name: string,
+                    options: unknown,
+                    callback: () => Promise<T>
+                  ) => Promise<T>;
+                };
+              }
+            ).locks
+          : undefined;
+
+      if (navLocks?.request) {
+        return await navLocks.request(
+          `${LEASE_STORAGE_KEY}-lock`,
+          { mode: 'exclusive' },
+          async () => fn()
+        );
+      }
+    } catch {
+      // If lock API fails, fall back to best-effort execution
+    }
+
+    return await fn();
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

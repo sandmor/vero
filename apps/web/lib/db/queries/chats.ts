@@ -316,7 +316,9 @@ export async function updateChatVisiblityById({
     });
     // Notify realtime gateway
     if (userId || updated.userId) {
-      await notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
+      await notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(
+        () => {}
+      );
     }
     return;
   } catch (_error) {
@@ -359,7 +361,9 @@ export async function updateChatTitleById({
     });
     // Notify realtime gateway
     if (userId || updated.userId) {
-      await notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(() => {});
+      await notifyOnChatUpdated(userId ?? updated.userId, chatId).catch(
+        () => {}
+      );
     }
     return;
   } catch (_error) {

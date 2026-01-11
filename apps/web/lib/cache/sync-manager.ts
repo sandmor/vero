@@ -41,7 +41,7 @@
 import {
   TabLeaderElection,
   destroyTabLeader,
-  initializeTabLeader
+  initializeTabLeader,
 } from './tab-leader';
 
 type SyncCallback = (options: {
@@ -192,7 +192,9 @@ export class SyncManager {
         this.onMessagesUpdated?.(chatId, updatedAt);
       },
       onFollowerJoined: () => {
-        this.log('New follower tab joined, triggering sync to share latest data');
+        this.log(
+          'New follower tab joined, triggering sync to share latest data'
+        );
         // When a new tab joins as a follower, sync so it gets fresh data
         // This ensures new clients see changes made by other clients
         this.requestSync('tab-request');
@@ -208,7 +210,23 @@ export class SyncManager {
    * Check if this tab is the current sync leader.
    */
   isLeader(): boolean {
-    return this.tabLeader?.isLeader() ?? true;
+    if (!this.tabLeader) {
+      return false;
+    }
+
+    const state = this.tabLeader.getState();
+
+    if (state === 'leader' || state === 'disabled') {
+      return true;
+    }
+
+    // Assume follower while we keep hearing heartbeats from another leader
+    if (this.tabLeader.hasRecentExternalHeartbeat()) {
+      return false;
+    }
+
+    // If heartbeats are silent for a while, allow degraded-mode leadership
+    return state !== 'electing';
   }
 
   /**
@@ -504,7 +522,7 @@ export class SyncManager {
       ? 'realtime'
       : sources.includes('periodic')
         ? 'periodic'
-        : sources[0] ?? 'manual';
+        : (sources[0] ?? 'manual');
 
     this.log('Executing sync:', {
       requestCount: requests.length,

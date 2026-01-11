@@ -333,13 +333,16 @@ function SystemAgentRow({ agent }: SystemAgentRowProps) {
                 />
                 {isDefaultChatAgent ? (
                   <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
-                    <p className="font-semibold text-foreground">Available special variables</p>
+                    <p className="font-semibold text-foreground">
+                      Available special variables
+                    </p>
                     <p className="mt-1">
                       User preferences: <code>{'{{user.name}}'}</code>,{' '}
                       <code>{'{{user.occupation}}'}</code>,{' '}
-                      <code>{'{{user.customInstructions}}'}</code>.
-                      Tool availability: <code>{'{{tools.runCode}}'}</code>,{' '}
-                      <code>{'{{tools.archive}}'}</code>. Pinned memory: <code>{'{{pinnedEntriesBlock}}'}</code>.
+                      <code>{'{{user.customInstructions}}'}</code>. Tool
+                      availability: <code>{'{{tools.runCode}}'}</code>,{' '}
+                      <code>{'{{tools.archive}}'}</code>. Pinned memory:{' '}
+                      <code>{'{{pinnedEntriesBlock}}'}</code>.
                     </p>
                   </div>
                 ) : null}

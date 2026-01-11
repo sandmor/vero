@@ -229,22 +229,23 @@ export function PureMessageActions({
           </Tooltip>
         )}
 
-        {(message.role === 'user' || message.role === 'assistant') && setMode && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                onClick={() => setMode('edit')}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                <span className="sr-only">Edit</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Edit</TooltipContent>
-          </Tooltip>
-        )}
+        {(message.role === 'user' || message.role === 'assistant') &&
+          setMode && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => setMode('edit')}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span className="sr-only">Edit</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Edit</TooltipContent>
+            </Tooltip>
+          )}
 
         <Tooltip>
           <TooltipTrigger asChild>

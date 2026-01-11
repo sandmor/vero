@@ -153,7 +153,8 @@ export function ChatSearchModal({
         await handleChatActionFailure({
           chatId: chatIdToDelete,
           action: 'delete',
-          error: error instanceof Error ? error : new Error('Failed to delete chat'),
+          error:
+            error instanceof Error ? error : new Error('Failed to delete chat'),
         });
         throw error;
       }

@@ -1313,7 +1313,7 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
 
       const hintedLastSyncedAt = options?.force
         ? null
-        : options?.lastSyncedAtHint ?? null;
+        : (options?.lastSyncedAtHint ?? null);
       const effectiveLastSyncedAt =
         hintedLastSyncedAt ?? currentState.metadata?.lastSyncedAt ?? null;
       const isInitialSync = options?.force ? true : !effectiveLastSyncedAt;

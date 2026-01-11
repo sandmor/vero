@@ -75,10 +75,10 @@ System agents are platform-level AI agents that perform special automated tasks.
 
 #### Available System Agents
 
-| Agent         | Slug            | Purpose                                                                                  |
-| ------------ | ---------------- | ---------------------------------------------------------------------------------------- |
-| Default Chat | `default-chat`   | Workspace default chat behavior/model used when no user agent is selected                |
-| Title Generation | `title-generation` | Automatically generates concise titles for new chat conversations                         |
+| Agent            | Slug               | Purpose                                                                   |
+| ---------------- | ------------------ | ------------------------------------------------------------------------- |
+| Default Chat     | `default-chat`     | Workspace default chat behavior/model used when no user agent is selected |
+| Title Generation | `title-generation` | Automatically generates concise titles for new chat conversations         |
 
 #### Configuring System Agents
 

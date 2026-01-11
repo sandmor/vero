@@ -73,9 +73,11 @@ export async function GET(request: NextRequest) {
     });
 
     const defaultAgentSettings =
-      ((await getSystemAgentBySlug(DEFAULT_CHAT_SYSTEM_AGENT_SLUG).catch(
-        () => null
-      ))?.settings as SystemAgentSettings | null) ??
+      ((
+        await getSystemAgentBySlug(DEFAULT_CHAT_SYSTEM_AGENT_SLUG).catch(
+          () => null
+        )
+      )?.settings as SystemAgentSettings | null) ??
       DEFAULT_CHAT_SYSTEM_AGENT_SETTINGS;
 
     const preferredDefaultModelId =
@@ -83,7 +85,7 @@ export async function GET(request: NextRequest) {
 
     const defaultModelId = combinedModelIds.includes(preferredDefaultModelId)
       ? preferredDefaultModelId
-      : combinedModelIds[0] ?? DEFAULT_CHAT_MODEL;
+      : (combinedModelIds[0] ?? DEFAULT_CHAT_MODEL);
 
     const serverTimestamp = new Date().toISOString();
 

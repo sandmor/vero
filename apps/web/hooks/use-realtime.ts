@@ -64,9 +64,8 @@ export function useRealtimeConnection() {
     IS_ENABLED ? 'disconnected' : 'disabled'
   );
   const [lastError, setLastError] = useState<Error | null>(null);
-  const [leadershipState, setLeadershipState] = useState<LeadershipState>(
-    'unknown'
-  );
+  const [leadershipState, setLeadershipState] =
+    useState<LeadershipState>('unknown');
 
   const clientRef = useRef<RealtimeClient | null>(null);
 

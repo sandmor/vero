@@ -4,7 +4,10 @@ import {
 } from '@/lib/agent-prompt';
 import { renderTemplate } from '@/lib/ai/prompt-engine';
 import type { RequestHints } from '@/lib/ai/prompts';
-import { composePromptFromParts, getRequestPromptFromHints } from '@/lib/ai/prompts';
+import {
+  composePromptFromParts,
+  getRequestPromptFromHints,
+} from '@/lib/ai/prompts';
 import { DEFAULT_CHAT_SYSTEM_AGENT_PROMPT } from '@/lib/ai/system-agents';
 import { describe, expect, it } from 'bun:test';
 

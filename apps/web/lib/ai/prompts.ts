@@ -324,4 +324,3 @@ export const getRequestPromptFromHints = (requestHints: RequestHints) => {
   const requestOrigin = formatRequestHints(requestHints);
   return renderTemplate(REQUEST_ORIGIN_TEMPLATE, { requestOrigin }).trim();
 };
-
