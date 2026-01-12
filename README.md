@@ -4,15 +4,13 @@ Advanced multimodal AI chat application built with Next.js 16 (App Router), Reac
 
 <p align="center">
   <a href="#features"><strong>Features</strong></a> ·
-  <a href="#client-side-caching"><strong>Caching</strong></a> ·
-
-<a href="#archive"><strong>Archive</strong></a> ·
-<a href="#models"><strong>Models</strong></a> ·
-<a href="#auth"><strong>Auth</strong></a> ·
-<a href="#admin"><strong>Admin</strong></a> ·
-<a href="#tech-stack"><strong>Tech Stack</strong></a> ·
-<a href="#running-locally"><strong>Running locally</strong></a>
-
+  <a href="#chat-branching"><strong>Chat Branching</strong></a> ·
+  <a href="#synchronization--caching"><strong>Synchronization</strong></a> ·
+  <a href="#providers-creators--byok"><strong>Providers & BYOK</strong></a> ·
+  <a href="#clerk-integration"><strong>Clerk Auth</strong></a> ·
+  <a href="#archive"><strong>Archive</strong></a> ·
+  <a href="#tech-stack"><strong>Tech Stack</strong></a> ·
+  <a href="#running-locally"><strong>Running locally</strong></a>
 </p>
 <br />
 
@@ -21,194 +19,220 @@ Advanced multimodal AI chat application built with Next.js 16 (App Router), Reac
 ### Core Chat Experience
 
 - **Multimodal Conversations**: Text plus model-dependent support for image/file/audio (auto-derived from model capabilities)
-- **Live Streaming**: Incremental token + tool call streaming via AI SDK (`ai` v5)
+- **Live Streaming**: Incremental token + tool call streaming via AI SDK (`ai` v6)
 - **Conversation Lineage**: Fork chats from any message to create new independent conversation trees (parent/fork metadata persisted in `Chat` table)
-- **Message Branching & Versioning**: Seamlessly switch between message edits and regenerations within the same chat. The system tracks a tree of message versions (`ltree`), allowing you to explore different conversation paths without losing context.
+- **Message Branching & Versioning**: Seamlessly switch between message edits and regenerations within the same chat using PostgreSQL ltree paths
 - **Auto-Resume**: Recent context & pinned archive memory automatically reattached on reload
 - **Token Bucket Rate Limiting**: Per-tier configurable capacity/refill stored in `Tier` + per-user runtime state in `UserRateLimit`
 - **Guest & Auth Modes**: Seamless anonymous upgrade path without losing context
-- **Encrypted Client-Side Caching**: Securely caches chat history and data on the client using IndexedDB and the Web Crypto API. This provides a significant performance boost and enables a near-instant experience when revisiting chats.
+- **Encrypted Client-Side Caching**: AES-GCM encrypted IndexedDB cache with cross-tab synchronization and realtime updates
 
-### Advanced AI Integration
+> For detailed technical documentation on the core features, see the sections below.
 
-- **Unified Provider Layer**: OpenRouter, OpenAI, Google (Gemini) exposed through a single abstraction
-- **Dynamic Entitlements**: Runtime tier lookup (guest/regular) resolves allowed model IDs
-- **Capability Introspection**: Model capabilities (tool support, formats) persisted & auto-synced (OpenRouter catalog fetch with fallback defaults)
-- **Selective Tool Access**: Agents/chats may restrict tool allow-lists (see `agent-settings` serialization)
-- **Context Preservation**: Persisted `lastContext`, pinned archive entries, and agent settings
+---
 
-### Archive Memory System
+## Chat Branching
 
-Persistent, per-user, queryable knowledge base powering long‑term conversational memory:
+Chat branching enables exploring multiple conversation paths through message edits and regenerations. Every message exists within a tree structure, allowing navigation between alternative responses without losing context.
 
-- **Entries**: `ArchiveEntry` entities (slug, tags, body) with automatic timestamps
-- **Semantic Links**: Directed edges (`ArchiveLink`) with optional bidirectionality
-- **Pinned Context**: `ChatPinnedArchiveEntry` join table injects selected memories into prompt scaffolding
-- **AI Tools**: Tool layer can create/update/link archive entries on demand
-- **Query & Filter**: Tag & (planned) full‑text search over entries (implementation hooks prepared)
+### Storage: PostgreSQL ltree
 
-### Authentication & Security
+Messages use PostgreSQL's `ltree` extension for efficient hierarchical path queries. Paths like `0.0.1.0` encode sibling positions, enabling O(log N) subtree queries instead of recursive SQL.
 
-- **Clerk**: OAuth / SSO & user management (regular users)
-- **Guest Mode**: Cookie-scoped ephemeral identity (pattern `guest-\d+`) with restricted models
-- **Admin Assertion**: First-class admin via `ADMIN_USER_ID` (preferred) or fallback `ADMIN_EMAIL`
-- **Tier Enforcement**: Model & rate limit entitlements resolved per user type
+**Key Operations**:
 
-### Admin Dashboard
+- Subtree queries: `WHERE path <@ '0.0'::ltree`
+- Direct children: `WHERE path ~ '0.*{1}'::lquery`
+- Automatic ordering via alphabetic path sort
 
-Operational management interface (in progress / evolving):
+### AI SDK Integration
 
-- **Provider API Keys**: Database overrides trump environment variables (`Provider` table)
-- **Tier Management**: Adjust model allow lists + bucket config (backed by `Tier` rows, with fallbacks if missing)
-- **Model Capabilities**: View persisted model capability matrix & usage (referenced by tiers)
-- **System Agents**: Configure platform-level AI agents for special tasks (see below)
-- **Housekeeping Tasks**: Planned actions (sync OpenRouter models, prune unused capabilities)
+Integrating the Vercel AI SDK's `useChat` hook with a tree-based message store presents several challenges. The hook expects a linear array of messages, but our storage is hierarchical. We solve this by constructing the tree client-side with `buildMessageTree()` and extracting the active branch based on `rootMessageIndex` (the root sibling selected in the chat) and per-node `selectedChildIndex` values.
 
-### System Agents
+Branch switching requires careful coordination to avoid breaking the `useChat` state. We use XState (`chat-operations.machine.ts`) to handle the complex state transitions involved: blocking navigation during streaming, optimistically updating the UI, persisting the selection asynchronously, and rolling back on failure.
 
-System agents are platform-level AI agents that perform special automated tasks. Unlike user agents, they:
+When a message is edited, we create a new sibling in the database with its own ltree path, truncate the UI messages to the edit point, and replay through `useChat` to trigger the AI response. The state machine defers tree synchronization until streaming completes to prevent race conditions between optimistic updates and server state.
 
-- **Admin-only**: Can only be viewed and configured by administrators
-- **Cannot be deleted**: They're integral to platform functionality
-- **Resettable**: Each can be reset to its default configuration at any time
-- **Isolated**: Don't have associated chats or user ownership
+### Schema
 
-#### Available System Agents
+```prisma
+model Message {
+  path     Unsupported("ltree")
+  pathText String?
+  selectedChildIndex Int @default(0)
+  ...
+}
 
-| Agent            | Slug               | Purpose                                                                   |
-| ---------------- | ------------------ | ------------------------------------------------------------------------- |
-| Default Chat     | `default-chat`     | Workspace default chat behavior/model used when no user agent is selected |
-| Title Generation | `title-generation` | Automatically generates concise titles for new chat conversations         |
+model Chat {
+  rootMessageIndex Int @default(0)
+  ...
+}
+```
 
-#### Configuring System Agents
+**Why ltree?**: Efficient hierarchical queries enable the client to maintain the complete chat state locally. This allows instant branch switching without waiting for the server to return new messages—the client already knows the entire conversation tree.
 
-Access system agents via **Settings → Admin → System Agents**. For each agent you can:
+---
 
-- **Change Model**: Select which AI model the agent uses (e.g., set the platform default for chats)
-- **Customize Prompt**: Modify the system prompt blocks to change behavior and defaults
-- **Reset to Defaults**: Restore the original configuration
+## Synchronization & Caching
 
-## Client-Side Caching & Edge Security
+The app maintains an AES-GCM encrypted cache in IndexedDB, synchronized across browser tabs and with the server via incremental sync. This provides ~10ms loads vs 200ms+ HTTP. The cache consists of three IndexedDB tables (chats, documents, metadata) storing encrypted records with ciphertext and initialization vectors. Encryption keys are derived using HKDF from the `CACHE_ENCRYPTION_SECRET` combined with the user's session ID, ensuring session-specific isolation.
 
-To enhance performance and provide a more fluid user experience, Vero Chat implements an encrypted client-side caching mechanism.
+Tab coordination uses a lease-based leader election protocol built on localStorage and BroadcastChannel. Incremental sync requests (`POST /api/cache/sync` with `lastSyncedAt` timestamp) fetch only changes since the last sync. The `ChatDeletion` table maintains tombstones for deleted chats, enabling clients to remove stale cache entries when they appear in incremental sync responses. WebSocket notifications trigger immediate syncs (debounced to 500ms), and active generating chats are excluded from sync for 2 seconds to prevent overwrites.
 
-### Key Features
+### Tab Leader Election
 
-- **Fast Initial Load**: Chat history and messages are loaded from a local IndexedDB cache, making navigation between chats nearly instantaneous.
-- **Cache Encryption**: All cached data is encrypted using AES-GCM via the Web Crypto API. The encryption key is derived from a server-side secret and a stable user session identifier, ensuring that each user's data is secure and private.
-- **Hybrid Edge Architecture**: Key derivation logic is "hoisted" to `@vero/shared` and runs on a **Cloudflare Worker** at the Edge for minimum latency. If the Worker is unavailable, the Next.js backend serves as a seamless fallback using the exact same logic.
-- **Cache Synchronization**: The client-side cache is kept in sync with the server. The application intelligently refreshes the cache in the background to ensure data consistency.
-- **Optimistic Updates**: The UI updates optimistically when new messages are sent or chats are created, providing a responsive feel.
+To prevent duplicate API calls across browser tabs, only one tab (the "leader") performs server synchronization. The leader is elected using a lease-based protocol: each tab checks localStorage for an existing valid lease, and if none exists or the current lease has expired, it acquires a 10-second lease. The leader broadcasts heartbeat messages every 3 seconds to maintain its lease. Follower tabs monitor the leader's heartbeat and reload their data from IndexedDB when they receive sync completion notifications.
 
-### Implementation Details
+### Encryption
 
-- **Storage**: [Dexie.js](https://dexie.org/) is used as a wrapper around IndexedDB for convenient and robust database operations.
-- **Encryption**: The Web Crypto API is used for all cryptographic operations, ensuring a high level of security.
-- **State Management**: The cache is managed through a React Context provider (`EncryptedCacheProvider`) and a custom hook (`useEncryptedCache`), which integrates seamlessly with `react-query`.
+```typescript
+// Key derivation (isomorphic, runs in Cloudflare Worker or Next.js)
+const key = HKDF(sessionId, CACHE_ENCRYPTION_SECRET, 'vero-cache-encryption');
 
-## Archive
+// Encrypt
+const iv = crypto.getRandomValues(new Uint8Array(12));
+const ciphertext = await crypto.subtle.encrypt(
+  { name: 'AES-GCM', iv },
+  key,
+  data
+);
+```
 
-The archive serves as a persistent memory system for both users and AI:
+**Security**: Session-specific keys, guest sessions isolated, keys never stored.
 
-### Core Concepts
+### Sync Flow
 
-- **Entries**: Individual knowledge units with titles, content, and tags
-- **Links**: Semantic relationships between entries (related, parent/child, etc.)
-- **Search**: Full-text search across all entries with tag filtering
-- **Ownership**: Per-user isolation with secure access controls
+```typescript
+// Request: POST /api/cache/sync
+// Body: { lastSyncedAt: '2026-01-12T10:30:00Z', pageSize: 100, cursor: null }
+// Response: { upserts, deletions, serverTimestamp, hasMore, nextCursor, metadata, totalChats }
 
-### AI Integration
+// Store encrypted, update lastSyncedAt, notify followers
+await cacheManager.storeChats(upserts);
+await cacheManager.storeMetadata('lastSyncedAt', serverTimestamp);
+tabLeader.notifySyncComplete(serverTimestamp);
+```
 
-The archive provides tools for AI assistants to:
+**Echo Filtering**: Own changes tracked for 5s to ignore realtime echoes.
 
-- Create new memories from conversations
-- Retrieve relevant information for context
-- Link related concepts automatically
-- Update existing knowledge as new information emerges
+---
 
-### User Interface
+## Providers, Creators & BYOK
 
-- **Explorer View**: Browse and search archive entries
-- **Detail View**: Read and edit individual entries
-- **Link Visualization**: See relationships between entries
-  -- **Bulk Operations**: Import/export and batch management
+Model identity (who made it) is separate from provider infrastructure (who serves it). This separation enables switching model providers without altering the model identity—for example, serving the same OpenAI model through OpenRouter or OpenAI own servers without changing how it's referenced in the application.
 
-## Models
+### Model vs Provider
 
-Provider-agnostic model registry supporting multiple AI providers.
+The system distinguishes between model creators (companies that develop models) and providers (API endpoints that serve them). A model's composite ID follows the format `creator:model`, where the creator is the organization that developed the model (e.g., `openai`, `google`, `anthropic`, `meta`) and the model is their specific model identifier.
 
-### Supported (Curated) Models
+For example, the model ID `openai:gpt-5.2` identifies a GPT-5.2 model from OpenAI. This model can be served through OpenAI's direct API or potentially through aggregator providers like OpenRouter. The `Model` table stores the creator and capabilities, while `ModelProvider` entries link each model to the specific provider(s) that can serve it.
 
-Curated list included at build time (see `lib/ai/models.ts`). Capabilities may be further enriched automatically.
-The default set includes Google Gemini variants (`gemini-2.5-flash-image-preview`, `gemini-2.5-flash`, `gemini-2.5-pro`).
+Supported providers include `openai` (OpenAI direct API), `google` (Google AI/Gemini), `openrouter` (aggregator serving models from many creators including Anthropic, Meta, Mistral, etc.), and `xai` (xAI's Grok models). Platform administrators can also add custom providers via `UserCustomProvider`, allowing connections to self-hosted or third-party OpenAI-compatible endpoints.
 
-Additional models can be configured via environment variables or added to the database.
+**Why separate?**: The same model can be served by multiple providers, and aggregator providers like OpenRouter serve models from many different creators. This separation allows flexible routing and provider-specific configurations.
 
-### Provider Integration
+### BYOK (Bring Your Own Key)
 
-- **OpenRouter**: Primary provider with model aggregation
-- **Direct OpenAI**: Native OpenAI API integration
-- **Google Gemini**: Direct Google AI API access
-- **Configurable Registry**: Easy addition of new providers
+BYOK allows users to provide their own API keys for platform providers or configure custom OpenAI-compatible endpoints. BYOK model IDs are prefixed with `byok:` to distinguish them from platform-managed models. The format varies by source:
 
-### Entitlement System
+- Platform providers: Model ID remains `creator:model` (e.g., `openai:gpt-5.2`), but the user's API key is used instead of platform credentials
+- Custom providers: User-defined endpoints with arbitrary model identifiers configured through `UserCustomProvider`
 
-Default tier definitions (fallback when DB rows absent):
+The `UserByokModel` table tracks user-configured models, linking to either `UserProviderKey` (for platform providers like OpenAI, Google) or `UserCustomProvider` (for self-hosted Ollama, vLLM, etc.).
 
-| Tier    | Models                                                                           | Capacity | Refill | Interval |
-| ------- | -------------------------------------------------------------------------------- | -------- | ------ | -------- |
-| guest   | Configured via `GUEST_MODELS` (defaults to auto-detected `DEFAULT_CHAT_MODEL`)   | 60       | 20     | 3600s    |
-| regular | Configured via `REGULAR_MODELS` (defaults to auto-detected `DEFAULT_CHAT_MODEL`) | 300      | 100    | 3600s    |
+**Schema**:
 
-If `DEFAULT_CHAT_MODEL` is not explicitly set, the system selects a default model based on available API keys (Google > OpenAI > OpenRouter).
+```prisma
+model UserProviderKey {
+  userId String
+  providerId String  // 'openai', 'google'
+  apiKey String
+}
 
-All values can be overridden by inserting/updating `Tier` rows.
+model UserCustomProvider {
+  userId String
+  slug String  // 'my-ollama'
+  baseUrl String
+  apiKey String?
+}
 
-## Auth
+model UserByokModel {
+  userId String
+  sourceType String  // 'platform' or 'custom'
+  providerModelId String
+  displayName String
+  supportsTools Boolean
+}
+```
 
-Flexible authentication system with enterprise and guest support:
+**Resolution**:
 
-### Clerk Integration
+When a user selects a BYOK model, the system parses the model ID, retrieves the user's API key (for platform providers) or custom provider configuration (for self-hosted endpoints), and instantiates the appropriate provider client with the user's credentials.
 
-- **SSO Support**: Google, GitHub, and enterprise providers
-- **User Management**: Profile management and session handling
-- **Admin Controls**: User administration and access management
-- **Webhook Integration**: Real-time user event processing
+**Tier Enforcement**: Platform models gated by tier. BYOK bypasses restrictions (user's own resources).
 
-### Guest Mode
+### Creator vs Provider Examples
 
-- Cookie session identity; upgrade path to Clerk user without losing chats
-- Rate & model limitations inherited from `guest` tier
-- Data stored under synthetic `User` row keyed by guest id (no email requirement)
+| Creator   | Model ID                      | Provider   | Provider Model ID             |
+| --------- | ----------------------------- | ---------- | ----------------------------- |
+| OpenAI    | `openai:gpt-5.2`              | openai     | `gpt-5.2`                     |
+| Google    | `google:gemini-3-flash`       | google     | `gemini-3-flash`              |
+| Anthropic | `anthropic:claude-4.5-sonnet` | openrouter | `anthropic/claude-4.5-sonnet` |
+| xAI       | `xai:grok-4-1-fast-reasoning` | xai        | `grok-4-1-fast-reasoning`     |
 
-## Admin
+---
 
-Administrative interface for system management:
+## Clerk Integration
 
-### Access & Configuration
+Authentication via Clerk (OAuth/SSO) with seamless guest mode (cookie-based anonymous access).
 
-The admin dashboard is accessible at `/admin`. Access is restricted to users who match the configured admin credentials:
+### Dual-Mode
 
-- `ADMIN_USER_ID`: The specific User ID (e.g. from Clerk or database) granted admin privileges. Recommended for production.
-- `ADMIN_EMAIL`: Fallback email address for admin access (useful for bootstrapping).
+1. **Clerk user**: Regular account, full tier entitlements
+2. **Guest**: Cookie JWT (`guest_session`), restricted models, upgrade path
 
-### Admin Dashboard Features
+### Guest Session
 
-A comprehensive operational dashboard providing real-time insights:
+```typescript
+// Cookie
+{
+  uid: 'guest-12345',
+  exp: timestamp,
+  signature: 'hmac-sha256'
+}
 
-- **Usage Statistics**: View key performance indicators (KPIs) such as Total Messages, Active Users, and Active Models.
-- **Data Visualization**: Interactive charts (Line, Pie, Bar) powered by `recharts` to visualize:
-  - Message and User growth trends over time (24h, 7d, 30d, 90d).
-  - Model usage distribution (e.g., GPT-4 vs. Claude 3.5).
-  - Provider usage breakdown.
-- **Recent Activity**: detailed log of the latest user interactions.
-- **Report Export**: Download usage reports as CSV files for offline analysis.
+// Database
+prisma.user.create({
+  id: 'guest-12345',
+  email: 'guest-12345@guest.local'
+});
+```
 
-### System Management
+### OAuth/SSO
 
-- **Provider Management**: Manage API keys via database overrides (`Provider` table) and monitor provider status.
-- **Tier Management**: Configure token buckets (rate limiting) and model allow-lists per user tier (`Tier` table).
-- **Model Capabilities**: Introspect and manage the persisted capabilities of available models.
+Clerk handles Google OAuth and email authentication. When a user clicks "Sign in with Google," they're redirected through Clerk's authentication flow and land back on `/sso-callback` with an established session. Additional OAuth providers (GitHub, Microsoft) or enterprise SSO (SAML/OIDC) are trivial to add through Clerk's configuration.
+
+### Guest → User Upgrade
+
+Middleware detects Clerk user + guest cookie:
+
+```typescript
+await prisma.$transaction([
+  prisma.chat.updateMany({
+    where: { userId: guestId },
+    data: { userId: clerkUserId },
+  }),
+  prisma.user.delete({ where: { id: guestId } }),
+]);
+```
+
+### Realtime & Cache
+
+The WebSocket gateway authenticates connections using Clerk session tokens for authenticated users or guest session identifiers for anonymous users. Client-side encryption keys are derived from the `sessionId` (for Clerk users) or `uid` (for guest users), ensuring each session has its own isolated encryption namespace.
+
+**Why Clerk?**: OAuth abstraction, session management, enterprise SSO, webhooks.
+
+---
 
 ## Tech Stack
 
@@ -222,12 +246,12 @@ A comprehensive operational dashboard providing real-time insights:
 
 ### Backend & Data
 
-- AI SDK (`ai` v5) provider unification + streaming handlers
+- AI SDK (`ai` v6) provider unification + streaming handlers
 - Prisma ORM with modular schema (model capabilities, archive, rate limit)
-- PostgreSQL primary storage (Neon friendly)
-- Redis (optional) future caching / ephemeral coordination; current rate limiting uses PostgreSQL
+- PostgreSQL primary storage (Neon friendly) with ltree extension for message trees
+- Redis (optional) for resuming interrupted streams via `resumable-stream` package; rate limiting uses PostgreSQL
 - Vercel Blob for file attachments
-- **Cloudflare Workers** (Edge caching & auth logic)
+- Cloudflare Workers at `/apps/edge-gateway` derive session-specific encryption keys for client-side cache using HKDF, running the same `deriveEncryptionKey` function as the Next.js app but at the edge for reduced latency
 
 ### Development & Deployment
 
@@ -259,12 +283,12 @@ A comprehensive operational dashboard providing real-time insights:
 The project is structured as a monorepo with:
 
 - `apps/web` - Main Next.js application
-- `apps/realtime-gateway` - WebSocket gateway for chat notifications
-- `apps/cache-worker` - Cloudflare Worker for edge encryption
-- `packages/db` - Shared database package (`@vero/db`)
-- `packages/shared` - Shared isomorphic logic (`@vero/shared`)
+- `apps/realtime-gateway` - WebSocket gateway for realtime chat notifications
+- `apps/edge-gateway` - Cloudflare Worker for edge encryption key derivation
+- `packages/db` - Shared database package with Prisma schema
+- `packages/shared` - Shared isomorphic utilities (encryption, auth)
 
-The root `package.json` provides convenience scripts to run commands across packages.
+The root `package.json` provides convenience scripts using `concurrently` to run all services together or individually.
 
 ```bash
 # 1. Install dependencies
@@ -272,32 +296,27 @@ bun install
 
 # 2. Set up environment variables
 # Web app: copy apps/web/.env.example to apps/web/.env.local (or .env) and fill in values.
-# Realtime gateway (optional): copy apps/realtime-gateway/.env.example to apps/realtime-gateway/.env.
-# Database tools: create packages/db/.env with DATABASE_URL for Prisma CLI.
-# Worker secrets: create apps/cache-worker/.dev.vars
+# Realtime gateway: copy apps/realtime-gateway/.env.example to apps/realtime-gateway/.env
+# Edge gateway: create apps/edge-gateway/.dev.vars with required secrets
 
-# 3. (First time) Push schema & generate client
-bun run db:push      # Applies schema without creating a migration (dev convenience)
-bun run db:generate  # Generates Prisma client to packages/db/generated/client
+# 3. (First time) Initialize database
+bun run db:generate  # Generate Prisma client
+bun run db:push      # Push schema to database (dev mode)
+# OR for production-style migrations:
+bun run db:migrate   # Create and apply migration
 
-# Alternatively create an initial migration (idempotent if already created)
-bun run db:migrate   # prisma migrate dev --name init
-
-# 4. Start dev server (Next.js + streaming)
+# 4. Start all services (web + realtime gateway + edge gateway)
 bun run dev
 
-# 5. (Optional) Start Realtime Gateway
-# Enables live chat updates across tabs/devices. Without it, the app still works but
-# relies on page refreshes/polling for new messages.
-# Run in a separate terminal:
-cd apps/realtime-gateway
-bun install
-bun run start:dev
+# The dev command uses concurrently to run:
+# - apps/web (Next.js dev server on port 3000)
+# - apps/realtime-gateway (WebSocket gateway on port 3001)
+# - apps/edge-gateway (Cloudflare Worker dev on port 8787)
 
-# 6. (Optional) Start Edge Gateway
-# Runs the edge gateway locally on port 8787
-cd apps/edge-gateway
-bunx wrangler dev
+# To run services individually:
+bun run dev:web       # Just the Next.js app
+bun run dev:realtime  # Just the WebSocket gateway
+bun run dev:edge      # Just the edge worker
 ```
 
 Navigate to http://localhost:3000.
