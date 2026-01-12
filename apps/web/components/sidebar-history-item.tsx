@@ -195,6 +195,7 @@ const PureChatItem = ({
         >
           <Link
             href={`/chat/${chat.id}`}
+            prefetch={false}
             onClick={handleNavigate}
             onMouseDown={handlePressStart}
             onMouseUp={handlePressEnd}

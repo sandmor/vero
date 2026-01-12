@@ -20,7 +20,11 @@ export function SearchResultItem({ result, onSelect }: SearchResultItemProps) {
         asChild
         className="h-auto py-2.5 flex-col items-start gap-1.5 min-h-[4rem]"
       >
-        <Link href={`/chat/${result.chatId}`} onClick={onSelect}>
+        <Link
+          href={`/chat/${result.chatId}`}
+          prefetch={false}
+          onClick={onSelect}
+        >
           <div className="flex w-full items-center justify-between gap-2">
             <span className="font-medium truncate text-sm text-foreground/90">
               {result.chatTitle}
