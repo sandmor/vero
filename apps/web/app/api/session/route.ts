@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const session = await getAppSession();
-  const admin = await isAdmin();
+  const admin = await isAdmin(session);
 
   return NextResponse.json(
     { session, isAdmin: admin },

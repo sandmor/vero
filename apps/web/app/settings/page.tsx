@@ -62,7 +62,7 @@ export default async function SettingsPage({
     typeof params?.agentView === 'string' ? params.agentView : undefined;
   const agentIdParam =
     typeof params?.agentId === 'string' ? params.agentId : undefined;
-  const adminAllowed = await isAdmin();
+  const adminAllowed = await isAdmin(session);
   const defaultTab =
     tabParam === 'admin' && adminAllowed
       ? 'admin'

@@ -1,10 +1,12 @@
 import { getAppSession } from './session';
 import { adminEmail, adminUserId } from '@/lib/constants';
 
-export async function requireAdmin(): Promise<
-  ReturnType<typeof getAppSession>
-> {
-  const session = await getAppSession();
+export async function requireAdmin(
+  providedSession?: ReturnType<typeof getAppSession> extends Promise<infer T>
+    ? T
+    : never
+): Promise<ReturnType<typeof getAppSession>> {
+  const session = providedSession ?? (await getAppSession());
   const isIdMatch = !!adminUserId && session?.user.id === adminUserId;
   const isEmailMatch =
     !!adminEmail &&
@@ -16,8 +18,12 @@ export async function requireAdmin(): Promise<
   return session;
 }
 
-export async function isAdmin(): Promise<boolean> {
-  const session = await getAppSession();
+export async function isAdmin(
+  providedSession?: ReturnType<typeof getAppSession> extends Promise<infer T>
+    ? T
+    : never
+): Promise<boolean> {
+  const session = providedSession ?? (await getAppSession());
   if (!session) return false;
   if (adminUserId && session.user.id === adminUserId) return true;
   const email = session.user.email?.toLowerCase();

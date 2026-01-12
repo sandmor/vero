@@ -31,8 +31,8 @@ export function useAppSession() {
   return useQuery<SessionResponse, SessionFetchError>({
     queryKey: SESSION_QUERY_KEY,
     queryFn: fetchSession,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    staleTime: 0,
+    staleTime: 5000,
   });
 }
