@@ -1,9 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { ModelRow } from './model-row';
 import {
   Select,
   SelectContent,
@@ -13,11 +10,14 @@ import {
 } from '@/components/ui/select';
 import type { ManagedModelCapabilities } from '@/lib/ai/model-capabilities';
 import { AnimatePresence } from 'framer-motion';
+import { Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ModelRow } from './model-row';
 
 type ModelListProps = {
   models: ManagedModelCapabilities[];
   onEdit: (model: ManagedModelCapabilities) => void;
-  onDelete: (id: string) => void;
+  onDelete: (model: ManagedModelCapabilities) => void;
   onAddProvider: (model: ManagedModelCapabilities) => void;
   onEditProvider: (model: ManagedModelCapabilities, providerId: string) => void;
   onRemoveProvider: (modelId: string, providerId: string) => void;

@@ -2,22 +2,18 @@
  * Database Operations for Model and ModelProvider tables
  */
 
-import { prisma, PrismaClient, Prisma } from '@vero/db';
+import { prisma, Prisma } from '@vero/db';
+import { parseModelId } from '../model-id';
+import { getProviderDefaults, inferProviderFromCreator } from '../registry';
+import { getTier, invalidateTierCache } from '../tiers';
+import { DEFAULT_TIER_IDS } from './constants';
 import type {
+  ManagedModelCapabilities,
   ModelCapabilities,
   ModelFormat,
   ModelPricing,
   ResolvedModelCapabilities,
-  ManagedModelCapabilities,
 } from './types';
-import { DEFAULT_TIER_IDS } from './constants';
-import {
-  inferProviderFromCreator,
-  type SdkProvider,
-  getProviderDefaults,
-} from '../registry';
-import { getTier } from '../tiers';
-import { parseModelId } from '../model-id';
 
 // Type for accessing prisma client properties
 type PrismaClientType = typeof prisma;
@@ -182,6 +178,68 @@ export async function upsertModel(data: {
  */
 export async function deleteModel(modelId: string): Promise<void> {
   await prisma.model.delete({ where: { id: modelId } });
+}
+
+/**
+ * Remove a model from all tiers. Safe to call even if not present.
+ */
+export async function removeModelFromTiers(modelId: string): Promise<number> {
+  const result = await prisma.tierModel.deleteMany({ where: { modelId } });
+  if (result.count > 0) {
+    invalidateTierCache();
+  }
+  return result.count;
+}
+
+/**
+ * Get tier IDs that currently reference a model.
+ */
+export async function getTierIdsForModel(modelId: string): Promise<string[]> {
+  const rows = await prisma.tierModel.findMany({
+    where: { modelId },
+    select: { tierId: true },
+  });
+  return rows.map((r) => r.tierId);
+}
+
+/**
+ * Count enabled providers for a model (excluding a specific provider if provided).
+ */
+export async function countEnabledProviders(
+  modelId: string,
+  excludeProviderId?: string
+): Promise<number> {
+  const count = await prisma.modelProvider.count({
+    where: {
+      modelId,
+      enabled: true,
+      providerId: excludeProviderId ? { not: excludeProviderId } : undefined,
+    },
+  });
+  return count;
+}
+
+/**
+ * Ensure a model has a default provider set if any remain.
+ */
+export async function ensureDefaultProvider(modelId: string): Promise<void> {
+  const providers = await prisma.modelProvider.findMany({
+    where: { modelId },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+  });
+
+  if (providers.length === 0) return;
+
+  const hasDefault = providers.some((p) => p.isDefault);
+  if (hasDefault) return;
+
+  const firstEnabled = providers.find((p) => p.enabled) ?? providers[0];
+  await prisma.modelProvider.update({
+    where: {
+      modelId_providerId: { modelId, providerId: firstEnabled.providerId },
+    },
+    data: { isDefault: true },
+  });
 }
 
 /**

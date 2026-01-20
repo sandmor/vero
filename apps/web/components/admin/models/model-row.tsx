@@ -1,16 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { CreatorLogo } from '@/components/creator-logo';
 import {
-  Edit,
-  Trash2,
-  MoreHorizontal,
-  Plus,
-  Unlink,
-  Sparkles,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ButtonWithFeedback } from '@/components/ui/button-with-feedback';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,30 +28,27 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { ButtonWithFeedback } from '@/components/ui/button-with-feedback';
-import { displayProviderName } from '@/lib/ai/registry';
-import { CreatorLogo } from '@/components/creator-logo';
 import type {
   ManagedModelCapabilities,
   ModelProviderAssociation,
 } from '@/lib/ai/model-capabilities';
+import { displayProviderName } from '@/lib/ai/registry';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
+import {
+  Edit,
+  MoreHorizontal,
+  Plus,
+  Sparkles,
+  Trash2,
+  Unlink,
+} from 'lucide-react';
+import { useState } from 'react';
 
 type ModelRowProps = {
   model: ManagedModelCapabilities;
   onEdit: (model: ManagedModelCapabilities) => void;
-  onDelete: (id: string) => void;
+  onDelete: (model: ManagedModelCapabilities) => void;
   onAddProvider: (model: ManagedModelCapabilities) => void;
   onEditProvider: (model: ManagedModelCapabilities, providerId: string) => void;
   onRemoveProvider: (modelId: string, providerId: string) => void;
@@ -155,7 +155,7 @@ export function ModelRow({
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
-                onClick={() => onDelete(model.id)}
+                onClick={() => onDelete(model)}
               >
                 <Trash2 className="mr-2 h-4 w-4" /> Delete Model
               </DropdownMenuItem>

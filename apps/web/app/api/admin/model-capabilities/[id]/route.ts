@@ -1,11 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth/admin';
-import { prisma } from '@vero/db';
 import {
-  upsertModel,
   deleteModel,
+  getTierIdsForModel,
+  removeModelFromTiers,
+  upsertModel,
   type ModelFormat,
 } from '@/lib/ai/model-capabilities';
+import { invalidateTierCache } from '@/lib/ai/tiers';
+import { requireAdmin } from '@/lib/auth/admin';
+import { prisma } from '@vero/db';
+import { revalidatePath } from 'next/cache';
+import { NextRequest, NextResponse } from 'next/server';
 
 // PUT /api/admin/model-capabilities/[id] - Update Model
 export async function PUT(
@@ -55,8 +59,29 @@ export async function DELETE(
   const { id } = await params;
   try {
     await requireAdmin();
+    const forceParam = req.nextUrl.searchParams.get('force');
+    const force = forceParam === 'true' || forceParam === '1';
+
+    const tierIds = await getTierIdsForModel(id);
+    if (tierIds.length > 0 && !force) {
+      return NextResponse.json(
+        {
+          error:
+            'Model is included in user tiers. Remove it from tiers first or retry with force=true.',
+          tierIds,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (tierIds.length > 0) {
+      await removeModelFromTiers(id);
+    }
+
     await deleteModel(id);
-    return NextResponse.json({ ok: true });
+    invalidateTierCache();
+    revalidatePath('/settings');
+    return NextResponse.json({ ok: true, removedFromTiers: tierIds });
   } catch (error) {
     console.error('Error deleting model:', error);
     return NextResponse.json(

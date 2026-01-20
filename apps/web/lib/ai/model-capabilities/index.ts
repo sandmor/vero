@@ -17,13 +17,13 @@
 
 // Types
 export type {
+  CatalogEntry,
+  ManagedModelCapabilities,
+  ModelCapabilities,
   ModelFormat,
   ModelPricing,
   ModelProviderAssociation,
-  ModelCapabilities,
   ResolvedModelCapabilities,
-  ManagedModelCapabilities,
-  CatalogEntry,
 } from './types';
 
 // Constants
@@ -38,28 +38,32 @@ export {
 
 // Database operations
 export {
-  getModelWithProviders,
-  getModelCapabilities,
-  upsertModel,
+  countEnabledProviders,
   deleteModel,
-  getAllModels,
-  upsertModelProvider,
-  removeModelProvider,
-  getTierModelIds,
-  getManagedModels,
+  ensureDefaultProvider,
   ensureModelCapabilities,
+  getAllModels,
   getByokAccessibleModelIds,
+  getManagedModels,
+  getModelCapabilities,
+  getModelWithProviders,
+  getTierIdsForModel,
+  getTierModelIds,
+  removeModelFromTiers,
+  removeModelProvider,
+  upsertModel,
+  upsertModelProvider,
 } from './db';
 
 // Catalog operations
 export {
-  getProviderCatalog,
-  getAllCatalogEntries,
-  upsertCatalogEntry,
-  createModelFromCatalog,
-  linkModelToCatalog,
-  deleteCatalogEntriesForProvider,
   clearCatalogForProvider,
+  createModelFromCatalog,
+  deleteCatalogEntriesForProvider,
+  getAllCatalogEntries,
+  getProviderCatalog,
+  linkModelToCatalog,
+  upsertCatalogEntry,
 } from './catalog';
 
 // OpenRouter sync
@@ -75,25 +79,25 @@ export type {
 
 // Models.dev sync (replacement for TokenLens)
 export {
+  clearModelsDevCache,
   fetchModelsDevCatalog,
   fetchModelsDevProvider,
-  clearModelsDevCache,
   parseModelsDevModel,
-  syncModelsDevProvider,
   syncAllModelsDevProviders,
+  syncModelsDevProvider,
 } from './sync-models-dev';
 export type {
   ModelsDevCatalog,
-  ModelsDevProvider,
   ModelsDevModel,
+  ModelsDevProvider,
 } from './sync-models-dev';
 
 // Re-export provider functions from registry for convenience
 export {
+  getInternalProviderId,
+  getModelsDevProviderId,
   isModelsDevProvider,
   MODELS_DEV_PROVIDERS,
-  getModelsDevProviderId,
-  getInternalProviderId,
 } from '../registry';
 
 // Re-export buildModelId and parseModelId from model-id.ts for backwards compatibility
@@ -103,9 +107,9 @@ export { buildModelId, parseModelId } from '../model-id';
 // Legacy Compatibility (deprecated)
 // ============================================================================
 
-import { syncOpenRouterCatalog } from './sync-openrouter';
-import { syncModelsDevProvider } from './sync-models-dev';
 import { upsertModel, upsertModelProvider } from './db';
+import { syncModelsDevProvider } from './sync-models-dev';
+import { syncOpenRouterCatalog } from './sync-openrouter';
 import type { ModelFormat, ModelPricing } from './types';
 
 /**

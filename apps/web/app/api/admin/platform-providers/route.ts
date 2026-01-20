@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@vero/db';
-import { requireAdmin } from '@/lib/auth/admin';
-import { revalidatePath } from 'next/cache';
-import { isValidProviderSlug, isValidBaseUrl } from '@/lib/ai/shared-provider';
+import {
+  countEnabledProviders,
+  ensureDefaultProvider,
+  removeModelFromTiers,
+} from '@/lib/ai/model-capabilities';
+import { isValidBaseUrl, isValidProviderSlug } from '@/lib/ai/shared-provider';
 import { invalidateTierCache } from '@/lib/ai/tiers';
+import { requireAdmin } from '@/lib/auth/admin';
+import { prisma } from '@vero/db';
+import { revalidatePath } from 'next/cache';
+import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * GET - List all platform custom providers
@@ -187,6 +192,47 @@ export async function PUT(req: NextRequest) {
     data: updateData,
   });
 
+  // If provider was disabled, also disable linked model providers and prune tiers if needed
+  if (enabled === false) {
+    const customProviderModelLinks = await prisma.modelProvider.findMany({
+      where: {
+        OR: [
+          { customPlatformProviderId: id },
+          // Also cover legacy providerId format if present
+          existing ? { providerId: `custom:${existing.slug}` } : undefined,
+        ].filter(Boolean) as any,
+      },
+      select: { modelId: true, providerId: true },
+    });
+
+    if (customProviderModelLinks.length > 0) {
+      await prisma.modelProvider.updateMany({
+        where: {
+          OR: [
+            { customPlatformProviderId: id },
+            existing ? { providerId: `custom:${existing.slug}` } : undefined,
+          ].filter(Boolean) as any,
+        },
+        data: { enabled: false, isDefault: false },
+      });
+
+      const affectedModels = Array.from(
+        new Set(customProviderModelLinks.map((m) => m.modelId))
+      );
+
+      for (const modelId of affectedModels) {
+        const enabledCount = await countEnabledProviders(modelId);
+        if (enabledCount === 0) {
+          await removeModelFromTiers(modelId);
+        } else {
+          await ensureDefaultProvider(modelId);
+        }
+      }
+
+      invalidateTierCache();
+    }
+  }
+
   revalidatePath('/settings');
   invalidateTierCache(); // Invalidate tier cache when providers change
   return NextResponse.json({
@@ -219,7 +265,46 @@ export async function DELETE(req: NextRequest) {
     );
   }
 
+  const existing = await prisma.platformCustomProvider.findUnique({
+    where: { id },
+    select: { slug: true },
+  });
+
   await prisma.platformCustomProvider.delete({ where: { id } }).catch(() => {});
+
+  // Clean up model provider associations and tiers referencing this custom provider
+  if (existing) {
+    const providerSlug = existing.slug;
+    const impacted = await prisma.modelProvider.findMany({
+      where: {
+        OR: [
+          { customPlatformProviderId: id },
+          { providerId: `custom:${providerSlug}` },
+        ],
+      },
+      select: { modelId: true },
+    });
+
+    const affectedModels = Array.from(new Set(impacted.map((p) => p.modelId)));
+
+    await prisma.modelProvider.deleteMany({
+      where: {
+        OR: [
+          { customPlatformProviderId: id },
+          { providerId: `custom:${providerSlug}` },
+        ],
+      },
+    });
+
+    for (const modelId of affectedModels) {
+      const enabledCount = await countEnabledProviders(modelId);
+      if (enabledCount === 0) {
+        await removeModelFromTiers(modelId);
+      } else {
+        await ensureDefaultProvider(modelId);
+      }
+    }
+  }
 
   revalidatePath('/settings');
   invalidateTierCache(); // Invalidate tier cache when providers change

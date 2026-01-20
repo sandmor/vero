@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth/admin';
 import {
   upsertModelProvider,
   type ModelPricing,
 } from '@/lib/ai/model-capabilities';
+import { requireAdmin } from '@/lib/auth/admin';
+import { prisma } from '@vero/db';
+import { NextRequest, NextResponse } from 'next/server';
 
 // POST /api/admin/model-capabilities/[id]/providers - Add Provider
 export async function POST(
@@ -27,6 +28,19 @@ export async function POST(
         { error: 'providerId and providerModelId are required' },
         { status: 400 }
       );
+    }
+
+    if (customPlatformProviderId) {
+      const customProvider = await prisma.platformCustomProvider.findUnique({
+        where: { id: customPlatformProviderId },
+        select: { enabled: true },
+      });
+      if (!customProvider || !customProvider.enabled) {
+        return NextResponse.json(
+          { error: 'Custom provider not found or disabled.' },
+          { status: 400 }
+        );
+      }
     }
 
     await upsertModelProvider(id, {

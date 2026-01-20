@@ -1,9 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   ManagedModelCapabilities,
   ModelFormat,
   ModelPricing,
 } from '@/lib/ai/model-capabilities';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 type ManagedModelCapabilitiesResponse = ManagedModelCapabilities[];
 type SyncResponse = {
@@ -87,8 +87,10 @@ export function useModelMutation() {
   });
 
   const deleteModel = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/admin/model-capabilities/${id}`, {
+    mutationFn: async (data: { id: string; force?: boolean }) => {
+      const { id, force } = data;
+      const search = force ? '?force=1' : '';
+      const res = await fetch(`/api/admin/model-capabilities/${id}${search}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -149,10 +151,12 @@ export function useProviderMutation() {
       pricing?: ModelPricing | null;
       isDefault?: boolean;
       enabled?: boolean;
+      force?: boolean;
     }) => {
-      const { modelId, providerId, ...body } = data;
+      const { modelId, providerId, force, ...body } = data;
+      const forceParam = force ? '?force=1' : '';
       const res = await fetch(
-        `/api/admin/model-capabilities/${modelId}/providers/${providerId}`,
+        `/api/admin/model-capabilities/${modelId}/providers/${providerId}${forceParam}`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -173,10 +177,15 @@ export function useProviderMutation() {
   });
 
   const removeProvider = useMutation({
-    mutationFn: async (data: { modelId: string; providerId: string }) => {
-      const { modelId, providerId } = data;
+    mutationFn: async (data: {
+      modelId: string;
+      providerId: string;
+      force?: boolean;
+    }) => {
+      const { modelId, providerId, force } = data;
+      const search = force ? '?force=1' : '';
       const res = await fetch(
-        `/api/admin/model-capabilities/${modelId}/providers/${providerId}`,
+        `/api/admin/model-capabilities/${modelId}/providers/${providerId}${search}`,
         {
           method: 'DELETE',
         }

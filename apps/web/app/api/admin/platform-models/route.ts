@@ -1,16 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@vero/db';
-import { requireAdmin } from '@/lib/auth/admin';
-import { revalidatePath } from 'next/cache';
+import {
+  countEnabledProviders,
+  ensureDefaultProvider,
+  removeModelFromTiers,
+} from '@/lib/ai/model-capabilities';
+import type {
+  ModelFormat,
+  ModelPricing,
+} from '@/lib/ai/model-capabilities/types';
 import {
   isValidModelSlug,
   isValidProviderModelId,
 } from '@/lib/ai/shared-provider';
 import { invalidateTierCache } from '@/lib/ai/tiers';
-import type {
-  ModelFormat,
-  ModelPricing,
-} from '@/lib/ai/model-capabilities/types';
+import { requireAdmin } from '@/lib/auth/admin';
+import { prisma } from '@vero/db';
+import { revalidatePath } from 'next/cache';
+import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * GET - List all platform custom models
@@ -291,6 +296,21 @@ export async function PUT(req: NextRequest) {
     },
   });
 
+  // If disabling, also disable linked model provider rows and clean tiers
+  if (enabled === false) {
+    await prisma.modelProvider.updateMany({
+      where: { modelId: model.modelSlug },
+      data: { enabled: false, isDefault: false },
+    });
+
+    const enabledCount = await countEnabledProviders(model.modelSlug);
+    if (enabledCount === 0) {
+      await removeModelFromTiers(model.modelSlug);
+    } else {
+      await ensureDefaultProvider(model.modelSlug);
+    }
+  }
+
   revalidatePath('/settings');
   invalidateTierCache(); // Invalidate tier cache when platform models change
   return NextResponse.json({
@@ -329,7 +349,25 @@ export async function DELETE(req: NextRequest) {
     );
   }
 
+  const existing = await prisma.platformCustomModel.findUnique({
+    where: { id },
+    select: { modelSlug: true },
+  });
+
   await prisma.platformCustomModel.delete({ where: { id } }).catch(() => {});
+
+  if (existing) {
+    await prisma.modelProvider.deleteMany({
+      where: { modelId: existing.modelSlug },
+    });
+
+    const enabledCount = await countEnabledProviders(existing.modelSlug);
+    if (enabledCount === 0) {
+      await removeModelFromTiers(existing.modelSlug);
+    } else {
+      await ensureDefaultProvider(existing.modelSlug);
+    }
+  }
 
   revalidatePath('/settings');
   invalidateTierCache(); // Invalidate tier cache when platform models change

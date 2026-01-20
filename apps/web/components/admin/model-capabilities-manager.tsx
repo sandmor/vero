@@ -1,35 +1,35 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Trash2,
-  Layers,
-  Package,
-} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ModelList } from './models/model-list';
-import { CatalogBrowser } from './models/catalog-browser';
-import { ModelEditorDialog } from './models/model-editor-dialog';
-import { AddProviderDialog } from './models/add-provider-dialog';
-import { ProviderPricingDialog } from './models/provider-pricing-dialog';
-import type { ModelProviderAssociation } from '@/lib/ai/model-capabilities/types';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  useCatalogSync,
   useManagedModels,
   useModelMutation,
   useProviderMutation,
-  useCatalogSync,
 } from '@/hooks/use-model-capabilities';
 import type {
-  ManagedModelCapabilities,
   CatalogEntry,
+  ManagedModelCapabilities,
 } from '@/lib/ai/model-capabilities';
+import type { ModelProviderAssociation } from '@/lib/ai/model-capabilities/types';
 import { cn } from '@/lib/utils';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Layers,
+  Loader2,
+  Package,
+  Trash2,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AddProviderDialog } from './models/add-provider-dialog';
+import { CatalogBrowser } from './models/catalog-browser';
+import { ModelEditorDialog } from './models/model-editor-dialog';
+import { ModelList } from './models/model-list';
+import { ProviderPricingDialog } from './models/provider-pricing-dialog';
 
 type ModelCapabilitiesManagerProps = {
   initialModels: ManagedModelCapabilities[];
@@ -210,6 +210,56 @@ export function ModelCapabilitiesManager({
     }
   };
 
+  const handleRemoveProvider = async (modelId: string, providerId: string) => {
+    const model = models.find((m) => m.id === modelId);
+    const provider = model?.providers.find((p) => p.providerId === providerId);
+
+    const enabledProviders =
+      model?.providers.filter((p) => p.enabled).length ?? 0;
+    const isLastEnabled = provider?.enabled && enabledProviders === 1;
+
+    const needsForce = Boolean(model?.inUse && isLastEnabled);
+    const confirmed = window.confirm(
+      needsForce
+        ? 'This is the last enabled provider for a model that is in user tiers. Remove it and drop the model from tiers?'
+        : 'Unlink this provider from the model?'
+    );
+    if (!confirmed) return;
+
+    try {
+      await removeProvider.mutateAsync({
+        modelId,
+        providerId,
+        force: needsForce,
+      });
+      setStatusMessage({ type: 'success', message: 'Provider removed' });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to remove provider';
+      setStatusMessage({ type: 'error', message });
+    }
+  };
+
+  const handleDeleteModel = async (model: ManagedModelCapabilities) => {
+    const needsForce = model.inUse;
+    const confirmed = window.confirm(
+      needsForce
+        ? 'This model is currently included in user tiers. Delete it and remove it from tiers?'
+        : 'Delete this model?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await deleteModel.mutateAsync({ id: model.id, force: needsForce });
+      setStatusMessage({ type: 'success', message: 'Model deleted' });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to delete model';
+      setStatusMessage({ type: 'error', message });
+    }
+  };
+
   const handleAddFromCatalog = async (entry: CatalogEntry) => {
     try {
       const modelId = entry.suggestedModelId || entry.providerModelId;
@@ -355,7 +405,7 @@ export function ModelCapabilitiesManager({
             <ModelList
               models={models}
               onEdit={handleEditModel}
-              onDelete={(id) => deleteModel.mutate(id)}
+              onDelete={handleDeleteModel}
               onAddProvider={(model) => {
                 setTargetModelId(model.id);
                 setAddProviderDialogOpen(true);
@@ -371,9 +421,7 @@ export function ModelCapabilitiesManager({
                 }
               }}
               onRemoveProvider={(modelId, providerId) => {
-                if (confirm('Are you sure you want to remove this provider?')) {
-                  removeProvider.mutate({ modelId, providerId });
-                }
+                void handleRemoveProvider(modelId, providerId);
               }}
               onSetDefaultProvider={(modelId, providerId) => {
                 updateProvider.mutate({
@@ -427,9 +475,29 @@ export function ModelCapabilitiesManager({
         provider={targetProvider}
         onSave={async (data) => {
           if (targetModelId && targetProvider) {
+            const model = models.find((m) => m.id === targetModelId);
+            const enabledCount =
+              model?.providers.filter((p) => p.enabled).length ?? 0;
+            const nextEnabled = data.enabled ?? targetProvider.enabled;
+            const isDisablingLast =
+              targetProvider.enabled &&
+              nextEnabled === false &&
+              enabledCount === 1;
+            const needsForce = Boolean(model?.inUse && isDisablingLast);
+
+            if (
+              needsForce &&
+              !window.confirm(
+                'This change disables the last enabled provider for a tiered model. Proceed and remove the model from tiers?'
+              )
+            ) {
+              return;
+            }
+
             await updateProvider.mutateAsync({
               modelId: targetModelId,
               providerId: targetProvider.providerId,
+              force: needsForce,
               ...data,
             });
             setStatusMessage({
