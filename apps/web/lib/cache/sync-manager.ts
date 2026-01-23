@@ -9,7 +9,8 @@
  * - **Debouncing and coalescing**: Multiple sync requests within a window
  *   are coalesced into a single operation
  * - **Sovereignty**: The active chat's local state is authoritative during generation
- * - **Tab coordination**: Only leader tabs perform sync, followers listen
+ * - **Tab coordination**: Only tabs with a valid leader lease perform syncs;
+ *   followers delegate requests to the leader and reload from IndexedDB
  *
  * ## Sync Timestamp Architecture
  *
@@ -24,6 +25,16 @@
  * 3. **Realtime does NOT modify it**: The realtime gateway only triggers syncs
  *    and React Query invalidations. It never directly modifies the cache or
  *    timestamp. This ensures incremental sync always catches all changes.
+ *
+ * ## Leadership & Coordination Model
+ *
+ * - A tab is allowed to execute syncs only if it **owns a valid lease**
+ *   (localStorage-backed). This prevents split-brain leadership when
+ *   BroadcastChannel is unreliable.
+ * - Followers never execute syncs directly; they delegate requests to the
+ *   current leader via BroadcastChannel and listen for completion events.
+ * - When leadership is unclear, tabs trigger elections but do **not**
+ *   self-promote without a lease.
  *
  * ## Race Condition Prevention
  *
@@ -207,7 +218,11 @@ export class SyncManager {
   }
 
   /**
-   * Check if this tab is the current sync leader.
+   * Check if this tab is allowed to execute syncs.
+   *
+   * IMPORTANT: We only allow syncs if we are the leader AND have a valid
+   * lease, or if coordination is disabled (single-tab fallback). This avoids
+   * split-brain behavior during BroadcastChannel outages.
    */
   isLeader(): boolean {
     if (!this.tabLeader) {
@@ -215,18 +230,9 @@ export class SyncManager {
     }
 
     const state = this.tabLeader.getState();
+    if (state === 'disabled') return true;
 
-    if (state === 'leader' || state === 'disabled') {
-      return true;
-    }
-
-    // Assume follower while we keep hearing heartbeats from another leader
-    if (this.tabLeader.hasRecentExternalHeartbeat()) {
-      return false;
-    }
-
-    // If heartbeats are silent for a while, allow degraded-mode leadership
-    return state !== 'electing';
+    return state === 'leader' && this.tabLeader.hasValidLease();
   }
 
   /**

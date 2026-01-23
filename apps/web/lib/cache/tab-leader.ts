@@ -12,10 +12,14 @@
  * - BroadcastChannel: For real-time cross-tab communication
  *
  * Design principles:
- * - Lease-based leadership prevents split-brain scenarios
- * - Heartbeats ensure stale leaders are detected
- * - Non-blocking for follower tabs (they can still read from cache)
- * - Graceful degradation if BroadcastChannel not available
+ * - **Lease ownership is the source of truth**: only the tab that owns a
+ *   valid lease is allowed to act as leader.
+ * - **Heartbeats are advisory**: they speed up detection but do not grant
+ *   leadership on their own.
+ * - **Storage events provide a fallback signal** when BroadcastChannel is
+ *   throttled or unavailable.
+ * - **Non-blocking for follower tabs** (they can still read from cache).
+ * - **Graceful degradation** if BroadcastChannel is not available.
  */
 
 'use client';
@@ -92,6 +96,7 @@ export class TabLeaderElection {
   private options: TabLeaderOptions;
   private destroyed = false;
   private lastExternalHeartbeatAt: number | null = null;
+  private storageListenerAttached = false;
 
   constructor(options: TabLeaderOptions = {}) {
     this.tabId = crypto.randomUUID();
@@ -110,12 +115,33 @@ export class TabLeaderElection {
     } else {
       this.setState('disabled');
     }
+
+    // Observe lease changes from other tabs for faster convergence
+    if (typeof window !== 'undefined' && !this.storageListenerAttached) {
+      window.addEventListener('storage', this.handleStorageEvent);
+      this.storageListenerAttached = true;
+    }
   }
 
   private log(...args: unknown[]): void {
     if (!this.options.debug) return;
     // eslint-disable-next-line no-console
     console.info(TAG, `[${this.tabId.slice(0, 8)}]`, ...args);
+  }
+
+  /**
+   * Whether this tab currently owns a valid leader lease.
+   *
+   * This is a stronger condition than just "no recent heartbeat" and is
+   * used to prevent split-brain leadership during BroadcastChannel outages.
+   */
+  hasValidLease(): boolean {
+    if (this.state === 'disabled') return true;
+
+    const lease = this.readLease();
+    if (!lease) return false;
+
+    return lease.tabId === this.tabId && lease.expiresAt > Date.now();
   }
 
   addStateListener(listener: (state: LeaderState) => void): () => void {
@@ -484,6 +510,36 @@ export class TabLeaderElection {
   };
 
   /**
+   * React to lease changes written by other tabs via localStorage.
+   * This provides a fast signal even if BroadcastChannel is throttled.
+   */
+  private handleStorageEvent = (event: StorageEvent): void => {
+    if (this.destroyed) return;
+    if (event.key !== LEASE_STORAGE_KEY) return;
+
+    const lease = this.readLease();
+    const now = Date.now();
+
+    if (this.state === 'leader') {
+      const someoneElseOwnsLease =
+        lease && lease.tabId !== this.tabId && lease.expiresAt > now;
+
+      if (someoneElseOwnsLease) {
+        this.log('Lease taken by another tab, demoting');
+        this.setState('follower');
+        this.stopHeartbeat();
+        this.startLeaseCheck();
+        this.options.onLoseLeadership?.();
+      }
+      return;
+    }
+
+    if (!lease || lease.expiresAt <= now) {
+      void this.startElection();
+    }
+  };
+
+  /**
    * Broadcast that a sync has completed.
    */
   notifySyncComplete(timestamp: string): void {
@@ -517,7 +573,7 @@ export class TabLeaderElection {
     reason: string,
     options?: { force?: boolean; chatId?: string }
   ): void {
-    if (this.state === 'leader') {
+    if (this.state === 'leader' && this.hasValidLease()) {
       // We're the leader, handle it locally
       this.options.onSyncRequested?.(reason, options);
     } else {
@@ -624,6 +680,11 @@ export class TabLeaderElection {
       this.channel.removeEventListener('message', this.handleMessage);
       this.channel.close();
       this.channel = null;
+    }
+
+    if (typeof window !== 'undefined' && this.storageListenerAttached) {
+      window.removeEventListener('storage', this.handleStorageEvent);
+      this.storageListenerAttached = false;
     }
   }
 
