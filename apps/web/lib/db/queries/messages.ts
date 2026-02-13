@@ -953,26 +953,6 @@ export async function deleteMessageById({
           break;
         }
         case 'message-only': {
-          const siblingPaths = await getDirectChildrenPaths(
-            tx,
-            chatId,
-            parentPath
-          );
-          const siblingsToDelete = siblingPaths.filter(
-            (path) => path !== targetPath
-          );
-          if (siblingsToDelete.length) {
-            for (const path of siblingsToDelete) {
-              trackSelectionImpact(path);
-            }
-            const removedSiblings = await deleteSubtrees(
-              tx,
-              chatId,
-              siblingsToDelete
-            );
-            removedSiblings.forEach((id) => deletedIds.add(id));
-          }
-
           await promoteChildrenToParent(tx, chatId, targetPath, parentPath);
 
           const removedTarget = await tx.$queryRaw<Array<{ id: string }>>(
@@ -1251,26 +1231,6 @@ export async function deleteMessagesByIds({
             break;
           }
           case 'message-only': {
-            const siblingPaths = await getDirectChildrenPaths(
-              tx,
-              chatId,
-              parentPath
-            );
-            const siblingsToDelete = siblingPaths.filter(
-              (path) => path !== currentPath
-            );
-            if (siblingsToDelete.length) {
-              for (const path of siblingsToDelete) {
-                trackSelectionImpact(path);
-              }
-              const removedSiblings = await deleteSubtrees(
-                tx,
-                chatId,
-                siblingsToDelete
-              );
-              removedSiblings.forEach((id) => deletedIds.add(id));
-            }
-
             await promoteChildrenToParent(tx, chatId, currentPath, parentPath);
 
             const removedTarget = await tx.$queryRaw<Array<{ id: string }>>(
