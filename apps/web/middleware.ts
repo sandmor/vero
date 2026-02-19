@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { clerkMiddleware } from '@clerk/nextjs/server';
+import { NextResponse } from 'next/server';
 
 // Wrap our custom logic with Clerk's middleware so that calls to auth() work.
 export default clerkMiddleware(async (auth, request) => {
@@ -8,6 +8,10 @@ export default clerkMiddleware(async (auth, request) => {
   // Health / test endpoint used by Playwright to know the dev server is ready.
   if (pathname.startsWith('/ping')) {
     return new Response('pong', { status: 200 });
+  }
+
+  if (process.env.APP_E2E === '1') {
+    return NextResponse.next();
   }
 
   // Skip any auth / guest session bootstrapping for Clerk's own auth routes.

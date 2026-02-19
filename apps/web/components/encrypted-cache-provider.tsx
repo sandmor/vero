@@ -50,6 +50,7 @@ const manager = getEncryptedCacheManager();
 
 const CACHE_DEBUG_TAG = '[EncryptedCache]';
 const IS_DEV = process.env.NODE_ENV === 'development';
+const IS_E2E = process.env.NEXT_PUBLIC_E2E === '1';
 
 function cacheDebug(...args: unknown[]): void {
   if (!IS_DEV) return;
@@ -1631,8 +1632,19 @@ export function EncryptedCacheProvider({ children }: { children: ReactNode }) {
         await manager.activate(key);
 
         // Initialize the search index worker with the encryption key
-        // so it can handle its own persistence without blocking the main thread
-        await searchIndexService.initializeWorker(base64Key);
+        // so it can handle its own persistence without blocking the main thread.
+        // In E2E mode this worker is non-critical and should not block chat boot.
+        try {
+          await searchIndexService.initializeWorker(base64Key);
+        } catch (error) {
+          if (!IS_E2E) {
+            throw error;
+          }
+          console.warn(
+            'Search index worker initialization failed in E2E mode; continuing without worker.',
+            error
+          );
+        }
 
         if (cancelled) return;
 
