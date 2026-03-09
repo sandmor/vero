@@ -5,7 +5,7 @@
 import { prisma, Prisma } from '@vero/db';
 import { parseModelId } from '../model-id';
 import { getProviderDefaults, inferProviderFromCreator } from '../registry';
-import { getTier, invalidateTierCache } from '../tiers';
+import { getTier } from '../tiers';
 import { DEFAULT_TIER_IDS } from './constants';
 import type {
   ManagedModelCapabilities,
@@ -14,9 +14,6 @@ import type {
   ModelPricing,
   ResolvedModelCapabilities,
 } from './types';
-
-// Type for accessing prisma client properties
-type PrismaClientType = typeof prisma;
 
 // ============================================================================
 // Model CRUD Operations
@@ -185,9 +182,6 @@ export async function deleteModel(modelId: string): Promise<void> {
  */
 export async function removeModelFromTiers(modelId: string): Promise<number> {
   const result = await prisma.tierModel.deleteMany({ where: { modelId } });
-  if (result.count > 0) {
-    invalidateTierCache();
-  }
   return result.count;
 }
 

@@ -26,7 +26,7 @@ import {
   systemAgentSettingsToAgentSettings,
   type SystemAgentSettings,
 } from '@/lib/ai/system-agents';
-import { getTierForUserType } from '@/lib/ai/tiers';
+import { getTier } from '@/lib/ai/tiers';
 import { CHAT_TOOL_IDS, normalizeChatToolIds } from '@/lib/ai/tool-ids';
 import { getWeather } from '@/lib/ai/tools/get-weather';
 import { manageChatPins } from '@/lib/ai/tools/manageChatPins';
@@ -315,7 +315,7 @@ export async function POST(request: Request) {
     let createdNewChat = false;
 
     const userType: UserType = session.user.type;
-    const tierPromise = getTierForUserType(userType);
+    const tierPromise = getTier(userType);
 
     if (chat) {
       if (chat.userId !== session.user.id) {

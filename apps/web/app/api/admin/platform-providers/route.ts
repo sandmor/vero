@@ -4,7 +4,6 @@ import {
   removeModelFromTiers,
 } from '@/lib/ai/model-capabilities';
 import { isValidBaseUrl, isValidProviderSlug } from '@/lib/ai/shared-provider';
-import { invalidateTierCache } from '@/lib/ai/tiers';
 import { requireAdmin } from '@/lib/auth/admin';
 import { prisma } from '@vero/db';
 import { revalidatePath } from 'next/cache';
@@ -112,7 +111,6 @@ export async function POST(req: NextRequest) {
   });
 
   revalidatePath('/settings');
-  invalidateTierCache(); // Invalidate tier cache when providers change
   return NextResponse.json({
     id: provider.id,
     slug: provider.slug,
@@ -228,13 +226,10 @@ export async function PUT(req: NextRequest) {
           await ensureDefaultProvider(modelId);
         }
       }
-
-      invalidateTierCache();
     }
   }
 
   revalidatePath('/settings');
-  invalidateTierCache(); // Invalidate tier cache when providers change
   return NextResponse.json({
     id: provider.id,
     slug: provider.slug,
@@ -307,6 +302,5 @@ export async function DELETE(req: NextRequest) {
   }
 
   revalidatePath('/settings');
-  invalidateTierCache(); // Invalidate tier cache when providers change
   return NextResponse.json({ ok: true });
 }

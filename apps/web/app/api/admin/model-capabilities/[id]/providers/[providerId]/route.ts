@@ -7,7 +7,6 @@ import {
   upsertModelProvider,
   type ModelPricing,
 } from '@/lib/ai/model-capabilities';
-import { invalidateTierCache } from '@/lib/ai/tiers';
 import { requireAdmin } from '@/lib/auth/admin';
 import { prisma } from '@vero/db';
 import { revalidatePath } from 'next/cache';
@@ -72,7 +71,6 @@ export async function PUT(
     });
 
     await ensureDefaultProvider(id);
-    invalidateTierCache();
     revalidatePath('/settings');
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -123,7 +121,6 @@ export async function DELETE(
 
     await removeModelProvider(id, providerId);
     await ensureDefaultProvider(id);
-    invalidateTierCache();
     revalidatePath('/settings');
 
     return NextResponse.json({

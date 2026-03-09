@@ -5,7 +5,7 @@ import {
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import { resolveChatModelOptions } from '@/lib/ai/models.server';
 import { displayProviderName } from '@/lib/ai/registry';
-import { getTierForUserType } from '@/lib/ai/tiers';
+import { getTier } from '@/lib/ai/tiers';
 import { getAppSession } from '@/lib/auth/session';
 import { enforceCacheRateLimit } from '@/lib/cache/rate-limit';
 import type { CacheMetadataPayload, CachedChatRecord } from '@/lib/cache/types';
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Get user tier and models info
-  const tier = await getTierForUserType(session.user.type);
+  const tier = await getTier(session.user.type);
 
   // Get BYOK models with full info for proper display names
   const byokModels = await getUserByokModels(session.user.id);

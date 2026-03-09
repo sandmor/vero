@@ -11,7 +11,6 @@ import {
   isValidModelSlug,
   isValidProviderModelId,
 } from '@/lib/ai/shared-provider';
-import { invalidateTierCache } from '@/lib/ai/tiers';
 import { requireAdmin } from '@/lib/auth/admin';
 import { prisma } from '@vero/db';
 import { revalidatePath } from 'next/cache';
@@ -181,7 +180,6 @@ export async function POST(req: NextRequest) {
   });
 
   revalidatePath('/settings');
-  invalidateTierCache(); // Invalidate tier cache when platform models change
   return NextResponse.json({
     id: model.id,
     modelSlug: model.modelSlug,
@@ -312,7 +310,6 @@ export async function PUT(req: NextRequest) {
   }
 
   revalidatePath('/settings');
-  invalidateTierCache(); // Invalidate tier cache when platform models change
   return NextResponse.json({
     id: model.id,
     modelSlug: model.modelSlug,
@@ -370,6 +367,5 @@ export async function DELETE(req: NextRequest) {
   }
 
   revalidatePath('/settings');
-  invalidateTierCache(); // Invalidate tier cache when platform models change
   return NextResponse.json({ ok: true });
 }

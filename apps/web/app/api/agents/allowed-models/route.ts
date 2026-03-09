@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAppSession } from '@/lib/auth/session';
-import { getTierForUserType } from '@/lib/ai/tiers';
+import { getTier } from '@/lib/ai/tiers';
 import { resolveChatModelOptions } from '@/lib/ai/models.server';
 import { getUserByokModels } from '@/lib/queries/byok';
 import { displayProviderName } from '@/lib/ai/registry';
@@ -11,9 +11,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { modelIds: tierModelIds } = await getTierForUserType(
-    session.user.type
-  );
+  const { modelIds: tierModelIds } = await getTier(session.user.type);
 
   // Get BYOK models with full info for proper display names
   const byokModels = await getUserByokModels(session.user.id);

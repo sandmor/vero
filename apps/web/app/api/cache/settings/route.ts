@@ -6,7 +6,7 @@ import {
   DEFAULT_CHAT_SYSTEM_AGENT_SLUG,
   type SystemAgentSettings,
 } from '@/lib/ai/system-agents';
-import { getTierForUserType } from '@/lib/ai/tiers';
+import { getTier } from '@/lib/ai/tiers';
 import { getAppSession } from '@/lib/auth/session';
 import { getSystemAgentBySlug } from '@/lib/db/queries';
 import { ChatSDKError } from '@/lib/errors';
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get user tier and models info
-    const tier = await getTierForUserType(session.user.type);
+    const tier = await getTier(session.user.type);
 
     // Get BYOK models with full info for proper display names
     const byokModels = await getUserByokModels(session.user.id);

@@ -1,5 +1,5 @@
 import type { UserType } from '@/lib/auth/types';
-import { prisma } from '@vero/db';
+import { prisma, Prisma } from '@vero/db';
 import { DEFAULT_CHAT_MODEL } from './models';
 
 export type TierRecord = {
@@ -10,9 +10,6 @@ export type TierRecord = {
   bucketRefillIntervalSeconds: number;
 };
 
-/**
- * Extended tier record that includes full model capabilities
- */
 export type TierRecordWithModels = TierRecord & {
   models: {
     id: string;
@@ -34,14 +31,12 @@ function parseModelList(
     .filter(Boolean);
 }
 
-// Fallback definitions used if the DB rows are missing (e.g. before migrations run or during first boot)
-// Keep these in sync with the migration seed. They guarantee the app remains functional.
 const FALLBACK_TIERS: Record<UserType, TierRecord> = {
   guest: {
     id: 'guest',
     modelIds: parseModelList(process.env.GUEST_MODELS, [DEFAULT_CHAT_MODEL]),
-    bucketCapacity: 60, // allow bursts up to 60 messages
-    bucketRefillAmount: 20, // refill 20 per hour
+    bucketCapacity: 60,
+    bucketRefillAmount: 20,
     bucketRefillIntervalSeconds: 3600,
   },
   regular: {
@@ -53,28 +48,19 @@ const FALLBACK_TIERS: Record<UserType, TierRecord> = {
   },
 };
 
-// 60s TTL simple cache; reuse provider TTL constant if desired later
-const TTL_MS = 60_000;
-let cacheStore: Record<string, { value: TierRecord; fetchedAt: number }> = {};
-let cacheStoreWithModels: Record<
-  string,
-  { value: TierRecordWithModels; fetchedAt: number }
-> = {};
+type TierInclude = Prisma.TierInclude;
+type TierResult<T extends TierInclude> = Prisma.TierGetPayload<{ include: T }>;
 
-async function fetchTier(id: string): Promise<TierRecord> {
+async function fetchTierRow<T extends TierInclude>(
+  id: string,
+  include: T
+): Promise<
+  | { row: TierResult<T>; fallback: undefined }
+  | { row: null; fallback: TierRecord }
+> {
   const row = await prisma.tier
-    .findUnique({
-      where: { id },
-      include: {
-        models: {
-          select: {
-            modelId: true,
-          },
-        },
-      },
-    })
+    .findUnique({ where: { id }, include })
     .catch((err) => {
-      // In rare cases (e.g., during migration) Prisma might throw before table exists.
       console.warn(
         'Tier lookup failed, attempting fallback:',
         err?.message || err
@@ -88,12 +74,21 @@ async function fetchTier(id: string): Promise<TierRecord> {
       console.warn(
         `[tiers] Using fallback tier definition for '${id}' (DB row missing).`
       );
-      return fallback;
+      return { row: null, fallback };
     }
     throw new Error(`Tier '${id}' not found and no fallback available`);
   }
 
-  // Extract model IDs from the relation
+  return { row, fallback: undefined };
+}
+
+export async function getTier(id: string): Promise<TierRecord> {
+  const { row, fallback } = await fetchTierRow(id, {
+    models: { select: { modelId: true } },
+  });
+
+  if (fallback) return fallback;
+
   const modelIds = row.models.map((m) => m.modelId);
 
   return {
@@ -110,50 +105,26 @@ async function fetchTier(id: string): Promise<TierRecord> {
   };
 }
 
-/**
- * Fetch a tier with full model capabilities included
- */
-async function fetchTierWithModels(id: string): Promise<TierRecordWithModels> {
-  const row = await prisma.tier
-    .findUnique({
-      where: { id },
+export async function getTierWithModels(
+  id: string
+): Promise<TierRecordWithModels> {
+  const { row, fallback } = await fetchTierRow(id, {
+    models: {
       include: {
-        models: {
-          include: {
-            model: {
-              select: {
-                id: true,
-                name: true,
-                creator: true,
-                supportsTools: true,
-                supportedFormats: true,
-              },
-            },
+        model: {
+          select: {
+            id: true,
+            name: true,
+            creator: true,
+            supportsTools: true,
+            supportedFormats: true,
           },
         },
       },
-    })
-    .catch((err) => {
-      console.warn(
-        'Tier lookup failed, attempting fallback:',
-        err?.message || err
-      );
-      return null;
-    });
+    },
+  });
 
-  if (!row) {
-    const fallback = FALLBACK_TIERS[id as UserType];
-    if (fallback) {
-      console.warn(
-        `[tiers] Using fallback tier definition for '${id}' (DB row missing).`
-      );
-      return {
-        ...fallback,
-        models: [],
-      };
-    }
-    throw new Error(`Tier '${id}' not found and no fallback available`);
-  }
+  if (fallback) return { ...fallback, models: [] };
 
   const models = row.models.map((m) => ({
     id: m.model.id,
@@ -176,53 +147,4 @@ async function fetchTierWithModels(id: string): Promise<TierRecordWithModels> {
       FALLBACK_TIERS[id as UserType].bucketRefillIntervalSeconds,
     models,
   };
-}
-
-export async function getTier(id: string): Promise<TierRecord> {
-  const now = Date.now();
-  const existing = cacheStore[id];
-  if (existing && now - existing.fetchedAt < TTL_MS) return existing.value;
-  const value = await fetchTier(id);
-  cacheStore[id] = { value, fetchedAt: now };
-  return value;
-}
-
-/**
- * Get a tier with full model capabilities included (cached)
- */
-export async function getTierWithModels(
-  id: string
-): Promise<TierRecordWithModels> {
-  const now = Date.now();
-  const existing = cacheStoreWithModels[id];
-  if (existing && now - existing.fetchedAt < TTL_MS) return existing.value;
-  const value = await fetchTierWithModels(id);
-  cacheStoreWithModels[id] = { value, fetchedAt: now };
-  return value;
-}
-
-export async function getTierForUserType(
-  userType: UserType
-): Promise<TierRecord> {
-  // userType matches tier id currently (guest|regular)
-  return getTier(userType);
-}
-
-/**
- * Get tier with full model capabilities for a user type
- */
-export async function getTierWithModelsForUserType(
-  userType: UserType
-): Promise<TierRecordWithModels> {
-  return getTierWithModels(userType);
-}
-
-export function invalidateTierCache(id?: string) {
-  if (id) {
-    delete cacheStore[id];
-    delete cacheStoreWithModels[id];
-  } else {
-    cacheStore = {};
-    cacheStoreWithModels = {};
-  }
 }

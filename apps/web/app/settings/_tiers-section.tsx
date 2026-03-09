@@ -8,7 +8,7 @@ import {
   upsertModel,
   upsertModelProvider,
 } from '@/lib/ai/model-capabilities';
-import { getTierWithModels, invalidateTierCache } from '@/lib/ai/tiers';
+import { getTierWithModels } from '@/lib/ai/tiers';
 import { prisma, PrismaClient } from '@vero/db';
 import { revalidatePath } from 'next/cache';
 import type {
@@ -159,7 +159,6 @@ async function updateTierAction(
     }
   });
 
-  invalidateTierCache(id);
   revalidatePath('/settings');
 
   return { status: 'success', message: 'Tier updated.' };

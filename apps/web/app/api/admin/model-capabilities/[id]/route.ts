@@ -5,7 +5,6 @@ import {
   upsertModel,
   type ModelFormat,
 } from '@/lib/ai/model-capabilities';
-import { invalidateTierCache } from '@/lib/ai/tiers';
 import { requireAdmin } from '@/lib/auth/admin';
 import { prisma } from '@vero/db';
 import { revalidatePath } from 'next/cache';
@@ -79,7 +78,6 @@ export async function DELETE(
     }
 
     await deleteModel(id);
-    invalidateTierCache();
     revalidatePath('/settings');
     return NextResponse.json({ ok: true, removedFromTiers: tierIds });
   } catch (error) {
